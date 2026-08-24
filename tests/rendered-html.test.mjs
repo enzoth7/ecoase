@@ -147,7 +147,7 @@ test("administra capacidad general, ajustes diarios y permite sobrecarga", async
   const productionDay = snapshot.days.find((day) => day.date === "2026-09-07");
   const deliveryDay = snapshot.days.find((day) => day.date === "2026-09-08");
   assert.deepEqual(snapshot.internalTeam, { availablePeople: 10 });
-  assert.deepEqual(productionDay.internalTeam, { availablePeople: 10, assignedPeople: 5, freePeople: 5, missingPeople: 0 });
+  assert.deepEqual(productionDay.internalTeam, { availablePeople: 10, assignedPeople: 10, freePeople: 0, missingPeople: 0 });
   assert.equal(productionDay.internalProduction.find((item) => item.operation === "assembly").capacity, 35);
   assert.equal(productionDay.externalProduction.find((item) => item.providerId === "blanc" && item.operation === "assembly").capacity, 20);
   assert.equal(productionDay.internalProduction.find((item) => item.operation === "assembly").committed, 40);

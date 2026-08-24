@@ -143,6 +143,24 @@ test("la capacidad general se repite y los ajustes afectan solo un día", () => 
   assert.equal(snapshot.days[1].internalTeam.assignedPeople, 5);
 });
 
+test("las personas adicionales se suman a la dotación habitual y avisan el faltante", () => {
+  const snapshot = buildCapacitySnapshot({
+    from: "2026-08-24", to: "2026-08-24", providers, orders: [], availablePeople: 50,
+    rules: [],
+    internalDefaults: [
+      { operation: "assembly", peopleCount: 10, manualCapacity: 1000 },
+      { operation: "marking", peopleCount: 10, manualCapacity: 1000 },
+      { operation: "ht", peopleCount: 10, manualCapacity: 1000 },
+    ],
+    externalDefaults: [], transportDefaults: [],
+    adjustments: [{ date: "2026-08-24", resourceType: "internal_production", operation: "assembly", palletAdjustment: 0, peopleCount: 30 }],
+  });
+  assert.equal(snapshot.days[0].internalTeam.assignedPeople, 60);
+  assert.equal(snapshot.days[0].internalTeam.freePeople, 0);
+  assert.equal(snapshot.days[0].internalTeam.missingPeople, 10);
+  assert.ok(snapshot.days[0].issues.includes("Faltan personas"));
+});
+
 test("marca en rojo lógico los días sin definir o con faltantes", () => {
   const base = { id: "overload", reference: "", client: "Uno", product: "Pallet", requested: 100, delivered: 0, pending: 100, stage: "produccion", dateLabel: "", plannedDate: "2026-08-24", transport: "Interno", transportSource: "internal", productionSource: "internal", productionDate: "2026-08-24", requiredOperations: ["assembly"], supply: "", preparation: "", logistics: "", delivery: "", action: "", lines: [], source: "" };
   const snapshot = buildCapacitySnapshot({

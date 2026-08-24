@@ -156,7 +156,7 @@ function InternalPeopleCapacity({ team, todayTeam, onSave }: { team: CapacitySna
         <button type="submit"><Save size={17} />Guardar dotación</button>
       </form>
     </div>
-    <p className="capacity-people-note">La dotación habitual de Armado, Marcado y Tratamiento HT se descuenta todos los días. Al abrir un día, podés cambiar el total asignado a cada operación solo para esa fecha.</p>
+    <p className="capacity-people-note">La dotación habitual de Armado, Marcado y Tratamiento HT se descuenta todos los días. Al abrir un día, podés sumar personas adicionales solo para esa fecha.</p>
   </section>;
 }
 
@@ -325,7 +325,7 @@ function AdjustmentRow({ name, sourceName, responsible, peopleAssigned, baseCapa
     <Metric label="Comprometidos" value={number.format(committed)} />
     <Metric label={overload > 0 ? "Sobrecarga" : "Capacidad del día"} value={capacity === undefined ? "Sin calcular" : overload > 0 ? number.format(overload) : number.format(capacity)} tone={overload > 0 ? "danger" : undefined} />
     <form onSubmit={async (event) => { event.preventDefault(); setSaving(true); try { await onSave(Number(value), sourceName, assignsPeople ? Number(peopleValue) : undefined); } finally { setSaving(false); } }}>
-      {assignsPeople ? <label>Personas asignadas hoy<input type="number" min="0" step="1" value={peopleValue} onChange={(event) => setPeopleValue(event.target.value)} required /><small>Total para esta operación</small></label> : <p className="adjustment-source"><small>Quién aporta</small><strong>{sourceName}</strong></p>}
+      {assignsPeople ? <label>Personas adicionales hoy<input type="number" min="0" step="1" value={peopleValue} onChange={(event) => setPeopleValue(event.target.value)} required /><small>Se suman a la dotación habitual</small></label> : <p className="adjustment-source"><small>Quién aporta</small><strong>{sourceName}</strong></p>}
       <label>Capacidad adicional hoy<input type="number" step="1" placeholder="+ / − palets" value={value} onChange={(event) => setValue(event.target.value)} aria-label={`Cambio de capacidad para ${name}`} /><small>0 = sin cambio</small></label>
       <button type="submit" disabled={saving}><Save size={16} />{saving ? "Guardando" : "Guardar"}</button>
     </form>

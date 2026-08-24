@@ -47,7 +47,7 @@ export function buildCapacitySnapshot(input: { from: string; to: string; rules: 
       const adjustment = adjustmentEntry?.palletAdjustment ?? 0;
       const capacity = adjustedCapacity(baseCapacity, adjustment);
       const committed = productionOrders.filter((order) => (order.productionSource ?? "internal") === "internal" && (order.requiredOperations ?? ["assembly"]).includes(operation)).reduce((sum, order) => sum + order.requested, 0);
-      return { operation, peopleCount: defaults?.peopleCount ?? 0, peopleAssigned: adjustmentEntry?.peopleCount ?? defaults?.peopleCount ?? 0, baseCapacity, adjustment, adjustmentResponsible: adjustmentEntry?.responsible, capacity, committed, available: capacity === undefined ? undefined : Math.max(capacity - committed, 0), overload: capacity === undefined ? 0 : Math.max(committed - capacity, 0) };
+      return { operation, peopleCount: defaults?.peopleCount ?? 0, peopleAssigned: (defaults?.peopleCount ?? 0) + (adjustmentEntry?.peopleCount ?? 0), baseCapacity, adjustment, adjustmentResponsible: adjustmentEntry?.responsible, capacity, committed, available: capacity === undefined ? undefined : Math.max(capacity - committed, 0), overload: capacity === undefined ? 0 : Math.max(committed - capacity, 0) };
     });
     const peopleAssigned = internalProduction.reduce((sum, entry) => sum + entry.peopleAssigned, 0);
     const dayInternalTeam: DailyInternalTeam = { availablePeople: input.availablePeople, assignedPeople: peopleAssigned, freePeople: input.availablePeople === undefined ? undefined : Math.max(input.availablePeople - peopleAssigned, 0), missingPeople: input.availablePeople === undefined ? 0 : Math.max(peopleAssigned - input.availablePeople, 0) };
