@@ -2217,7 +2217,7 @@ h3 {
 }
 
 .capacity-days button {
-  min-height: 96px;
+  min-height: 126px;
   display: grid;
   align-content: center;
   justify-items: start;
@@ -2239,7 +2239,12 @@ h3 {
 .capacity-days small { color: var(--muted); font-size: 9px; font-weight: 800; text-transform: uppercase; }
 .capacity-days strong { font-size: 23px; }
 .capacity-days em { color: var(--muted); font-size: 10px; font-style: normal; }
-.capacity-days b { display: flex; align-items: center; gap: 4px; margin-top: 3px; color: var(--red); font-size: 9px; }
+.capacity-day-production { display: grid; gap: 2px; margin-top: 3px; }
+.capacity-day-production em { display: flex; align-items: baseline; gap: 4px; white-space: nowrap; }
+.capacity-day-production em strong { color: var(--ink); font-size: 11px; font-variant-numeric: tabular-nums; }
+.capacity-day-production em.missing,
+.capacity-day-production em.missing strong { color: var(--red); }
+.capacity-days b { display: flex; align-items: center; gap: 4px; margin-top: 3px; color: var(--red); font-size: 9px; white-space: nowrap; }
 .capacity-days b.ready { color: var(--green); }
 
 .capacity-general-heading { display: flex; align-items: end; justify-content: space-between; gap: 20px; padding: 4px 2px 0; }
@@ -2323,6 +2328,9 @@ h3 {
 .capacity-day-alert div { display: grid; gap: 3px; }
 .capacity-day-alert strong { font-size: 12px; }
 .capacity-day-alert p { margin: 0; font-size: 10px; }
+.capacity-day-summary { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; margin: 14px 22px 0; }
+.capacity-day-summary .capacity-metric { min-height: 62px; justify-content: center; }
+.capacity-day-summary .capacity-metric strong { font-size: 18px; font-variant-numeric: tabular-nums; }
 .day-adjustment-section { display: grid; gap: 0; margin: 20px 22px; overflow: hidden; border: 1px solid var(--line); border-radius: 12px; }
 .day-adjustment-section > h3 { display: flex; align-items: center; gap: 8px; padding: 14px 16px; border-bottom: 1px solid var(--line); background: var(--surface-soft); font-size: 14px; }
 .day-adjustment-row { display: grid; grid-template-columns: minmax(180px, 1.3fr) 130px 150px minmax(250px, 1.4fr); align-items: end; gap: 10px; padding: 14px 16px; border-bottom: 1px solid var(--line); }
@@ -2688,7 +2696,7 @@ h3 {
 
   .capacity-toolbar { align-items: stretch; flex-direction: column; }
   .capacity-days { display: flex; overflow-x: auto; }
-  .capacity-days button { min-width: 92px; border-bottom: 1px solid var(--line); }
+  .capacity-days button { min-width: 118px; border-bottom: 1px solid var(--line); }
   .capacity-summary-strip { grid-template-columns: 1fr 1fr; }
   .capacity-table-heading { display: none; }
   .capacity-table-row { grid-template-columns: 1fr 1fr; gap: 7px 12px; padding: 14px; }
@@ -2699,6 +2707,7 @@ h3 {
   .capacity-day-modal > header { padding: 18px 16px; }
   .capacity-day-modal > header h2 { font-size: 19px; }
   .capacity-day-alert { margin: 14px 12px 0; }
+  .capacity-day-summary { grid-template-columns: 1fr; margin: 12px; }
   .day-adjustment-section { margin: 14px 12px; }
   .day-adjustment-row { grid-template-columns: 1fr 1fr; gap: 9px; padding: 13px; }
   .day-adjustment-name { grid-column: 1 / -1; }

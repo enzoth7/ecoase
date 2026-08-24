@@ -111,6 +111,10 @@ test("pedidos internos, externos e importados reservan donde corresponde", () =>
   assert.equal(snapshot.days[0].internalProduction.find((item) => item.operation === "ht").overload, 10);
   assert.equal(snapshot.days[0].externalProduction[0].committed, 80);
   assert.equal(snapshot.days[0].imports[0].pallets, 70);
+  assert.equal(snapshot.days[0].productionTotals.committed, 180);
+  assert.equal(snapshot.days[0].productionTotals.capacity, 180);
+  assert.equal(snapshot.days[0].productionTotals.available, 20);
+  assert.equal(snapshot.days[0].productionTotals.missing, 20);
   assert.equal(snapshot.days[1].transportTotals.committed, 250);
   assert.equal(snapshot.days[1].transportTotals.missing, 70);
 });
@@ -131,6 +135,10 @@ test("la capacidad general se repite y los ajustes afectan solo un día", () => 
   assert.equal(snapshot.days[1].internalProduction.find((item) => item.operation === "assembly").capacity, 250);
   assert.equal(snapshot.days[0].transportTotals.internal, 200);
   assert.equal(snapshot.days[1].transportTotals.internal, 240);
+  assert.equal(snapshot.days[0].productionTotals.capacity, 300);
+  assert.equal(snapshot.days[1].productionTotals.capacity, 250);
+  assert.equal(snapshot.days[0].productionTotals.available, 300);
+  assert.equal(snapshot.days[1].productionTotals.available, 250);
 });
 
 test("marca en rojo lógico los días sin definir o con faltantes", () => {
@@ -140,4 +148,7 @@ test("marca en rojo lógico los días sin definir o con faltantes", () => {
     internalDefaults: [], externalDefaults: [], transportDefaults: [], adjustments: [],
   });
   assert.deepEqual(snapshot.days[0].issues, ["Producción sin definir", "Falta producción", "Transporte sin definir", "Faltan camiones"]);
+  assert.equal(snapshot.days[0].productionTotals.committed, 100);
+  assert.equal(snapshot.days[0].productionTotals.available, undefined);
+  assert.equal(snapshot.days[0].productionTotals.missing, 100);
 });

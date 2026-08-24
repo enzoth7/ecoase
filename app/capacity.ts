@@ -11,7 +11,7 @@ export type CapacityAdjustment = { date: string; resourceType: "internal_product
 export type CapacityOperationSummary = { operation: CapacityOperation; peopleCount: number; baseCapacity?: number; adjustment: number; capacity?: number; committed: number; available?: number; overload: number };
 export type ExternalCapacitySummary = { providerId: string; providerName: string; operation: CapacityOperation; status: CapacityStatus; baseCapacity?: number; adjustment: number; capacity?: number; committed: number; available?: number; overload: number };
 export type TransportCapacitySummary = { source: TransportSource; providerId?: string; providerName: string; status: CapacityStatus; baseCapacity?: number; adjustment: number; capacity?: number; committed: number; available?: number; overload: number };
-export type CapacityDay = { date: string; internalProduction: CapacityOperationSummary[]; externalProduction: ExternalCapacitySummary[]; imports: Array<{ orderId: string; client: string; pallets: number }>; transport: TransportCapacitySummary[]; transportTotals: { internal: number; externalConfirmed: number; externalEstimated: number; committed: number; missing: number }; issues: string[] };
+export type CapacityDay = { date: string; internalProduction: CapacityOperationSummary[]; externalProduction: ExternalCapacitySummary[]; imports: Array<{ orderId: string; client: string; pallets: number }>; productionTotals: { committed: number; capacity?: number; available?: number; missing: number }; transport: TransportCapacitySummary[]; transportTotals: { internal: number; externalConfirmed: number; externalEstimated: number; committed: number; missing: number }; issues: string[] };
 export type CapacitySnapshot = { from: string; to: string; rules: CapacityRule[]; internalDefaults: InternalProductionDefault[]; externalDefaults: ExternalProductionDefault[]; transportDefaults: TransportCapacityDefault[]; adjustments: CapacityAdjustment[]; days: CapacityDay[] };
 
 function datesBetween(from: string, to: string) {
@@ -59,6 +59,25 @@ export function buildCapacitySnapshot(input: { from: string; to: string; rules: 
     });
 
     const imports = activeOrders.filter((order) => order.productionSource === "import" && order.importArrivalDate === date).map((order) => ({ orderId: order.id, client: order.client, pallets: order.requested }));
+    const productionCommitted = productionOrders.filter((order) => order.productionSource !== "import").reduce((sum, order) => sum + order.requested, 0);
+    const internalAssembly = internalProduction.find((entry) => entry.operation === "assembly");
+    const confirmedExternalAssembly = externalProduction.filter((entry) => entry.operation === "assembly" && entry.status === "confirmed");
+    const knownProductionCapacity = (internalAssembly?.capacity ?? 0) + confirmedExternalAssembly.reduce((sum, entry) => sum + (entry.capacity ?? 0), 0);
+    const hasProductionCapacity = internalAssembly?.capacity !== undefined || confirmedExternalAssembly.some((entry) => entry.capacity !== undefined);
+    const productionAvailable = hasProductionCapacity
+      ? (internalAssembly?.available ?? 0) + confirmedExternalAssembly.reduce((sum, entry) => sum + (entry.available ?? 0), 0)
+      : undefined;
+    const productionMissing = !internalAssembly
+      ? 0
+      : internalAssembly.committed > 0 && internalAssembly.capacity === undefined
+        ? internalAssembly.committed
+        : internalAssembly.overload;
+    const externalProductionMissing = externalProduction.filter((entry) => entry.operation === "assembly").reduce((sum, entry) => {
+      if (entry.committed === 0) return sum;
+      if (entry.status !== "confirmed" || entry.capacity === undefined) return sum + entry.committed;
+      return sum + entry.overload;
+    }, 0);
+    const productionTotals = { committed: productionCommitted, capacity: hasProductionCapacity ? knownProductionCapacity : undefined, available: productionAvailable, missing: productionMissing + externalProductionMissing };
     const transportKeys = new Set(["internal|internal", ...input.transportDefaults.map((item) => `${item.source}|${item.providerId ?? "internal"}`)]);
     for (const order of deliveryOrders) transportKeys.add(`${order.transportSource ?? "external"}|${order.transportProviderId ?? "internal"}`);
     const transport = [...transportKeys].map((key) => {
@@ -78,10 +97,10 @@ export function buildCapacitySnapshot(input: { from: string; to: string; rules: 
     const missing = Math.max(committed - internal - externalConfirmed, 0);
     const issues: string[] = [];
     if (internalProduction.some((entry) => entry.capacity === undefined)) issues.push("Producción sin definir");
-    if (internalProduction.some((entry) => entry.committed > 0 && (entry.capacity === undefined || entry.overload > 0)) || externalProduction.some((entry) => entry.committed > 0 && (entry.capacity === undefined || entry.overload > 0))) issues.push("Falta producción");
+    if (productionTotals.missing > 0 || internalProduction.some((entry) => entry.operation !== "assembly" && entry.committed > 0 && (entry.capacity === undefined || entry.overload > 0)) || externalProduction.some((entry) => entry.operation !== "assembly" && entry.committed > 0 && (entry.capacity === undefined || entry.overload > 0))) issues.push("Falta producción");
     if (input.transportDefaults.length === 0) issues.push("Transporte sin definir");
     if (missing > 0) issues.push("Faltan camiones");
-    return { date, internalProduction, externalProduction, imports, transport, transportTotals: { internal, externalConfirmed, externalEstimated, committed, missing }, issues: [...new Set(issues)] };
+    return { date, internalProduction, externalProduction, imports, productionTotals, transport, transportTotals: { internal, externalConfirmed, externalEstimated, committed, missing }, issues: [...new Set(issues)] };
   });
   return { from: input.from, to: input.to, rules: input.rules, internalDefaults: input.internalDefaults, externalDefaults: input.externalDefaults, transportDefaults: input.transportDefaults, adjustments: input.adjustments, days };
 }

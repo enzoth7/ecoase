@@ -143,6 +143,9 @@ test("administra capacidad general, ajustes diarios y permite sobrecarga", async
   assert.equal(productionDay.internalProduction.find((item) => item.operation === "assembly").capacity, 35);
   assert.equal(productionDay.internalProduction.find((item) => item.operation === "assembly").committed, 40);
   assert.equal(productionDay.internalProduction.find((item) => item.operation === "assembly").overload, 5);
+  assert.equal(productionDay.productionTotals.committed, 40);
+  assert.equal(productionDay.productionTotals.capacity, 35);
+  assert.equal(productionDay.productionTotals.missing, 5);
   assert.equal(deliveryDay.transportTotals.committed, 40);
   assert.equal(deliveryDay.transportTotals.missing, 5);
 

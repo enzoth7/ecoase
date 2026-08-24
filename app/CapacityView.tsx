@@ -108,7 +108,10 @@ export default function CapacityView({ providers }: { providers: Provider[] }) {
           return <button key={key} type="button" className={`${key === dateKey(today) ? "today" : ""} ${hasIssue ? "issue" : ""}`} onClick={() => setOpenDate(key)} aria-label={`Ajustar ${formatDay(key)}${hasIssue ? `: ${summary?.issues.join(", ")}` : ""}`}>
             <small>{new Intl.DateTimeFormat("es-UY", { weekday: "short" }).format(day)}</small>
             <strong>{day.getDate()}</strong>
-            <em>{number.format(summary?.transportTotals.committed ?? 0)} palets</em>
+            <div className="capacity-day-production">
+              <em><strong>{number.format(summary?.productionTotals.committed ?? 0)}</strong> a producir</em>
+              {summary?.productionTotals.missing ? <em className="missing"><strong>{number.format(summary.productionTotals.missing)}</strong> faltan</em> : <em><strong>{summary?.productionTotals.available === undefined ? "—" : number.format(summary.productionTotals.available)}</strong> libres</em>}
+            </div>
             {hasIssue ? <b><AlertTriangle size={12} />Revisar</b> : <b className="ready">Capacidad definida</b>}
           </button>;
         })}
@@ -217,6 +220,11 @@ function DayAdjustmentModal({ day, onClose, onSave }: { day: CapacityDay; onClos
     <section className="capacity-day-modal" role="dialog" aria-modal="true" aria-labelledby="day-capacity-title">
       <header><div><small>Ajuste excepcional</small><h2 id="day-capacity-title">{formatDay(day.date)}</h2><p>Sumá o restá palets únicamente para este día.</p></div><button ref={closeRef} type="button" onClick={onClose} aria-label="Cerrar ajustes"><X size={21} /></button></header>
       {day.issues.length > 0 && <div className="capacity-day-alert"><AlertTriangle size={19} /><div><strong>Este día necesita revisión</strong><p>{day.issues.join(" · ")}</p></div></div>}
+      <div className="capacity-day-summary" aria-label="Resumen productivo del día">
+        <Metric label="Producción asignada" value={`${number.format(day.productionTotals.committed)} palets`} />
+        <Metric label="Capacidad productiva" value={day.productionTotals.capacity === undefined ? "Sin calcular" : `${number.format(day.productionTotals.capacity)} palets`} />
+        <Metric label={day.productionTotals.missing > 0 ? "Faltan producir" : "Capacidad libre"} value={`${number.format(day.productionTotals.missing > 0 ? day.productionTotals.missing : day.productionTotals.available ?? 0)} palets`} tone={day.productionTotals.missing > 0 ? "danger" : undefined} />
+      </div>
 
       <section className="day-adjustment-section" aria-labelledby="day-internal-title"><h3 id="day-internal-title"><Factory size={18} />Producción interna</h3>
         {day.internalProduction.map((entry) => <AdjustmentRow key={entry.operation} name={capacityOperationLabels[entry.operation]} baseCapacity={entry.baseCapacity} adjustment={entry.adjustment} committed={entry.committed} capacity={entry.capacity} overload={entry.overload} onSave={(palletAdjustment) => onSave("/api/capacity/adjustments", { date: day.date, resourceType: "internal_production", operation: entry.operation, palletAdjustment })} />)}
