@@ -1,6 +1,5 @@
 export type OrderStatus = "bloqueado" | "coordinacion" | "completado";
 export type OperationStage = "negociacion" | "produccion" | "logistica" | "completado";
-export type DateDirection = "sin_cambio" | "adelanta" | "atrasa";
 
 export interface OrderLine {
   id: string;
@@ -21,7 +20,8 @@ export interface OperationOrder {
   statusLabel: "Bloqueado" | "En coordinación" | "Completado";
   stage?: OperationStage;
   dateLabel: string;
-  originalDateLabel?: string;
+  plannedDate?: string;
+  originalPlannedDate?: string;
   transport: string;
   supply: string;
   preparation: string;
@@ -36,7 +36,6 @@ export interface OperationOrder {
 export interface OrderChange {
   id: string;
   changedAt: string;
-  dateDirection?: Exclude<DateDirection, "sin_cambio">;
   changes: Array<{ field: string; from: string; to: string }>;
 }
 
@@ -50,6 +49,23 @@ export const stageLabels: Record<OperationStage, string> = {
 export function getOrderStage(order: OperationOrder): OperationStage {
   if (order.stage) return order.stage;
   return order.status === "completado" ? "completado" : "negociacion";
+}
+
+function dateFromLabel(label: string) {
+  const day = Number(label.match(/\d+/)?.[0]);
+  if (!Number.isFinite(day)) return "2026-08-10";
+  return label.toLocaleLowerCase("es").includes("julio")
+    ? `2026-07-${String(day).padStart(2, "0")}`
+    : `2026-08-${String(day).padStart(2, "0")}`;
+}
+
+export function getOrderPlannedDate(order: OperationOrder) {
+  return order.plannedDate ?? dateFromLabel(order.dateLabel);
+}
+
+export function formatPlannedDate(date: string) {
+  const value = new Date(`${date}T12:00:00`);
+  return new Intl.DateTimeFormat("es-UY", { weekday: "long", day: "numeric", month: "long" }).format(value);
 }
 
 export type ProviderType = "Aserradero" | "Transporte";
@@ -124,7 +140,7 @@ export const orders: OperationOrder[] = [
     status: "completado",
     statusLabel: "Completado",
     dateLabel: "28 de julio",
-    transport: "Remito 603",
+    transport: "No registrado",
     supply: "Orden despachada en cinco líneas",
     preparation: "380 sin HT · 120 con HT",
     logistics: "Remito 603",

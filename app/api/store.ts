@@ -1,8 +1,9 @@
 import {
   getOrderStage,
+  getOrderPlannedDate,
+  formatPlannedDate,
   orders as seededOrders,
   stageLabels,
-  type DateDirection,
   type OperationOrder,
   type OrderChange,
   type OrderStatus,
@@ -17,8 +18,8 @@ export type CreateOrderInput = {
   reference?: string;
 };
 
-export type UpdateOrderInput = Partial<Pick<OperationOrder, "status" | "transport" | "dateLabel" | "requested" | "stage">> & {
-  dateDirection?: DateDirection;
+export type UpdateOrderInput = Partial<Pick<OperationOrder, "status" | "transport" | "requested" | "stage">> & {
+  plannedDate?: string;
 };
 
 const statusLabels: Record<OrderStatus, OperationOrder["statusLabel"]> = {
@@ -77,10 +78,12 @@ export function updateOrder(id: string, changes: UpdateOrderInput) {
 
   const recordedChanges: OrderChange["changes"] = [];
 
-  if (typeof changes.dateLabel === "string" && changes.dateLabel.trim() && changes.dateLabel.trim() !== order.dateLabel) {
-    order.originalDateLabel ??= order.dateLabel;
-    recordedChanges.push({ field: "Fecha planificada", from: order.dateLabel, to: changes.dateLabel.trim() });
-    order.dateLabel = changes.dateLabel.trim();
+  if (typeof changes.plannedDate === "string" && changes.plannedDate && changes.plannedDate !== getOrderPlannedDate(order)) {
+    const previousDate = getOrderPlannedDate(order);
+    order.originalPlannedDate ??= previousDate;
+    recordedChanges.push({ field: "Fecha planificada", from: formatPlannedDate(previousDate), to: formatPlannedDate(changes.plannedDate) });
+    order.plannedDate = changes.plannedDate;
+    order.dateLabel = formatPlannedDate(changes.plannedDate);
   }
 
   if (typeof changes.requested === "number" && changes.requested !== order.requested) {
@@ -127,7 +130,6 @@ export function updateOrder(id: string, changes: UpdateOrderInput) {
   const change = recordedChanges.length > 0 ? {
     id: `cambio-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
     changedAt: new Intl.DateTimeFormat("es-UY", { dateStyle: "short", timeStyle: "short" }).format(new Date()),
-    dateDirection: changes.dateDirection && changes.dateDirection !== "sin_cambio" ? changes.dateDirection : undefined,
     changes: recordedChanges,
   } satisfies OrderChange : undefined;
 

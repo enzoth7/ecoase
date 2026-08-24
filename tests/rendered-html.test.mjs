@@ -138,9 +138,8 @@ test("permite editar el plan y registra los cambios del pedido", async () => {
     headers: { "content-type": "application/json" },
     body: JSON.stringify({
       status: "coordinacion",
-      transport: "Propio",
-      dateLabel: "Lunes 18 de agosto",
-      dateDirection: "atrasa",
+      transport: "Milton",
+      plannedDate: "2026-08-18",
       requested: 650,
       stage: "logistica",
     }),
@@ -150,16 +149,16 @@ test("permite editar el plan y registra los cambios del pedido", async () => {
   const payload = await response.json();
   assert.equal(payload.order.status, "coordinacion");
   assert.equal(payload.order.statusLabel, "En coordinación");
-  assert.equal(payload.order.transport, "Propio");
-  assert.equal(payload.order.dateLabel, "Lunes 18 de agosto");
-  assert.equal(payload.order.originalDateLabel, "Viernes 14");
+  assert.equal(payload.order.transport, "Milton");
+  assert.match(payload.order.dateLabel, /18 de agosto/i);
+  assert.equal(payload.order.plannedDate, "2026-08-18");
+  assert.equal(payload.order.originalPlannedDate, "2026-08-14");
   assert.equal(payload.order.requested, 650);
   assert.equal(payload.order.lines.reduce((total, line) => total + line.quantity, 0), 650);
   assert.equal(payload.order.stage, "logistica");
 
   const history = await (await request("/api/orders/frutura-74/history")).json();
   assert.equal(history.history.length, 1);
-  assert.equal(history.history[0].dateDirection, "atrasa");
   assert.equal(history.history[0].changes.some((change) => change.field === "Fecha planificada"), true);
   assert.equal(history.history[0].changes.some((change) => change.field === "Cantidad de pallets"), true);
   assert.equal(history.history[0].changes.some((change) => change.field === "Transportista"), true);
@@ -192,6 +191,13 @@ test("muestra el plan simplificado con edición por lápiz", async () => {
 });
 
 test("crea pedidos mediante POST /api/orders", async () => {
+  const invalidTransport = await request("/api/orders", {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ client: "Cliente prueba", product: "Pallet prueba", requested: 50, dateLabel: "Lunes 10", transport: "Remito 603" }),
+  });
+  assert.equal(invalidTransport.status, 400);
+
   const response = await request("/api/orders", {
     method: "POST",
     headers: { "content-type": "application/json" },
@@ -200,7 +206,7 @@ test("crea pedidos mediante POST /api/orders", async () => {
       product: "Pallet prueba",
       requested: 50,
       dateLabel: "Lunes 10",
-      transport: "Propio",
+      transport: "Matías",
     }),
   });
 

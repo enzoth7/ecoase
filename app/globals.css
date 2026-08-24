@@ -1095,6 +1095,10 @@ h3 {
   box-shadow: 0 24px 70px rgba(7, 23, 17, 0.28);
 }
 
+.edit-plan-modal {
+  width: min(780px, 100%);
+}
+
 .modal-heading {
   display: flex;
   align-items: flex-start;

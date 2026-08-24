@@ -24,10 +24,10 @@ import {
 import { useEffect, useMemo, useRef, useState, type FormEvent } from "react";
 import {
   getOrderStage,
+  getOrderPlannedDate,
   orders as initialOrders,
   providers,
   stageLabels,
-  type DateDirection,
   type OperationOrder,
   type OrderChange,
   type OrderStatus,
@@ -47,6 +47,10 @@ const sectionPaths: Record<DashboardSection, string> = {
   historial: "/historial",
   proveedores: "/proveedores",
 };
+
+function visibleReference(order: OperationOrder) {
+  return order.reference.startsWith("Plan ") ? "" : order.reference;
+}
 
 const weekDays = [
   { name: "Lun", day: 10 },
@@ -115,7 +119,7 @@ function OrderDetail({ order }: { order: OperationOrder }) {
           <h2 id="order-detail-title">{order.client}</h2>
           <p>{order.product}</p>
         </div>
-        <small className="order-reference">{order.reference}</small>
+        {visibleReference(order) && <small className="order-reference">{visibleReference(order)}</small>}
       </div>
 
       <div className="detail-meta">
@@ -257,7 +261,7 @@ function CalendarView({ orders, onOpen }: { orders: OperationOrder[]; onOpen: (i
               <div className="calendar-orders">
                 {dayOrders.map((order) => (
                   <button type="button" key={order.id} onClick={() => onOpen(order.id)}>
-                    <StatusBadge order={order} /><strong>{order.client}</strong><small>{order.reference}</small><small>{number.format(order.requested)} unidades</small>
+                    <StatusBadge order={order} /><strong>{order.client}</strong>{visibleReference(order) && <small>{visibleReference(order)}</small>}<small>{number.format(order.requested)} unidades</small>
                   </button>
                 ))}
                 {dayOrders.length === 0 && <p>Sin entregas</p>}
@@ -285,7 +289,7 @@ function LogisticsView({ orders, onOpen }: { orders: OperationOrder[]; onOpen: (
         {orders.map((order) => (
           <button type="button" className="logistics-order" key={order.id} onClick={() => onOpen(order.id)}>
             <i className="logistics-icon"><Truck size={18} aria-hidden="true" /></i>
-            <div><strong>{order.client}</strong><small>{order.reference} · {order.product}</small></div>
+            <div><strong>{order.client}</strong><small>{[visibleReference(order), order.product].filter(Boolean).join(" · ")}</small></div>
             <div><small>Fecha</small><strong>{order.dateLabel}</strong></div>
             <div><small>Transporte</small><strong>{order.transport}</strong></div>
             <StatusBadge order={order} />
@@ -302,8 +306,7 @@ function StageBadge({ stage }: { stage: OperationStage }) {
 }
 
 type PlanChanges = {
-  dateLabel?: string;
-  dateDirection?: DateDirection;
+  plannedDate?: string;
   requested?: number;
   stage?: OperationStage;
   transport?: string;
@@ -338,8 +341,7 @@ function EditPlanModal({ order, transportOptions, onClose, onSave }: {
     setError("");
     const form = new FormData(event.currentTarget);
     const saved = await onSave({
-      dateLabel: String(form.get("dateLabel") ?? "").trim(),
-      dateDirection: form.get("dateDirection") as DateDirection,
+      plannedDate: String(form.get("plannedDate") ?? ""),
       requested: Number(form.get("requested")),
       stage: form.get("stage") as OperationStage,
       transport: String(form.get("transport") ?? "").trim(),
@@ -353,19 +355,18 @@ function EditPlanModal({ order, transportOptions, onClose, onSave }: {
     <div className="modal-backdrop" role="presentation" onMouseDown={(event) => { if (event.target === event.currentTarget) onClose(); }}>
       <section className="edit-plan-modal" role="dialog" aria-modal="true" aria-labelledby="edit-plan-title">
         <div className="modal-heading">
-          <div><h2 id="edit-plan-title">Editar pedido</h2><small>{order.client} · {order.reference}</small></div>
+          <div><h2 id="edit-plan-title">Editar pedido</h2><small>{order.client}</small></div>
           <button type="button" onClick={onClose} aria-label="Cerrar"><X size={18} aria-hidden="true" /></button>
         </div>
         <form onSubmit={submit}>
-          <label>Fecha planificada<input name="dateLabel" defaultValue={order.dateLabel} required /></label>
-          <label>Ajuste de fecha<select name="dateDirection" defaultValue="sin_cambio"><option value="sin_cambio">Sin cambio</option><option value="adelanta">Se adelanta</option><option value="atrasa">Se atrasa</option></select></label>
+          <label>Fecha planificada<input name="plannedDate" type="date" defaultValue={getOrderPlannedDate(order)} required /></label>
           <label>Cantidad de pallets<input name="requested" type="number" min={order.delivered} step="1" defaultValue={order.requested} required /></label>
           <label>Etapa<select name="stage" defaultValue={getOrderStage(order)}><option value="negociacion">Negociación</option><option value="produccion">Producción</option><option value="logistica">Logística</option><option value="completado">Completado</option></select></label>
           <label className="field-wide">Transportista<select name="transport" defaultValue={order.transport}>{transportOptions.map((transport) => <option key={transport} value={transport}>{transport}</option>)}</select></label>
           {error && <p className="form-error" role="alert">{error}</p>}
           <section className="change-history" aria-labelledby="change-history-title">
             <h3 id="change-history-title">Cambios del pedido</h3>
-            {history.length > 0 ? <div>{history.map((entry) => <article key={entry.id}><small>{entry.changedAt}{entry.dateDirection ? ` · Fecha ${entry.dateDirection === "adelanta" ? "adelantada" : "atrasada"}` : ""}</small>{entry.changes.map((change) => <p key={`${entry.id}-${change.field}`}><strong>{change.field}:</strong> {change.from} → {change.to}</p>)}</article>)}</div> : <p>No hay cambios registrados.</p>}
+            {history.length > 0 ? <div>{history.map((entry) => <article key={entry.id}><small>{entry.changedAt}</small>{entry.changes.map((change) => <p key={`${entry.id}-${change.field}`}><strong>{change.field}:</strong> {change.from} → {change.to}</p>)}</article>)}</div> : <p>No hay cambios registrados.</p>}
           </section>
           <div className="modal-actions"><button type="button" className="secondary-button" onClick={onClose}>Cancelar</button><button type="submit" className="primary-button" disabled={saving}>{saving ? "Guardando…" : "Guardar cambios"}</button></div>
         </form>
@@ -384,9 +385,9 @@ function PlanView({ orders, onEdit }: { orders: OperationOrder[]; onEdit: (order
       <div className="plan-board" aria-label="Plan operativo">
         <div className="data-heading plan-heading" aria-hidden="true"><div>Cliente</div><div>Cantidad de pallets</div><div>Fecha planificada</div><div>Etapa</div><div>Transportista</div><div /></div>
         {planOrders.map((order) => {
-          const dateChanged = Boolean(order.originalDateLabel && order.originalDateLabel !== order.dateLabel);
+          const dateChanged = Boolean(order.originalPlannedDate && order.originalPlannedDate !== getOrderPlannedDate(order));
           return <article className="plan-row" key={order.id}>
-            <div className="plan-client"><strong>{order.client}</strong><small>{order.reference}</small></div>
+            <div className="plan-client"><strong>{order.client}</strong></div>
             <div><small>Cantidad de pallets</small><strong>{number.format(order.requested)}</strong></div>
             <div className={dateChanged ? "plan-date changed" : "plan-date"}><small>Fecha planificada</small><strong>{order.dateLabel}</strong></div>
             <div><small>Etapa</small><StageBadge stage={getOrderStage(order)} /></div>
@@ -450,7 +451,7 @@ function AddOrderModal({ onClose, onCreated }: { onClose: () => void; onCreated:
           <label className="field-wide">Producto<input name="product" required /></label>
           <label>Cantidad<input name="requested" type="number" min="1" step="1" required /></label>
           <label>Fecha<input name="dateLabel" placeholder="Ej. Viernes 14" required /></label>
-          <label className="field-wide">Transporte<input name="transport" required /></label>
+          <label className="field-wide">Transportista<select name="transport" required defaultValue=""><option value="" disabled>Seleccionar transportista</option>{providers.filter((provider) => provider.type === "Transporte").map((provider) => <option key={provider.id} value={provider.name}>{provider.name}</option>)}</select></label>
           {error && <p className="form-error" role="alert">{error}</p>}
           <div className="modal-actions">
             <button type="button" className="secondary-button" onClick={onClose}>Cancelar</button>
@@ -690,7 +691,7 @@ export default function Dashboard({ initialSection = "pedidos" }: { initialSecti
                     <div className="order-main">
                       <StatusBadge order={order} />
                       <strong>{order.client}</strong>
-                      <small>{order.reference} · {order.product}</small>
+                      <small>{[visibleReference(order), order.product].filter(Boolean).join(" · ")}</small>
                     </div>
                     <div className="order-schedule">
                       <strong>{order.dateLabel}</strong>
@@ -722,7 +723,7 @@ export default function Dashboard({ initialSection = "pedidos" }: { initialSecti
 
       </div>
       {showAddOrder && <AddOrderModal onClose={() => setShowAddOrder(false)} onCreated={addCreatedOrder} />}
-      {editingPlanOrder && <EditPlanModal order={editingPlanOrder} transportOptions={[...new Set(orderRows.map((order) => order.transport))].sort((a, b) => a.localeCompare(b, "es"))} onClose={() => setEditingPlanOrder(null)} onSave={(changes) => updateOrder(editingPlanOrder.id, changes)} />}
+      {editingPlanOrder && <EditPlanModal order={editingPlanOrder} transportOptions={providers.filter((provider) => provider.type === "Transporte").map((provider) => provider.name)} onClose={() => setEditingPlanOrder(null)} onSave={(changes) => updateOrder(editingPlanOrder.id, changes)} />}
     </div>
   );
 }
