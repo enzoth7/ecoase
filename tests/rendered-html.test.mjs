@@ -92,7 +92,7 @@ test("usa rutas reales sin navegación por hash", async () => {
   assert.equal(rootResponse.status, 307);
   assert.equal(rootResponse.headers.get("location"), "/pedidos");
 
-  for (const path of ["/pedidos", "/historial", "/plan", "/calendario", "/logistica", "/clientes", "/proveedores"]) {
+  for (const path of ["/pedidos", "/historial", "/plan", "/calendario", "/logistica", "/clientes", "/productos", "/proveedores"]) {
     const response = await request(path);
     assert.equal(response.status, 200);
   }
@@ -105,6 +105,19 @@ test("usa rutas reales sin navegación por hash", async () => {
   assert.match(html, /href="\/logistica"/i);
   assert.match(html, /href="\/clientes"/i);
   assert.match(html, /href="\/proveedores"/i);
+  assert.match(html, /href="\/productos"/i);
+});
+
+test("muestra el catálogo de productos de Palbin y Pamer", async () => {
+  const [pageResponse, productsResponse] = await Promise.all([request("/productos"), request("/api/products")]);
+  assert.equal(pageResponse.status, 200);
+  assert.equal(productsResponse.status, 200);
+  const html = await pageResponse.text();
+  assert.match(html, /Productos/);
+  assert.match(html, /Cliente \/ asignación/);
+  assert.match(html, /Cristal PET/);
+  assert.match(html, /216 × 110 simples reforzadas/);
+  assert.equal((await productsResponse.json()).products.length, 61);
 });
 
 test("muestra proveedores por tipo y abastecimiento", async () => {

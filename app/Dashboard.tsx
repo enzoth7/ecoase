@@ -9,6 +9,7 @@ import {
   CircleDot,
   ClipboardList,
   Factory,
+  Package,
   ListChecks,
   MapPin,
   Pencil,
@@ -24,6 +25,7 @@ import {
   getOrderStage,
   getOrderPlannedDate,
   orders as initialOrders,
+  products as initialProducts,
   providers as initialProviders,
   stageLabels,
   type OperationOrder,
@@ -32,10 +34,11 @@ import {
   type OrderStatus,
   type OperationStage,
   type Provider,
+  type Product,
 } from "./data";
 
 const number = new Intl.NumberFormat("es-UY");
-export type DashboardSection = "pedidos" | "plan" | "calendario" | "logistica" | "clientes" | "historial" | "proveedores";
+export type DashboardSection = "pedidos" | "plan" | "calendario" | "logistica" | "clientes" | "historial" | "proveedores" | "productos";
 
 const sectionPaths: Record<DashboardSection, string> = {
   pedidos: "/pedidos",
@@ -45,6 +48,7 @@ const sectionPaths: Record<DashboardSection, string> = {
   clientes: "/clientes",
   historial: "/historial",
   proveedores: "/proveedores",
+  productos: "/productos",
 };
 
 function visibleReference(order: OperationOrder) {
@@ -146,6 +150,43 @@ function ProvidersView({ providers }: { providers: Provider[] }) {
             <div><small className="column-label">Qué provee</small><strong>{provider.supplies}</strong></div>
           </article>
         ))}
+      </div>
+    </section>
+  );
+}
+
+function ProductsView({ products }: { products: Product[] }) {
+  const [productQuery, setProductQuery] = useState("");
+  const visibleProducts = useMemo(() => {
+    const normalized = productQuery.trim().toLocaleLowerCase("es");
+    if (!normalized) return products;
+    return products.filter((product) => [product.code, product.name, product.kind, product.measure, product.assignment, product.specification, product.treatment, product.catalog]
+      .filter((value): value is string => Boolean(value))
+      .some((value) => value.toLocaleLowerCase("es").includes(normalized)));
+  }, [productQuery, products]);
+
+  return (
+    <section className="module-surface products-surface" aria-labelledby="products-page-title">
+      <div className="module-toolbar products-toolbar">
+        <div><h2 id="products-page-title">Productos</h2><small>{products.length} productos de catálogo</small></div>
+        <label className="search-field">
+          <i className="sr-only">Buscar producto</i><Search size={17} aria-hidden="true" />
+          <input type="search" value={productQuery} onChange={(event) => setProductQuery(event.target.value)} placeholder="Buscar producto, medida o cliente" />
+          {productQuery && <button type="button" onClick={() => setProductQuery("")} aria-label="Limpiar búsqueda"><X size={15} aria-hidden="true" /></button>}
+        </label>
+      </div>
+      <div className="products-board" aria-label={`${visibleProducts.length} productos`}>
+        <div className="data-heading products-heading" aria-hidden="true"><div>Producto</div><div>Tipo</div><div>Medida</div><div>Cliente / asignación</div><div>Tratamiento</div><div>Catálogo</div></div>
+        {visibleProducts.length > 0 ? visibleProducts.map((product) => (
+          <article className="product-row" key={product.id}>
+            <div className="product-name"><i className={`product-icon ${product.kind.toLocaleLowerCase("es")}`} aria-hidden="true"><Package size={17} /></i><div><strong>{product.name}</strong><small>{product.code}{product.specification ? ` · ${product.specification}` : ""}</small></div></div>
+            <div><small className="column-label">Tipo</small><strong>{product.kind}</strong></div>
+            <div><small className="column-label">Medida</small><strong>{product.measure ?? "—"}</strong></div>
+            <div><small className="column-label">Cliente / asignación</small><strong>{product.assignment ?? "—"}</strong></div>
+            <div><small className="column-label">Tratamiento</small><strong>{product.treatment ?? "—"}</strong></div>
+            <div><small className="column-label">Catálogo</small><strong>{product.catalog}</strong></div>
+          </article>
+        )) : <div className="empty-state"><Package size={28} aria-hidden="true" /><strong>No hay productos para esa búsqueda</strong><button type="button" onClick={() => setProductQuery("")}>Limpiar búsqueda</button></div>}
       </div>
     </section>
   );
@@ -493,6 +534,7 @@ export default function Dashboard({ initialSection = "pedidos" }: { initialSecti
   const [kpiPeriod, setKpiPeriod] = useState<KpiPeriod>("today");
   const [orderRows, setOrderRows] = useState<OperationOrder[]>(initialOrders);
   const [providerRows, setProviderRows] = useState<Provider[]>(initialProviders);
+  const [productRows, setProductRows] = useState<Product[]>(initialProducts);
   const [selectedId, setSelectedId] = useState(initialOrders[0].id);
   const [showAddOrder, setShowAddOrder] = useState(false);
   const [editingPlanOrder, setEditingPlanOrder] = useState<OperationOrder | null>(null);
@@ -502,18 +544,24 @@ export default function Dashboard({ initialSection = "pedidos" }: { initialSecti
   const today = useMemo(() => new Date(), []);
 
   useEffect(() => {
-    Promise.all([fetch("/api/orders"), fetch("/api/history"), fetch("/api/providers")])
-      .then(async ([ordersResponse, historyResponse, providersResponse]) => {
-        const [ordersPayload, historyPayload, providersPayload] = await Promise.all([
+    Promise.all([fetch("/api/orders"), fetch("/api/history"), fetch("/api/providers"), fetch("/api/products")])
+      .then(async ([ordersResponse, historyResponse, providersResponse, productsResponse]) => {
+        const [ordersPayload, historyPayload, providersPayload, productsPayload] = await Promise.all([
           ordersResponse.json() as Promise<{ orders?: OperationOrder[] }>,
           historyResponse.json() as Promise<{ history?: OperationOrder[] }>,
           providersResponse.json() as Promise<{ providers?: Provider[] }>,
+          productsResponse.json() as Promise<{ products?: Product[] }>,
         ]);
-        return { orders: [...(ordersPayload.orders ?? []), ...(historyPayload.history ?? [])], providers: providersPayload.providers ?? [] };
+        return {
+          orders: [...(ordersPayload.orders ?? []), ...(historyPayload.history ?? [])],
+          providers: providersPayload.providers ?? [],
+          products: productsPayload.products ?? [],
+        };
       })
-      .then(({ orders, providers }) => {
+      .then(({ orders, providers, products }) => {
         setOrderRows(orders);
         setProviderRows(providers);
+        setProductRows(products);
       })
       .catch(() => undefined);
   }, []);
@@ -630,6 +678,7 @@ export default function Dashboard({ initialSection = "pedidos" }: { initialSecti
     calendario: "Calendario",
     logistica: "Logística",
     clientes: "Clientes",
+    productos: "Productos",
     historial: "Historial",
     proveedores: "Proveedores",
   };
@@ -661,6 +710,9 @@ export default function Dashboard({ initialSection = "pedidos" }: { initialSecti
             </a>
             <a className={section === "clientes" ? "active" : ""} href="/clientes" aria-current={section === "clientes" ? "page" : undefined}>
               <Users size={17} aria-hidden="true" /><small>Clientes</small>
+            </a>
+            <a className={section === "productos" ? "active" : ""} href="/productos" aria-current={section === "productos" ? "page" : undefined}>
+              <Package size={17} aria-hidden="true" /><small>Productos</small>
             </a>
             <a className={section === "proveedores" ? "active" : ""} href="/proveedores" aria-current={section === "proveedores" ? "page" : undefined}>
               <Factory size={17} aria-hidden="true" /><small>Proveedores</small>
@@ -767,7 +819,7 @@ export default function Dashboard({ initialSection = "pedidos" }: { initialSecti
           </section>
 
           <OrderTrackingPanel key={selectedOrder?.id ?? "empty"} order={selectedOrder} refreshKey={trackingRevision} onAdd={setUpdatingOrder} />
-        </div> : section === "plan" ? <><PlanView orders={activeOrders} onEdit={setEditingPlanOrder} />{updateError && <p className="plan-error" role="alert">{updateError}</p>}</> : section === "calendario" ? <CalendarView orders={activeOrders} onOpen={openOrder} /> : section === "logistica" ? <LogisticsView orders={activeOrders} onOpen={openOrder} /> : section === "proveedores" ? <ProvidersView providers={providerRows} /> : <ClientsView clients={clients} onOpen={openClientOrders} />}
+        </div> : section === "plan" ? <><PlanView orders={activeOrders} onEdit={setEditingPlanOrder} />{updateError && <p className="plan-error" role="alert">{updateError}</p>}</> : section === "calendario" ? <CalendarView orders={activeOrders} onOpen={openOrder} /> : section === "logistica" ? <LogisticsView orders={activeOrders} onOpen={openOrder} /> : section === "productos" ? <ProductsView products={productRows} /> : section === "proveedores" ? <ProvidersView providers={providerRows} /> : <ClientsView clients={clients} onOpen={openClientOrders} />}
         </main>
 
       </div>

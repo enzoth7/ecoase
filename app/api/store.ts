@@ -3,6 +3,7 @@ import {
   getOrderPlannedDate,
   getOrderStage,
   orders as seededOrders,
+  products as seededProducts,
   providers as seededProviders,
   stageLabels,
   type OperationOrder,
@@ -11,6 +12,7 @@ import {
   type OrderUpdateKind,
   type OrderStatus,
   type Provider,
+  type Product,
 } from "../data";
 import { supabaseRequest } from "../lib/supabase";
 
@@ -132,6 +134,15 @@ export async function getProviders() {
   if (useMemoryStore) return seededProviders;
   const query = new URLSearchParams({ select: "id,name,type,supplies", order: "type.asc,name.asc" });
   return supabaseRequest<Provider[]>(`/rest/v1/providers?${query}`);
+}
+
+export async function getProducts() {
+  if (useMemoryStore) return seededProducts;
+  const query = new URLSearchParams({
+    select: "id,code,name,kind,measure,assignment,specification,treatment,catalog",
+    order: "catalog.asc,code.asc",
+  });
+  return supabaseRequest<Product[]>(`/rest/v1/products?${query}`);
 }
 
 export async function createOrder(input: CreateOrderInput) {
