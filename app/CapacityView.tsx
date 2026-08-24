@@ -112,7 +112,7 @@ export default function CapacityView({ providers }: { providers: Provider[] }) {
               <em><strong>{number.format(summary?.productionTotals.committed ?? 0)}</strong> a producir</em>
               {summary?.productionTotals.missing ? <em className="missing"><strong>{number.format(summary.productionTotals.missing)}</strong> faltan</em> : <em><strong>{summary?.productionTotals.available === undefined ? "—" : number.format(summary.productionTotals.available)}</strong> libres</em>}
             </div>
-            {hasIssue ? <b><AlertTriangle size={12} />Revisar</b> : <b className="ready">Capacidad definida</b>}
+            {hasIssue && <b><AlertTriangle size={12} />Revisar</b>}
           </button>;
         })}
       </div>
