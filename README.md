@@ -1,6 +1,6 @@
 # Ecoase Dashboard
 
-Dashboard web de control operativo construido con React y Vite.
+Dashboard web de control operativo construido con React y Next.js.
 
 ## Desarrollo local
 
@@ -16,7 +16,7 @@ La aplicación queda disponible en `http://localhost:3000`.
 ## Comandos
 
 - `npm run dev`: servidor local con recarga automática.
-- `npm run build`: genera la aplicación web.
+- `npm run build`: genera la aplicación web para producción y Vercel.
 - `npm run lint`: valida el código.
 - `npm test`: ejecuta pruebas de datos, render y endpoints.
 
@@ -29,3 +29,7 @@ La aplicación queda disponible en `http://localhost:3000`.
 - `GET /api/logistics`: entregas y transportes.
 
 Por ahora las altas se guardan en memoria y se reinician con el servidor. La estructura de Drizzle queda disponible para incorporar una base persistente en la siguiente etapa.
+
+## Despliegue en Vercel
+
+Vercel detecta Next.js automáticamente. Importá el repositorio, elegí la rama `main` como producción y mantené los comandos por defecto. No requiere directorio de salida ni configuración adicional.

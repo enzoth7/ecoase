@@ -1,13 +1,7 @@
-import { env } from "cloudflare:workers";
-import { drizzle } from "drizzle-orm/d1";
-import * as schema from "./schema";
-
-export function getDb() {
-  if (!env.DB) {
-    throw new Error(
-      "Cloudflare D1 binding `DB` is unavailable. Configure a DB binding before enabling persistent storage."
-    );
-  }
-
-  return drizzle(env.DB, { schema });
+/**
+ * The dashboard currently uses in-memory data. Add a Vercel-compatible
+ * database adapter here when persistent storage is introduced.
+ */
+export function getDb(): never {
+  throw new Error("La base de datos aún no está configurada.");
 }
