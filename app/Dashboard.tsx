@@ -255,9 +255,10 @@ function LogisticsView({ orders, onOpen }: { orders: OperationOrder[]; onOpen: (
   );
 }
 
-function PlanView({ orders, onOpen }: { orders: OperationOrder[]; onOpen: (id: string) => void }) {
+function PlanView({ orders, onOpen, onUpdate }: { orders: OperationOrder[]; onOpen: (id: string) => void; onUpdate: (id: string, changes: { status?: OrderStatus; transport?: string }) => void }) {
   const statusPriority: Record<OrderStatus, number> = { bloqueado: 0, coordinacion: 1, completado: 2 };
   const planOrders = [...orders].sort((a, b) => statusPriority[a.status] - statusPriority[b.status] || a.client.localeCompare(b.client, "es"));
+  const transportOptions = [...new Set(orders.map((order) => order.transport))].sort((a, b) => a.localeCompare(b, "es"));
 
   return (
     <section className="module-surface plan-surface" aria-labelledby="plan-title">
@@ -266,18 +267,19 @@ function PlanView({ orders, onOpen }: { orders: OperationOrder[]; onOpen: (id: s
       </div>
       <div className="plan-board" aria-label="Plan operativo">
         <div className="data-heading plan-heading" aria-hidden="true">
-          <div>Pedido</div><div>Fecha planificada</div><div>Disponibilidad</div><div>Preparación</div><div>Logística</div><div>Próxima acción</div><div />
+          <div>Pedido</div><div>Estado</div><div>Fecha planificada</div><div>Disponibilidad</div><div>Preparación</div><div>Transporte</div><div>Próxima acción</div><div />
         </div>
         {planOrders.map((order) => (
-          <button type="button" className={`plan-row ${order.status}`} key={order.id} onClick={() => onOpen(order.id)}>
+          <article className={`plan-row ${order.status}`} key={order.id}>
             <div className="plan-order"><StatusBadge order={order} /><strong>{order.client}</strong><small>{order.reference} · {order.product}</small></div>
+            <label className="plan-select"><small>Estado</small><select value={order.status} onChange={(event) => onUpdate(order.id, { status: event.target.value as OrderStatus })} aria-label={`Estado de ${order.client}`}><option value="bloqueado">Bloqueado</option><option value="coordinacion">En coordinación</option><option value="completado">Completado</option></select></label>
             <div><small>Fecha planificada</small><strong>{order.dateLabel}</strong></div>
             <div><small>Disponibilidad</small><strong>{order.supply}</strong></div>
             <div><small>Preparación</small><strong>{order.preparation}</strong></div>
-            <div><small>Logística</small><strong>{order.transport}</strong><small>{order.logistics}</small></div>
+            <label className="plan-select"><small>Transporte</small><select value={order.transport} onChange={(event) => onUpdate(order.id, { transport: event.target.value })} aria-label={`Transporte de ${order.client}`}>{transportOptions.map((transport) => <option key={transport} value={transport}>{transport}</option>)}</select><small>{order.logistics}</small></label>
             <div><small>Próxima acción</small><strong>{order.action}</strong></div>
-            <ChevronRight size={19} aria-hidden="true" />
-          </button>
+            <button type="button" className="plan-open" onClick={() => onOpen(order.id)} aria-label={`Abrir pedido de ${order.client}`}><ChevronRight size={19} aria-hidden="true" /></button>
+          </article>
         ))}
       </div>
     </section>
@@ -360,6 +362,7 @@ export default function Dashboard({ initialSection = "pedidos" }: { initialSecti
   const [orderRows, setOrderRows] = useState<OperationOrder[]>(initialOrders);
   const [selectedId, setSelectedId] = useState(initialOrders[0].id);
   const [showAddOrder, setShowAddOrder] = useState(false);
+  const [updateError, setUpdateError] = useState("");
   const detailRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -436,6 +439,21 @@ export default function Dashboard({ initialSection = "pedidos" }: { initialSecti
     setSection("pedidos");
     window.history.replaceState({}, "", sectionPaths.pedidos);
     setShowAddOrder(false);
+  };
+
+  const updateOrder = async (id: string, changes: { status?: OrderStatus; transport?: string }) => {
+    setUpdateError("");
+    const response = await fetch(`/api/orders/${id}`, {
+      method: "PATCH",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify(changes),
+    });
+    const payload = (await response.json()) as { order?: OperationOrder; error?: string };
+    if (!response.ok || !payload.order) {
+      setUpdateError(payload.error ?? "No se pudo actualizar el pedido.");
+      return;
+    }
+    setOrderRows((current) => current.map((order) => order.id === id ? payload.order! : order));
   };
 
   const sectionCopy: Record<DashboardSection, string> = {
@@ -584,7 +602,7 @@ export default function Dashboard({ initialSection = "pedidos" }: { initialSecti
           <div ref={detailRef} className="detail-column">
             <OrderDetail order={selectedOrder} />
           </div>
-        </div> : section === "plan" ? <PlanView orders={orderRows} onOpen={openOrder} /> : section === "calendario" ? <CalendarView orders={orderRows} onOpen={openOrder} /> : section === "logistica" ? <LogisticsView orders={orderRows} onOpen={openOrder} /> : <ClientsView clients={clients} onOpen={openClientOrders} />}
+        </div> : section === "plan" ? <><PlanView orders={orderRows} onOpen={openOrder} onUpdate={updateOrder} />{updateError && <p className="plan-error" role="alert">{updateError}</p>}</> : section === "calendario" ? <CalendarView orders={orderRows} onOpen={openOrder} /> : section === "logistica" ? <LogisticsView orders={orderRows} onOpen={openOrder} /> : <ClientsView clients={clients} onOpen={openClientOrders} />}
         </main>
 
         <footer className="dashboard-footer">

@@ -87,6 +87,27 @@ test("expone endpoints separados para cada módulo", async () => {
   assert.equal((await planResponse.json()).plan.length, 12);
 });
 
+test("permite actualizar estado y transporte de un pedido", async () => {
+  const response = await request("/api/orders/frutura-74", {
+    method: "PATCH",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ status: "coordinacion", transport: "Propio" }),
+  });
+
+  assert.equal(response.status, 200);
+  const payload = await response.json();
+  assert.equal(payload.order.status, "coordinacion");
+  assert.equal(payload.order.statusLabel, "En coordinación");
+  assert.equal(payload.order.transport, "Propio");
+});
+
+test("muestra desplegables funcionales en el plan", async () => {
+  const html = await (await request("/plan")).text();
+  assert.match(html, /<select[^>]*aria-label="Estado de Frutura"/i);
+  assert.match(html, /<select[^>]*aria-label="Transporte de Frutura"/i);
+  assert.match(html, /Abrir pedido de Frutura/);
+});
+
 test("crea pedidos mediante POST /api/orders", async () => {
   const response = await request("/api/orders", {
     method: "POST",

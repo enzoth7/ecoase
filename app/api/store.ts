@@ -9,6 +9,14 @@ export type CreateOrderInput = {
   reference?: string;
 };
 
+export type UpdateOrderInput = Partial<Pick<OperationOrder, "status" | "transport">>;
+
+const statusLabels: Record<OrderStatus, OperationOrder["statusLabel"]> = {
+  bloqueado: "Bloqueado",
+  coordinacion: "En coordinación",
+  completado: "Completado",
+};
+
 const memoryOrders: OperationOrder[] = structuredClone(seededOrders);
 
 export function getOrders() {
@@ -40,5 +48,21 @@ export function createOrder(input: CreateOrderInput) {
   };
 
   memoryOrders.unshift(order);
+  return order;
+}
+
+export function updateOrder(id: string, changes: UpdateOrderInput) {
+  const order = memoryOrders.find((item) => item.id === id);
+  if (!order) return null;
+
+  if (changes.status) {
+    order.status = changes.status;
+    order.statusLabel = statusLabels[changes.status];
+  }
+
+  if (typeof changes.transport === "string" && changes.transport.trim()) {
+    order.transport = changes.transport.trim();
+  }
+
   return order;
 }

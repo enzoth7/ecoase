@@ -1415,7 +1415,7 @@ h3 {
 
 .plan-heading,
 .plan-row {
-  grid-template-columns: minmax(180px, 1.1fr) 120px minmax(150px, 1fr) minmax(130px, 0.9fr) minmax(130px, 0.9fr) minmax(180px, 1.2fr) 20px;
+  grid-template-columns: minmax(170px, 1.05fr) 130px 120px minmax(145px, 0.95fr) minmax(130px, 0.85fr) minmax(145px, 0.95fr) minmax(170px, 1.1fr) 44px;
 }
 
 .plan-row {
@@ -1429,7 +1429,6 @@ h3 {
   border-bottom: 1px solid #ebeee9;
   background: #fff;
   text-align: left;
-  cursor: pointer;
   transition: background 180ms ease, box-shadow 180ms ease;
 }
 
@@ -1481,6 +1480,61 @@ h3 {
 
 .plan-row > svg {
   color: #8e9692;
+}
+
+.plan-select {
+  min-width: 0;
+  display: grid;
+  gap: 4px;
+}
+
+.plan-select > small {
+  text-transform: uppercase;
+}
+
+.plan-select select {
+  width: 100%;
+  min-height: 38px;
+  padding: 0 28px 0 8px;
+  border: 1px solid var(--line-strong);
+  border-radius: 8px;
+  background: var(--surface-soft);
+  color: var(--ink);
+  cursor: pointer;
+  font-size: 11px;
+  font-weight: 700;
+}
+
+.plan-select select:focus {
+  border-color: var(--forest-2);
+}
+
+.plan-open {
+  width: 44px;
+  height: 44px;
+  display: grid;
+  place-items: center;
+  border: 1px solid var(--line);
+  border-radius: 9px;
+  background: var(--surface-soft);
+  color: var(--forest-2);
+  cursor: pointer;
+}
+
+.plan-open:hover {
+  border-color: #bad0c6;
+  background: #edf5f1;
+}
+
+.plan-error {
+  margin: 12px 0 0;
+  padding: 10px 12px;
+  border: 1px solid #e6bbb5;
+  border-radius: 8px;
+  background: var(--red-soft);
+  color: var(--red);
+  font-size: 12px;
+  font-weight: 650;
 }
 
 @media (max-width: 1180px) {
@@ -1726,11 +1780,12 @@ h3 {
     padding: 14px;
   }
 
-  .plan-row > div:not(.plan-order) {
+  .plan-row > div:not(.plan-order),
+  .plan-row > label {
     grid-column: 1;
   }
 
-  .plan-row > svg {
+  .plan-open {
     grid-column: 2;
     grid-row: 1;
   }
