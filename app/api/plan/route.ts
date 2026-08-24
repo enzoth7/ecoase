@@ -4,6 +4,7 @@ const statusPriority = { bloqueado: 0, coordinacion: 1, completado: 2 } as const
 
 export async function GET() {
   const plan = getOrders()
+    .filter((order) => order.status !== "completado")
     .map(({ id, reference, client, product, dateLabel, supply, preparation, transport, logistics, action, status, statusLabel }) => ({
       id,
       reference,

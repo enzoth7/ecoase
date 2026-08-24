@@ -1,6 +1,7 @@
 "use client";
 
 import {
+  Archive,
   AlertTriangle,
   Boxes,
   CalendarDays,
@@ -20,16 +21,10 @@ import {
   type LucideIcon,
 } from "lucide-react";
 import { useEffect, useMemo, useRef, useState, type FormEvent } from "react";
-import {
-  orderFilters,
-  orders as initialOrders,
-  type OperationOrder,
-  type OrderFilter,
-  type OrderStatus,
-} from "./data";
+import { orders as initialOrders, type OperationOrder, type OrderStatus } from "./data";
 
 const number = new Intl.NumberFormat("es-UY");
-export type DashboardSection = "pedidos" | "plan" | "calendario" | "logistica" | "clientes";
+export type DashboardSection = "pedidos" | "plan" | "calendario" | "logistica" | "clientes" | "historial";
 
 const sectionPaths: Record<DashboardSection, string> = {
   pedidos: "/pedidos",
@@ -37,6 +32,7 @@ const sectionPaths: Record<DashboardSection, string> = {
   calendario: "/calendario",
   logistica: "/logistica",
   clientes: "/clientes",
+  historial: "/historial",
 };
 
 const weekDays = [
@@ -159,6 +155,16 @@ function OrderDetail({ order }: { order: OperationOrder }) {
         <small>{order.status === "completado" ? "Estado" : "Acción operativa"}</small>
         <strong>{order.action}</strong>
       </div>
+    </aside>
+  );
+}
+
+function EmptyOrderDetail({ history }: { history: boolean }) {
+  return (
+    <aside className="order-detail empty-order-detail" id="order-detail" aria-live="polite">
+      <Archive size={28} aria-hidden="true" />
+      <strong>{history ? "No hay pedidos completados" : "No hay pedidos activos"}</strong>
+      <small>{history ? "Los pedidos cerrados aparecerán aquí." : "Los pedidos en gestión aparecerán aquí."}</small>
     </aside>
   );
 }
@@ -349,15 +355,8 @@ function AddOrderModal({ onClose, onCreated }: { onClose: () => void; onCreated:
   );
 }
 
-function matchesFilter(order: OperationOrder, filter: OrderFilter) {
-  if (filter === "gestion") return order.status !== "completado";
-  if (filter === "completados") return order.status === "completado";
-  return true;
-}
-
 export default function Dashboard({ initialSection = "pedidos" }: { initialSection?: DashboardSection }) {
   const [section, setSection] = useState<DashboardSection>(initialSection);
-  const [filter, setFilter] = useState<OrderFilter>("gestion");
   const [query, setQuery] = useState("");
   const [orderRows, setOrderRows] = useState<OperationOrder[]>(initialOrders);
   const [selectedId, setSelectedId] = useState(initialOrders[0].id);
@@ -366,9 +365,15 @@ export default function Dashboard({ initialSection = "pedidos" }: { initialSecti
   const detailRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
-    fetch("/api/orders")
-      .then((response) => response.json())
-      .then((payload: { orders?: OperationOrder[] }) => { if (payload.orders) setOrderRows(payload.orders); })
+    Promise.all([fetch("/api/orders"), fetch("/api/history")])
+      .then(async ([ordersResponse, historyResponse]) => {
+        const [ordersPayload, historyPayload] = await Promise.all([
+          ordersResponse.json() as Promise<{ orders?: OperationOrder[] }>,
+          historyResponse.json() as Promise<{ history?: OperationOrder[] }>,
+        ]);
+        return [...(ordersPayload.orders ?? []), ...(historyPayload.history ?? [])];
+      })
+      .then((orders) => setOrderRows(orders))
       .catch(() => undefined);
   }, []);
 
@@ -378,20 +383,22 @@ export default function Dashboard({ initialSection = "pedidos" }: { initialSecti
     }
   }, [initialSection]);
 
+  const activeOrders = useMemo(() => orderRows.filter((order) => order.status !== "completado"), [orderRows]);
+  const historyOrders = useMemo(() => orderRows.filter((order) => order.status === "completado"), [orderRows]);
+  const isHistory = section === "historial";
   const visibleOrders = useMemo(() => {
     const normalized = query.trim().toLocaleLowerCase("es");
-    return orderRows.filter((order) => {
-      if (!matchesFilter(order, filter)) return false;
+    return (isHistory ? historyOrders : activeOrders).filter((order) => {
       if (!normalized) return true;
       return [order.client, order.reference, order.product, order.transport]
         .some((value) => value.toLocaleLowerCase("es").includes(normalized));
     });
-  }, [filter, orderRows, query]);
+  }, [activeOrders, historyOrders, isHistory, query]);
 
-  const selectedOrder = visibleOrders.find((order) => order.id === selectedId) ?? visibleOrders[0] ?? orderRows[0];
-  const inManagement = orderRows.filter((order) => order.status !== "completado").length;
-  const blocked = orderRows.filter((order) => order.status === "bloqueado").length;
-  const completed = orderRows.filter((order) => order.status === "completado").length;
+  const selectedOrder = visibleOrders.find((order) => order.id === selectedId) ?? visibleOrders[0];
+  const inManagement = activeOrders.length;
+  const blocked = activeOrders.filter((order) => order.status === "bloqueado").length;
+  const completed = historyOrders.length;
   const totalRequested = orderRows.reduce((sum, order) => sum + order.requested, 0);
   const totalDelivered = orderRows.reduce((sum, order) => sum + order.delivered, 0);
   const deliveryRate = totalRequested ? Math.round(totalDelivered / totalRequested * 100) : 0;
@@ -416,17 +423,20 @@ export default function Dashboard({ initialSection = "pedidos" }: { initialSecti
   };
 
   const openClientOrders = (client: string) => {
-    setSection("pedidos");
-    window.history.pushState({}, "", sectionPaths.pedidos);
-    setFilter("todos");
+    const clientOrders = orderRows.filter((order) => order.client === client);
+    const firstActiveOrder = clientOrders.find((order) => order.status !== "completado");
+    const nextSection: DashboardSection = firstActiveOrder ? "pedidos" : "historial";
+    setSection(nextSection);
+    window.history.pushState({}, "", sectionPaths[nextSection]);
     setQuery(client);
-    setSelectedId(orderRows.find((order) => order.client === client)?.id ?? orderRows[0].id);
+    setSelectedId(firstActiveOrder?.id ?? clientOrders[0]?.id ?? activeOrders[0]?.id ?? historyOrders[0]?.id ?? "");
   };
 
   const openOrder = (id: string) => {
-    setSection("pedidos");
-    window.history.pushState({}, "", sectionPaths.pedidos);
-    setFilter("todos");
+    const order = orderRows.find((item) => item.id === id);
+    const nextSection: DashboardSection = order?.status === "completado" ? "historial" : "pedidos";
+    setSection(nextSection);
+    window.history.pushState({}, "", sectionPaths[nextSection]);
     setQuery("");
     setSelectedId(id);
   };
@@ -434,7 +444,6 @@ export default function Dashboard({ initialSection = "pedidos" }: { initialSecti
   const addCreatedOrder = (order: OperationOrder) => {
     setOrderRows((current) => [order, ...current.filter((item) => item.id !== order.id)]);
     setSelectedId(order.id);
-    setFilter("gestion");
     setQuery("");
     setSection("pedidos");
     window.history.replaceState({}, "", sectionPaths.pedidos);
@@ -462,6 +471,7 @@ export default function Dashboard({ initialSection = "pedidos" }: { initialSecti
     calendario: "Calendario",
     logistica: "Logística",
     clientes: "Clientes",
+    historial: "Historial",
   };
 
   return (
@@ -492,6 +502,9 @@ export default function Dashboard({ initialSection = "pedidos" }: { initialSecti
             <a className={section === "clientes" ? "active" : ""} href="/clientes" aria-current={section === "clientes" ? "page" : undefined}>
               <Users size={17} aria-hidden="true" /><small>Clientes</small>
             </a>
+            <a className={section === "historial" ? "active" : ""} href="/historial" aria-current={section === "historial" ? "page" : undefined}>
+              <Archive size={17} aria-hidden="true" /><small>Historial</small><b>{completed}</b>
+            </a>
           </nav>
         </div>
 
@@ -511,18 +524,18 @@ export default function Dashboard({ initialSection = "pedidos" }: { initialSecti
 
         {section === "pedidos" && (
           <section className="dashboard-kpis" aria-label="Indicadores de pedidos">
-            <button type="button" onClick={() => setFilter("gestion")}><strong>{inManagement}</strong><small>En gestión · {blocked} bloqueado</small></button>
-            <button type="button" onClick={() => setFilter("completados")}><strong>{completed}</strong><small>Completados · {number.format(totalDelivered)} entregados</small></button>
+            <article><strong>{inManagement}</strong><small>En gestión · {blocked} bloqueado</small></article>
+            <button type="button" onClick={() => { setSection("historial"); setQuery(""); window.history.pushState({}, "", sectionPaths.historial); }}><strong>{completed}</strong><small>En historial · {number.format(totalDelivered)} entregados</small></button>
             <article><strong>{number.format(totalRequested)}</strong><small>Volumen pedido · unidades totales</small></article>
             <article className="kpi-progress"><strong>{deliveryRate}%</strong><small>Cumplimiento</small><i><b style={{ width: `${deliveryRate}%` }} /></i></article>
           </section>
         )}
 
-        {section === "pedidos" ? <div className="operations-layout">
+        {(section === "pedidos" || section === "historial") ? <div className="operations-layout">
           <section className="orders-surface" aria-labelledby="orders-title">
             <div className="orders-toolbar">
               <div>
-                <h2 id="orders-title">Pedidos</h2>
+                <h2 id="orders-title">{isHistory ? "Historial" : "Pedidos"}</h2>
               </div>
               <div className="orders-actions">
               <label className="search-field">
@@ -532,7 +545,7 @@ export default function Dashboard({ initialSection = "pedidos" }: { initialSecti
                   type="search"
                   value={query}
                   onChange={(event) => setQuery(event.target.value)}
-                  placeholder="Buscar pedido o cliente"
+                  placeholder={isHistory ? "Buscar en historial" : "Buscar pedido o cliente"}
                 />
                 {query && (
                   <button type="button" onClick={() => setQuery("")} aria-label="Limpiar búsqueda">
@@ -540,19 +553,8 @@ export default function Dashboard({ initialSection = "pedidos" }: { initialSecti
                   </button>
                 )}
               </label>
-              <button type="button" className="add-order-button" onClick={() => setShowAddOrder(true)}><Plus size={17} aria-hidden="true" />Agregar pedido</button>
+              {!isHistory && <button type="button" className="add-order-button" onClick={() => setShowAddOrder(true)}><Plus size={17} aria-hidden="true" />Agregar pedido</button>}
               </div>
-            </div>
-
-            <div className="filter-tabs" aria-label="Filtrar pedidos">
-              {orderFilters.map((item) => {
-                const count = orderRows.filter((order) => matchesFilter(order, item.id)).length;
-                return (
-                  <button type="button" key={item.id} className={filter === item.id ? "active" : ""} onClick={() => setFilter(item.id)} aria-pressed={filter === item.id}>
-                    {item.label}<small>{count}</small>
-                  </button>
-                );
-              })}
             </div>
 
             <div className="list-heading" aria-hidden="true">
@@ -561,7 +563,7 @@ export default function Dashboard({ initialSection = "pedidos" }: { initialSecti
 
             <div className="order-list" aria-label={`${visibleOrders.length} pedidos`}>
               {visibleOrders.length > 0 ? visibleOrders.map((order) => {
-                const active = order.id === selectedOrder.id;
+                const active = order.id === selectedOrder?.id;
                 const progress = Math.round((order.delivered / order.requested) * 100);
                 return (
                   <button
@@ -591,18 +593,18 @@ export default function Dashboard({ initialSection = "pedidos" }: { initialSecti
                 );
               }) : (
                 <div className="empty-state">
-                  <ClipboardList size={28} aria-hidden="true" />
-                  <strong>No hay pedidos en esta vista</strong>
-                  <button type="button" onClick={() => { setQuery(""); setFilter("todos"); }}>Ver todos</button>
+                  <Archive size={28} aria-hidden="true" />
+                  <strong>{isHistory ? "No hay pedidos en el historial" : "No hay pedidos activos"}</strong>
+                  {query && <button type="button" onClick={() => setQuery("")}>Limpiar búsqueda</button>}
                 </div>
               )}
             </div>
           </section>
 
           <div ref={detailRef} className="detail-column">
-            <OrderDetail order={selectedOrder} />
+            {selectedOrder ? <OrderDetail order={selectedOrder} /> : <EmptyOrderDetail history={isHistory} />}
           </div>
-        </div> : section === "plan" ? <><PlanView orders={orderRows} onOpen={openOrder} onUpdate={updateOrder} />{updateError && <p className="plan-error" role="alert">{updateError}</p>}</> : section === "calendario" ? <CalendarView orders={orderRows} onOpen={openOrder} /> : section === "logistica" ? <LogisticsView orders={orderRows} onOpen={openOrder} /> : <ClientsView clients={clients} onOpen={openClientOrders} />}
+        </div> : section === "plan" ? <><PlanView orders={activeOrders} onOpen={openOrder} onUpdate={updateOrder} />{updateError && <p className="plan-error" role="alert">{updateError}</p>}</> : section === "calendario" ? <CalendarView orders={activeOrders} onOpen={openOrder} /> : section === "logistica" ? <LogisticsView orders={activeOrders} onOpen={openOrder} /> : <ClientsView clients={clients} onOpen={openClientOrders} />}
         </main>
 
         <footer className="dashboard-footer">

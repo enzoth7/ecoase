@@ -1,7 +1,7 @@
 import { createOrder, getOrders, type CreateOrderInput } from "../store";
 
 export async function GET() {
-  return Response.json({ orders: getOrders() });
+  return Response.json({ orders: getOrders().filter((order) => order.status !== "completado") });
 }
 
 export async function POST(request: Request) {

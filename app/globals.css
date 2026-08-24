@@ -179,7 +179,7 @@ a:focus-visible {
   width: 100%;
   min-height: 46px;
   display: grid;
-  grid-template-columns: 22px minmax(0, 1fr);
+  grid-template-columns: 22px minmax(0, 1fr) auto;
   align-items: center;
   gap: 9px;
   padding: 0 11px;
@@ -760,6 +760,24 @@ h3 {
 
 .empty-state strong {
   color: var(--ink);
+}
+
+.empty-order-detail {
+  min-height: 320px;
+  display: grid;
+  place-items: center;
+  align-content: center;
+  gap: 9px;
+  color: var(--muted);
+  text-align: center;
+}
+
+.empty-order-detail strong {
+  color: var(--ink);
+}
+
+.empty-order-detail small {
+  max-width: 230px;
 }
 
 .empty-state button {

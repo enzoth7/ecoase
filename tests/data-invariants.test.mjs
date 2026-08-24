@@ -1,13 +1,12 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { orderFilters, orders } from "../app/data.ts";
+import { orders } from "../app/data.ts";
 
-test("divide los pedidos entre gestión y completados", () => {
+test("separa los pedidos activos del historial", () => {
   assert.equal(orders.length, 12);
   assert.equal(orders.filter((order) => order.status !== "completado").length, 2);
   assert.equal(orders.filter((order) => order.status === "bloqueado").length, 1);
   assert.equal(orders.filter((order) => order.status === "completado").length, 10);
-  assert.deepEqual(orderFilters.map((item) => item.id), ["gestion", "completados", "todos"]);
 });
 
 test("cada pedido reconcilia pedido, entrega y saldo", () => {
@@ -57,6 +56,6 @@ test("Proquimur separa preparación, stock y transporte", () => {
 });
 
 test("el modelo operativo no contiene texto de validación", () => {
-  const serialized = JSON.stringify({ orders, orderFilters });
+  const serialized = JSON.stringify({ orders });
   assert.doesNotMatch(serialized, /piloto|qué falta confirmar|pregunta para|casos para validar|modelo completo|no confirmado/i);
 });

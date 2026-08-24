@@ -1,5 +1,4 @@
 export type OrderStatus = "bloqueado" | "coordinacion" | "completado";
-export type OrderFilter = "gestion" | "completados" | "todos";
 
 export interface OrderLine {
   id: string;
@@ -295,10 +294,4 @@ export const orders: OperationOrder[] = [
     lines: [{ id: "pontevedra-79-1", product: "Pallet Mercosur", quantity: 150, preparation: "Con HT" }],
     source: "Plan semanal · fila 79",
   },
-];
-
-export const orderFilters: Array<{ id: OrderFilter; label: string }> = [
-  { id: "gestion", label: "En gestión" },
-  { id: "completados", label: "Completados" },
-  { id: "todos", label: "Todos" },
 ];
