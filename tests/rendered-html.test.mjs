@@ -57,9 +57,14 @@ test("renderiza pedidos activos e incluye acceso al historial", async () => {
   assert.match(html, /Historial/);
   assert.match(html, /href="\/historial"/i);
   assert.match(html, /href="\/proveedores"/i);
-  assert.match(html, /Preparación y entrega/);
-  assert.match(html, /Abastecimiento/);
-  assert.match(html, /Logística/);
+  assert.match(html, /Pedidos en marcha/);
+  assert.match(html, /Pedidos en espera/);
+  assert.match(html, /Pallets por hacer/);
+  assert.match(html, /Nivel de cumplimiento/);
+  assert.match(html, /Período de los indicadores/);
+  assert.match(html, /Esta semana/);
+  assert.match(html, /order-detail-placeholder/);
+  assert.doesNotMatch(html, /Preparación y entrega|Abastecimiento/);
   assert.match(html, /Frutura/);
   assert.match(html, /Proquimur/);
   assert.doesNotMatch(html, /Pamer/);

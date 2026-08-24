@@ -10,14 +10,11 @@ import {
   ClipboardList,
   Factory,
   ListChecks,
-  PackageCheck,
   Pencil,
   Plus,
   Search,
   Truck,
   Users,
-  Warehouse,
-  Wrench,
   X,
   type LucideIcon,
 } from "lucide-react";
@@ -52,6 +49,22 @@ function visibleReference(order: OperationOrder) {
   return order.reference.startsWith("Plan ") ? "" : order.reference;
 }
 
+type KpiPeriod = "today" | "week";
+
+function isOrderInPeriod(order: OperationOrder, period: KpiPeriod, today: Date) {
+  const plannedDate = new Date(`${getOrderPlannedDate(order)}T12:00:00`);
+  const currentDay = new Date(today.getFullYear(), today.getMonth(), today.getDate());
+  const orderDay = new Date(plannedDate.getFullYear(), plannedDate.getMonth(), plannedDate.getDate());
+  if (period === "today") return orderDay.getTime() === currentDay.getTime();
+
+  const mondayOffset = (currentDay.getDay() + 6) % 7;
+  const weekStart = new Date(currentDay);
+  weekStart.setDate(currentDay.getDate() - mondayOffset);
+  const weekEnd = new Date(weekStart);
+  weekEnd.setDate(weekStart.getDate() + 7);
+  return orderDay >= weekStart && orderDay < weekEnd;
+}
+
 const weekDays = [
   { name: "Lun", day: 10 },
   { name: "Mar", day: 11 },
@@ -74,115 +87,6 @@ function StatusBadge({ order }: { order: OperationOrder }) {
       <Icon size={14} aria-hidden="true" />
       {order.statusLabel}
     </small>
-  );
-}
-
-function QuantitySummary({ order }: { order: OperationOrder }) {
-  return (
-    <div className="quantity-summary" aria-label="Cantidades del pedido">
-      <div>
-        <small>Pedido</small>
-        <strong>{number.format(order.requested)}</strong>
-      </div>
-      <div>
-        <small>Entregado</small>
-        <strong>{number.format(order.delivered)}</strong>
-      </div>
-      <div className={order.pending > 0 ? "pending" : ""}>
-        <small>Saldo</small>
-        <strong>{number.format(order.pending)}</strong>
-      </div>
-    </div>
-  );
-}
-
-function OperationFact({ icon: Icon, label, value }: { icon: LucideIcon; label: string; value: string }) {
-  return (
-    <article className="operation-fact">
-      <i className="fact-icon"><Icon size={17} aria-hidden="true" /></i>
-      <div>
-        <small>{label}</small>
-        <strong>{value}</strong>
-      </div>
-    </article>
-  );
-}
-
-function OrderDetail({ order }: { order: OperationOrder }) {
-  const progress = Math.round((order.delivered / order.requested) * 100);
-
-  return (
-    <aside className="order-detail" id="order-detail" aria-live="polite" aria-labelledby="order-detail-title">
-      <div className="detail-heading">
-        <div>
-          <StatusBadge order={order} />
-          <h2 id="order-detail-title">{order.client}</h2>
-          <p>{order.product}</p>
-        </div>
-        {visibleReference(order) && <small className="order-reference">{visibleReference(order)}</small>}
-      </div>
-
-      <div className="detail-meta">
-        <div><CalendarDays size={15} aria-hidden="true" />{order.dateLabel}</div>
-        <div><Truck size={15} aria-hidden="true" />{order.transport}</div>
-      </div>
-
-      <QuantitySummary order={order} />
-
-      <div className="detail-progress" aria-label={`${progress}% entregado`}>
-        <div><b>Avance</b><strong>{progress}%</strong></div>
-        <i><b style={{ width: `${progress}%` }} /></i>
-      </div>
-
-      <section className="operation-section" aria-labelledby="operation-title">
-        <div className="subsection-title">
-          <p>Operación</p>
-          <h3 id="operation-title">Preparación y entrega</h3>
-        </div>
-        <div className="operation-grid">
-          <OperationFact icon={Warehouse} label="Abastecimiento" value={order.supply} />
-          <OperationFact icon={Wrench} label="Preparación" value={order.preparation} />
-          <OperationFact icon={Truck} label="Logística" value={order.logistics} />
-          <OperationFact icon={PackageCheck} label="Entrega" value={order.delivery} />
-        </div>
-      </section>
-
-      <section className="lines-section" aria-labelledby="lines-title">
-        <div className="subsection-title horizontal">
-          <div>
-            <p>Pedido</p>
-            <h3 id="lines-title">{order.lines.length} {order.lines.length === 1 ? "línea" : "líneas"}</h3>
-          </div>
-          {order.remittance && <small>Remito {order.remittance}</small>}
-        </div>
-        <div className="line-list">
-          {order.lines.map((line) => (
-            <div key={line.id}>
-              <div>
-                <strong>{line.product}</strong>
-                {line.preparation && <small>{line.preparation}</small>}
-              </div>
-              <b>{number.format(line.quantity)}</b>
-            </div>
-          ))}
-        </div>
-      </section>
-
-      <div className={`action-card ${order.status}`}>
-        <small>{order.status === "completado" ? "Estado" : "Acción operativa"}</small>
-        <strong>{order.action}</strong>
-      </div>
-    </aside>
-  );
-}
-
-function EmptyOrderDetail({ history }: { history: boolean }) {
-  return (
-    <aside className="order-detail empty-order-detail" id="order-detail" aria-live="polite">
-      <Archive size={28} aria-hidden="true" />
-      <strong>{history ? "No hay pedidos completados" : "No hay pedidos activos"}</strong>
-      <small>{history ? "Los pedidos cerrados aparecerán aquí." : "Los pedidos en gestión aparecerán aquí."}</small>
-    </aside>
   );
 }
 
@@ -466,13 +370,14 @@ function AddOrderModal({ transportOptions, onClose, onCreated }: { transportOpti
 export default function Dashboard({ initialSection = "pedidos" }: { initialSection?: DashboardSection }) {
   const [section, setSection] = useState<DashboardSection>(initialSection);
   const [query, setQuery] = useState("");
+  const [kpiPeriod, setKpiPeriod] = useState<KpiPeriod>("today");
   const [orderRows, setOrderRows] = useState<OperationOrder[]>(initialOrders);
   const [providerRows, setProviderRows] = useState<Provider[]>(initialProviders);
   const [selectedId, setSelectedId] = useState(initialOrders[0].id);
   const [showAddOrder, setShowAddOrder] = useState(false);
   const [editingPlanOrder, setEditingPlanOrder] = useState<OperationOrder | null>(null);
   const [updateError, setUpdateError] = useState("");
-  const detailRef = useRef<HTMLDivElement>(null);
+  const today = useMemo(() => new Date(), []);
 
   useEffect(() => {
     Promise.all([fetch("/api/orders"), fetch("/api/history"), fetch("/api/providers")])
@@ -510,12 +415,15 @@ export default function Dashboard({ initialSection = "pedidos" }: { initialSecti
   }, [activeOrders, historyOrders, isHistory, query]);
 
   const selectedOrder = visibleOrders.find((order) => order.id === selectedId) ?? visibleOrders[0];
-  const inManagement = activeOrders.length;
-  const blocked = activeOrders.filter((order) => order.status === "bloqueado").length;
   const completed = historyOrders.length;
-  const totalRequested = orderRows.reduce((sum, order) => sum + order.requested, 0);
-  const totalDelivered = orderRows.reduce((sum, order) => sum + order.delivered, 0);
-  const deliveryRate = totalRequested ? Math.round(totalDelivered / totalRequested * 100) : 0;
+  const kpiOrders = useMemo(() => orderRows.filter((order) => isOrderInPeriod(order, kpiPeriod, today)), [kpiPeriod, orderRows, today]);
+  const kpiActiveOrders = kpiOrders.filter((order) => order.status !== "completado");
+  const productionCount = kpiActiveOrders.filter((order) => getOrderStage(order) === "produccion").length;
+  const waitingCount = kpiActiveOrders.filter((order) => order.status === "bloqueado" || getOrderStage(order) === "negociacion").length;
+  const palletsToProduce = kpiActiveOrders.reduce((sum, order) => sum + order.pending, 0);
+  const periodRequested = kpiOrders.reduce((sum, order) => sum + order.requested, 0);
+  const periodDelivered = kpiOrders.reduce((sum, order) => sum + order.delivered, 0);
+  const deliveryRate = periodRequested ? Math.round(periodDelivered / periodRequested * 100) : 0;
   const clients = useMemo<ClientSummary[]>(() => {
     const summaries = new Map<string, ClientSummary>();
     orderRows.forEach((order) => {
@@ -531,9 +439,6 @@ export default function Dashboard({ initialSection = "pedidos" }: { initialSecti
 
   const selectOrder = (id: string) => {
     setSelectedId(id);
-    if (window.matchMedia("(max-width: 920px)").matches) {
-      window.requestAnimationFrame(() => detailRef.current?.scrollIntoView({ behavior: "smooth", block: "start" }));
-    }
   };
 
   const openClientOrders = (client: string) => {
@@ -639,14 +544,15 @@ export default function Dashboard({ initialSection = "pedidos" }: { initialSecti
           <div>
             <h1 id="page-title">{sectionCopy[section]}</h1>
           </div>
+          {section === "pedidos" && <label className="kpi-period-filter">Período<select value={kpiPeriod} onChange={(event) => setKpiPeriod(event.target.value as KpiPeriod)} aria-label="Período de los indicadores"><option value="today">Hoy</option><option value="week">Esta semana</option></select></label>}
         </section>
 
         {section === "pedidos" && (
           <section className="dashboard-kpis" aria-label="Indicadores de pedidos">
-            <article><strong>{inManagement}</strong><small>En gestión · {blocked} bloqueado</small></article>
-            <button type="button" onClick={() => { setSection("historial"); setQuery(""); window.history.pushState({}, "", sectionPaths.historial); }}><strong>{completed}</strong><small>En historial · {number.format(totalDelivered)} entregados</small></button>
-            <article><strong>{number.format(totalRequested)}</strong><small>Volumen pedido · unidades totales</small></article>
-            <article className="kpi-progress"><strong>{deliveryRate}%</strong><small>Cumplimiento</small><i><b style={{ width: `${deliveryRate}%` }} /></i></article>
+            <article className="kpi-card kpi-blue"><strong>{productionCount}</strong><small>Pedidos en marcha</small></article>
+            <article className="kpi-card kpi-yellow"><strong>{waitingCount}</strong><small>Pedidos en espera</small></article>
+            <article className="kpi-card kpi-red"><strong>{number.format(palletsToProduce)}</strong><small>Pallets por hacer</small></article>
+            <article className="kpi-card kpi-green kpi-progress"><strong>{deliveryRate}%</strong><small>Nivel de cumplimiento</small><i aria-hidden="true"><b style={{ width: `${deliveryRate}%` }} /></i></article>
           </section>
         )}
 
@@ -691,7 +597,6 @@ export default function Dashboard({ initialSection = "pedidos" }: { initialSecti
                     key={order.id}
                     onClick={() => selectOrder(order.id)}
                     aria-pressed={active}
-                    aria-controls="order-detail"
                   >
                     <div className="order-main">
                       <StatusBadge order={order} />
@@ -720,9 +625,7 @@ export default function Dashboard({ initialSection = "pedidos" }: { initialSecti
             </div>
           </section>
 
-          <div ref={detailRef} className="detail-column">
-            {selectedOrder ? <OrderDetail order={selectedOrder} /> : <EmptyOrderDetail history={isHistory} />}
-          </div>
+          <aside className="detail-column order-detail-placeholder" aria-label="Panel lateral disponible" />
         </div> : section === "plan" ? <><PlanView orders={activeOrders} onEdit={setEditingPlanOrder} />{updateError && <p className="plan-error" role="alert">{updateError}</p>}</> : section === "calendario" ? <CalendarView orders={activeOrders} onOpen={openOrder} /> : section === "logistica" ? <LogisticsView orders={activeOrders} onOpen={openOrder} /> : section === "proveedores" ? <ProvidersView providers={providerRows} /> : <ClientsView clients={clients} onOpen={openClientOrders} />}
         </main>
 
