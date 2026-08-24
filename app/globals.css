@@ -175,7 +175,7 @@ a:focus-visible {
   width: 100%;
   min-height: 46px;
   display: grid;
-  grid-template-columns: 22px minmax(0, 1fr) auto;
+  grid-template-columns: 22px minmax(0, 1fr);
   align-items: center;
   gap: 9px;
   padding: 0 11px;
@@ -319,6 +319,79 @@ h3 {
   gap: 18px;
 }
 
+.dashboard-kpis {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 12px;
+  margin: 0 0 16px;
+}
+
+.dashboard-kpis > button,
+.dashboard-kpis > article {
+  min-height: 100px;
+  display: grid;
+  align-content: center;
+  gap: 4px;
+  padding: 14px 16px;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: var(--surface);
+  box-shadow: var(--shadow-sm);
+  text-align: left;
+}
+
+.dashboard-kpis > button {
+  cursor: pointer;
+  transition: border-color 180ms ease, box-shadow 180ms ease, background 180ms ease;
+}
+
+.dashboard-kpis > button:hover {
+  border-color: #b9cec4;
+  background: #fbfdfc;
+  box-shadow: 0 5px 18px rgba(22, 44, 36, 0.07);
+}
+
+.dashboard-kpis span {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  color: var(--muted);
+  font-size: 10px;
+  font-weight: 700;
+  text-transform: uppercase;
+}
+
+.dashboard-kpis span svg {
+  color: var(--forest-2);
+}
+
+.dashboard-kpis strong {
+  font-size: 25px;
+  line-height: 1.15;
+  font-variant-numeric: tabular-nums;
+}
+
+.dashboard-kpis small {
+  color: var(--muted);
+  font-size: 10px;
+}
+
+.kpi-progress i {
+  display: block;
+  height: 6px;
+  margin-top: 5px;
+  overflow: hidden;
+  border-radius: 999px;
+  background: #e4e8e3;
+}
+
+.kpi-progress i b {
+  display: block;
+  height: 100%;
+  border-radius: inherit;
+  background: var(--green);
+}
+
 .orders-surface,
 .order-detail,
 .clients-surface,
@@ -331,8 +404,8 @@ h3 {
 
 .orders-surface {
   min-width: 0;
-  height: calc(100vh - 190px);
-  min-height: 610px;
+  height: calc(100vh - 306px);
+  min-height: 520px;
   display: flex;
   flex-direction: column;
   overflow: hidden;
@@ -352,7 +425,7 @@ h3 {
 }
 
 .search-field {
-  width: min(320px, 46%);
+  width: min(300px, 48vw);
   min-height: 44px;
   display: flex;
   align-items: center;
@@ -362,6 +435,57 @@ h3 {
   border-radius: 10px;
   background: var(--surface-soft);
   color: var(--muted);
+}
+
+.orders-actions {
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 9px;
+}
+
+.add-order-button,
+.primary-button,
+.secondary-button {
+  min-height: 44px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 7px;
+  padding: 0 14px;
+  border-radius: 9px;
+  cursor: pointer;
+  font-size: 12px;
+  font-weight: 720;
+  transition: background 180ms ease, border-color 180ms ease, opacity 180ms ease;
+}
+
+.add-order-button,
+.primary-button {
+  border: 1px solid var(--forest);
+  background: var(--forest);
+  color: #fff;
+}
+
+.add-order-button:hover,
+.primary-button:hover {
+  background: var(--forest-2);
+}
+
+.secondary-button {
+  border: 1px solid var(--line-strong);
+  background: #fff;
+  color: var(--forest);
+}
+
+.secondary-button:hover {
+  background: var(--surface-soft);
+}
+
+.primary-button:disabled {
+  cursor: wait;
+  opacity: 0.62;
 }
 
 .search-field:focus-within {
@@ -655,8 +779,8 @@ h3 {
 }
 
 .order-detail {
-  max-height: calc(100vh - 190px);
-  min-height: 610px;
+  max-height: calc(100vh - 306px);
+  min-height: 520px;
   padding: 22px;
   overflow-y: auto;
   scrollbar-color: #cbd1cc transparent;
@@ -938,6 +1062,102 @@ h3 {
   font-size: 10px;
 }
 
+.modal-backdrop {
+  position: fixed;
+  z-index: 200;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  padding: 20px;
+  background: rgba(10, 26, 20, 0.56);
+  backdrop-filter: blur(3px);
+}
+
+.add-order-modal {
+  width: min(560px, 100%);
+  max-height: calc(100vh - 40px);
+  overflow-y: auto;
+  padding: 22px;
+  border-radius: 16px;
+  background: #fff;
+  box-shadow: 0 24px 70px rgba(7, 23, 17, 0.28);
+}
+
+.modal-heading {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 20px;
+  margin-bottom: 19px;
+}
+
+.modal-heading h2 {
+  font-size: 23px;
+}
+
+.modal-heading > button {
+  width: 44px;
+  height: 44px;
+  display: grid;
+  place-items: center;
+  border: 1px solid var(--line);
+  border-radius: 9px;
+  background: var(--surface-soft);
+  cursor: pointer;
+}
+
+.add-order-modal form {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 14px;
+}
+
+.add-order-modal label {
+  display: grid;
+  gap: 6px;
+  color: #49554f;
+  font-size: 11px;
+  font-weight: 700;
+}
+
+.add-order-modal .field-wide,
+.form-error,
+.modal-actions {
+  grid-column: 1 / -1;
+}
+
+.add-order-modal input {
+  width: 100%;
+  min-height: 44px;
+  padding: 0 11px;
+  border: 1px solid var(--line-strong);
+  border-radius: 9px;
+  background: #fff;
+  color: var(--ink);
+  font-size: 13px;
+}
+
+.add-order-modal input:focus {
+  border-color: var(--forest-2);
+}
+
+.form-error {
+  margin: 0;
+  padding: 10px 12px;
+  border-radius: 8px;
+  background: var(--red-soft);
+  color: var(--red);
+  font-size: 11px;
+  font-weight: 650;
+}
+
+.modal-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 9px;
+  margin-top: 5px;
+}
+
 .clients-surface,
 .module-surface {
   overflow: hidden;
@@ -1165,6 +1385,18 @@ h3 {
 }
 
 @media (max-width: 1180px) {
+  .dashboard-kpis {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .orders-surface {
+    height: auto;
+  }
+
+  .order-detail {
+    max-height: none;
+  }
+
   .operations-layout {
     grid-template-columns: minmax(0, 1.25fr) minmax(340px, 0.75fr);
   }
@@ -1293,6 +1525,15 @@ h3 {
     flex-direction: column;
     gap: 12px;
     padding: 16px;
+  }
+
+  .orders-actions {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .add-order-button {
+    width: 100%;
   }
 
   .search-field {
@@ -1424,6 +1665,27 @@ h3 {
   .summary-pills {
     display: grid;
     grid-template-columns: 1fr 1fr;
+  }
+
+  .dashboard-kpis {
+    grid-template-columns: 1fr 1fr;
+    gap: 8px;
+  }
+
+  .dashboard-kpis > button,
+  .dashboard-kpis > article {
+    min-height: 94px;
+    padding: 12px;
+  }
+
+  .add-order-modal form {
+    grid-template-columns: 1fr;
+  }
+
+  .add-order-modal label,
+  .form-error,
+  .modal-actions {
+    grid-column: 1;
   }
 
   .summary-pills > span {

@@ -1,17 +1,19 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-async function render() {
+async function request(path = "/", init) {
   const workerUrl = new URL("../dist/server/index.js", import.meta.url);
   workerUrl.searchParams.set("test", `${process.pid}-${Date.now()}`);
   const { default: worker } = await import(workerUrl.href);
 
   return worker.fetch(
-    new Request("http://localhost/", { headers: { accept: "text/html" } }),
+    new Request(`http://localhost${path}`, init ?? { headers: { accept: "text/html" } }),
     { ASSETS: { fetch: async () => new Response("Not found", { status: 404 }) } },
     { waitUntil() {}, passThroughOnException() {} },
   );
 }
+
+const render = () => request();
 
 test("renderiza un dashboard operativo de pedidos", async () => {
   const response = await render();
@@ -43,4 +45,41 @@ test("publica metadatos del control operativo", async () => {
   assert.match(html, /<title>Ecoase — Control operativo<\/title>/i);
   assert.match(html, /Control de pedidos, preparación, logística y entregas de Ecoase\./i);
   assert.doesNotMatch(html, /Piloto operativo/i);
+});
+
+test("expone endpoints separados para cada módulo", async () => {
+  const [ordersResponse, clientsResponse, calendarResponse, logisticsResponse] = await Promise.all([
+    request("/api/orders"),
+    request("/api/clients"),
+    request("/api/calendar"),
+    request("/api/logistics"),
+  ]);
+
+  assert.equal(ordersResponse.status, 200);
+  assert.equal(clientsResponse.status, 200);
+  assert.equal(calendarResponse.status, 200);
+  assert.equal(logisticsResponse.status, 200);
+  assert.equal((await ordersResponse.json()).orders.length, 12);
+  assert.ok((await clientsResponse.json()).clients.length > 0);
+  assert.equal((await calendarResponse.json()).calendar.length, 12);
+  assert.equal((await logisticsResponse.json()).logistics.length, 12);
+});
+
+test("crea pedidos mediante POST /api/orders", async () => {
+  const response = await request("/api/orders", {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({
+      client: "Cliente prueba",
+      product: "Pallet prueba",
+      requested: 50,
+      dateLabel: "Lunes 10",
+      transport: "Propio",
+    }),
+  });
+
+  assert.equal(response.status, 201);
+  const payload = await response.json();
+  assert.equal(payload.order.client, "Cliente prueba");
+  assert.equal(payload.order.pending, 50);
 });

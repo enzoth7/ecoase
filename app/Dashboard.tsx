@@ -3,12 +3,14 @@
 import {
   AlertTriangle,
   Boxes,
+  BarChart3,
   CalendarDays,
   CheckCircle2,
   ChevronRight,
   CircleDot,
   ClipboardList,
   PackageCheck,
+  Plus,
   Search,
   Truck,
   Users,
@@ -17,10 +19,10 @@ import {
   X,
   type LucideIcon,
 } from "lucide-react";
-import { useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState, type FormEvent } from "react";
 import {
   orderFilters,
-  orders,
+  orders as initialOrders,
   type OperationOrder,
   type OrderFilter,
   type OrderStatus,
@@ -187,7 +189,7 @@ function ClientsView({ clients, onOpen }: { clients: ClientSummary[]; onOpen: (c
   );
 }
 
-function CalendarView({ onOpen }: { onOpen: (id: string) => void }) {
+function CalendarView({ orders, onOpen }: { orders: OperationOrder[]; onOpen: (id: string) => void }) {
   return (
     <section className="module-surface" aria-labelledby="calendar-page-title">
       <div className="module-toolbar">
@@ -216,7 +218,7 @@ function CalendarView({ onOpen }: { onOpen: (id: string) => void }) {
   );
 }
 
-function LogisticsView({ onOpen }: { onOpen: (id: string) => void }) {
+function LogisticsView({ orders, onOpen }: { orders: OperationOrder[]; onOpen: (id: string) => void }) {
   const transports = [...new Set(orders.map((order) => order.transport))];
   return (
     <section className="module-surface" aria-labelledby="logistics-page-title">
@@ -240,6 +242,69 @@ function LogisticsView({ onOpen }: { onOpen: (id: string) => void }) {
   );
 }
 
+function AddOrderModal({ onClose, onCreated }: { onClose: () => void; onCreated: (order: OperationOrder) => void }) {
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState("");
+  const clientInputRef = useRef<HTMLInputElement>(null);
+
+  useEffect(() => {
+    clientInputRef.current?.focus();
+    const closeOnEscape = (event: KeyboardEvent) => { if (event.key === "Escape") onClose(); };
+    window.addEventListener("keydown", closeOnEscape);
+    return () => window.removeEventListener("keydown", closeOnEscape);
+  }, [onClose]);
+
+  const submit = async (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    setSaving(true);
+    setError("");
+    const form = new FormData(event.currentTarget);
+    const response = await fetch("/api/orders", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        client: form.get("client"),
+        reference: form.get("reference"),
+        product: form.get("product"),
+        requested: Number(form.get("requested")),
+        dateLabel: form.get("dateLabel"),
+        transport: form.get("transport"),
+      }),
+    });
+    const payload = (await response.json()) as { order?: OperationOrder; error?: string };
+    setSaving(false);
+    if (!response.ok || !payload.order) {
+      setError(payload.error ?? "No se pudo agregar el pedido.");
+      return;
+    }
+    onCreated(payload.order);
+  };
+
+  return (
+    <div className="modal-backdrop" role="presentation" onMouseDown={(event) => { if (event.target === event.currentTarget) onClose(); }}>
+      <section className="add-order-modal" role="dialog" aria-modal="true" aria-labelledby="add-order-title">
+        <div className="modal-heading">
+          <div><p className="eyebrow">Nuevo registro</p><h2 id="add-order-title">Agregar pedido</h2></div>
+          <button type="button" onClick={onClose} aria-label="Cerrar"><X size={18} aria-hidden="true" /></button>
+        </div>
+        <form onSubmit={submit}>
+          <label>Cliente<input ref={clientInputRef} name="client" required /></label>
+          <label>Referencia<input name="reference" placeholder="Ej. Orden 184834" /></label>
+          <label className="field-wide">Producto<input name="product" required /></label>
+          <label>Cantidad<input name="requested" type="number" min="1" step="1" required /></label>
+          <label>Fecha<input name="dateLabel" placeholder="Ej. Viernes 14" required /></label>
+          <label className="field-wide">Transporte<input name="transport" required /></label>
+          {error && <p className="form-error" role="alert">{error}</p>}
+          <div className="modal-actions">
+            <button type="button" className="secondary-button" onClick={onClose}>Cancelar</button>
+            <button type="submit" className="primary-button" disabled={saving}>{saving ? "Guardando…" : "Agregar pedido"}</button>
+          </div>
+        </form>
+      </section>
+    </div>
+  );
+}
+
 function matchesFilter(order: OperationOrder, filter: OrderFilter) {
   if (filter === "gestion") return order.status !== "completado";
   if (filter === "completados") return order.status === "completado";
@@ -250,26 +315,38 @@ export default function Dashboard() {
   const [section, setSection] = useState<DashboardSection>("pedidos");
   const [filter, setFilter] = useState<OrderFilter>("gestion");
   const [query, setQuery] = useState("");
-  const [selectedId, setSelectedId] = useState(orders[0].id);
+  const [orderRows, setOrderRows] = useState<OperationOrder[]>(initialOrders);
+  const [selectedId, setSelectedId] = useState(initialOrders[0].id);
+  const [showAddOrder, setShowAddOrder] = useState(false);
   const detailRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    fetch("/api/orders")
+      .then((response) => response.json())
+      .then((payload: { orders?: OperationOrder[] }) => { if (payload.orders) setOrderRows(payload.orders); })
+      .catch(() => undefined);
+  }, []);
 
   const visibleOrders = useMemo(() => {
     const normalized = query.trim().toLocaleLowerCase("es");
-    return orders.filter((order) => {
+    return orderRows.filter((order) => {
       if (!matchesFilter(order, filter)) return false;
       if (!normalized) return true;
       return [order.client, order.reference, order.product, order.transport]
         .some((value) => value.toLocaleLowerCase("es").includes(normalized));
     });
-  }, [filter, query]);
+  }, [filter, orderRows, query]);
 
-  const selectedOrder = visibleOrders.find((order) => order.id === selectedId) ?? visibleOrders[0] ?? orders[0];
-  const inManagement = orders.filter((order) => order.status !== "completado").length;
-  const blocked = orders.filter((order) => order.status === "bloqueado").length;
-  const completed = orders.filter((order) => order.status === "completado").length;
+  const selectedOrder = visibleOrders.find((order) => order.id === selectedId) ?? visibleOrders[0] ?? orderRows[0];
+  const inManagement = orderRows.filter((order) => order.status !== "completado").length;
+  const blocked = orderRows.filter((order) => order.status === "bloqueado").length;
+  const completed = orderRows.filter((order) => order.status === "completado").length;
+  const totalRequested = orderRows.reduce((sum, order) => sum + order.requested, 0);
+  const totalDelivered = orderRows.reduce((sum, order) => sum + order.delivered, 0);
+  const deliveryRate = totalRequested ? Math.round(totalDelivered / totalRequested * 100) : 0;
   const clients = useMemo<ClientSummary[]>(() => {
     const summaries = new Map<string, ClientSummary>();
-    orders.forEach((order) => {
+    orderRows.forEach((order) => {
       const current = summaries.get(order.client) ?? { name: order.client, orders: 0, requested: 0, delivered: 0, pending: 0 };
       current.orders += 1;
       current.requested += order.requested;
@@ -278,7 +355,7 @@ export default function Dashboard() {
       summaries.set(order.client, current);
     });
     return [...summaries.values()].sort((a, b) => b.pending - a.pending || a.name.localeCompare(b.name, "es"));
-  }, []);
+  }, [orderRows]);
 
   const selectOrder = (id: string) => {
     setSelectedId(id);
@@ -291,7 +368,7 @@ export default function Dashboard() {
     setSection("pedidos");
     setFilter("todos");
     setQuery(client);
-    setSelectedId(orders.find((order) => order.client === client)?.id ?? orders[0].id);
+    setSelectedId(orderRows.find((order) => order.client === client)?.id ?? orderRows[0].id);
   };
 
   const openOrder = (id: string) => {
@@ -299,6 +376,15 @@ export default function Dashboard() {
     setFilter("todos");
     setQuery("");
     setSelectedId(id);
+  };
+
+  const addCreatedOrder = (order: OperationOrder) => {
+    setOrderRows((current) => [order, ...current.filter((item) => item.id !== order.id)]);
+    setSelectedId(order.id);
+    setFilter("gestion");
+    setQuery("");
+    setSection("pedidos");
+    setShowAddOrder(false);
   };
 
   const sectionCopy: Record<DashboardSection, { eyebrow: string; title: string }> = {
@@ -322,7 +408,7 @@ export default function Dashboard() {
           <p>Principal</p>
           <nav aria-label="Secciones principales">
             <button type="button" className={section === "pedidos" ? "active" : ""} onClick={() => setSection("pedidos")} aria-pressed={section === "pedidos"}>
-              <ClipboardList size={17} aria-hidden="true" /><span>Pedidos</span><b>{orders.length}</b>
+              <ClipboardList size={17} aria-hidden="true" /><span>Pedidos</span>
             </button>
             <button type="button" className={section === "calendario" ? "active" : ""} onClick={() => setSection("calendario")} aria-pressed={section === "calendario"}>
               <CalendarDays size={17} aria-hidden="true" /><span>Calendario</span>
@@ -331,7 +417,7 @@ export default function Dashboard() {
               <Truck size={17} aria-hidden="true" /><span>Logística</span>
             </button>
             <button type="button" className={section === "clientes" ? "active" : ""} onClick={() => setSection("clientes")} aria-pressed={section === "clientes"}>
-              <Users size={17} aria-hidden="true" /><span>Clientes</span><b>{clients.length}</b>
+              <Users size={17} aria-hidden="true" /><span>Clientes</span>
             </button>
           </nav>
         </div>
@@ -349,12 +435,16 @@ export default function Dashboard() {
             <p className="eyebrow">{sectionCopy[section].eyebrow}</p>
             <h1 id="page-title">{sectionCopy[section].title}</h1>
           </div>
-          <div className="summary-pills" aria-label="Resumen de pedidos">
-            <span><b>{inManagement}</b> en gestión</span>
-            <span className="blocked"><b>{blocked}</b> bloqueado</span>
-            <span className="completed"><b>{completed}</b> completados</span>
-          </div>
         </section>
+
+        {section === "pedidos" && (
+          <section className="dashboard-kpis" aria-label="Indicadores de pedidos">
+            <button type="button" onClick={() => setFilter("gestion")}><span><CircleDot size={17} aria-hidden="true" />En gestión</span><strong>{inManagement}</strong><small>{blocked} bloqueado</small></button>
+            <button type="button" onClick={() => setFilter("completados")}><span><CheckCircle2 size={17} aria-hidden="true" />Completados</span><strong>{completed}</strong><small>{number.format(totalDelivered)} entregados</small></button>
+            <article><span><Boxes size={17} aria-hidden="true" />Volumen pedido</span><strong>{number.format(totalRequested)}</strong><small>unidades totales</small></article>
+            <article className="kpi-progress"><span><BarChart3 size={17} aria-hidden="true" />Cumplimiento</span><strong>{deliveryRate}%</strong><i><b style={{ width: `${deliveryRate}%` }} /></i></article>
+          </section>
+        )}
 
         {section === "pedidos" ? <div className="operations-layout">
           <section className="orders-surface" aria-labelledby="orders-title">
@@ -363,6 +453,7 @@ export default function Dashboard() {
                 <p className="eyebrow">Semana 33</p>
                 <h2 id="orders-title">Pedidos</h2>
               </div>
+              <div className="orders-actions">
               <label className="search-field">
                 <span className="sr-only">Buscar cliente, pedido, producto o transporte</span>
                 <Search size={17} aria-hidden="true" />
@@ -378,11 +469,13 @@ export default function Dashboard() {
                   </button>
                 )}
               </label>
+              <button type="button" className="add-order-button" onClick={() => setShowAddOrder(true)}><Plus size={17} aria-hidden="true" />Agregar pedido</button>
+              </div>
             </div>
 
             <div className="filter-tabs" aria-label="Filtrar pedidos">
               {orderFilters.map((item) => {
-                const count = orders.filter((order) => matchesFilter(order, item.id)).length;
+                const count = orderRows.filter((order) => matchesFilter(order, item.id)).length;
                 return (
                   <button type="button" key={item.id} className={filter === item.id ? "active" : ""} onClick={() => setFilter(item.id)} aria-pressed={filter === item.id}>
                     {item.label}<span>{count}</span>
@@ -438,7 +531,7 @@ export default function Dashboard() {
           <div ref={detailRef} className="detail-column">
             <OrderDetail order={selectedOrder} />
           </div>
-        </div> : section === "calendario" ? <CalendarView onOpen={openOrder} /> : section === "logistica" ? <LogisticsView onOpen={openOrder} /> : <ClientsView clients={clients} onOpen={openClientOrders} />}
+        </div> : section === "calendario" ? <CalendarView orders={orderRows} onOpen={openOrder} /> : section === "logistica" ? <LogisticsView orders={orderRows} onOpen={openOrder} /> : <ClientsView clients={clients} onOpen={openClientOrders} />}
         </main>
 
         <footer className="dashboard-footer">
@@ -446,6 +539,7 @@ export default function Dashboard() {
           <span>Ecoase · Control de pedidos</span>
         </footer>
       </div>
+      {showAddOrder && <AddOrderModal onClose={() => setShowAddOrder(false)} onCreated={addCreatedOrder} />}
     </div>
   );
 }
