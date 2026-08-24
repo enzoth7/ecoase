@@ -53,7 +53,7 @@ test("usa rutas reales sin navegación por hash", async () => {
   assert.equal(rootResponse.status, 307);
   assert.equal(rootResponse.headers.get("location"), "/pedidos");
 
-  for (const path of ["/pedidos", "/calendario", "/logistica", "/clientes"]) {
+  for (const path of ["/pedidos", "/plan", "/calendario", "/logistica", "/clientes"]) {
     const response = await request(path);
     assert.equal(response.status, 200);
   }
@@ -61,26 +61,30 @@ test("usa rutas reales sin navegación por hash", async () => {
   const html = await (await request("/pedidos")).text();
   assert.doesNotMatch(html, /href="#/i);
   assert.match(html, /href="\/calendario"/i);
+  assert.match(html, /href="\/plan"/i);
   assert.match(html, /href="\/logistica"/i);
   assert.match(html, /href="\/clientes"/i);
 });
 
 test("expone endpoints separados para cada módulo", async () => {
-  const [ordersResponse, clientsResponse, calendarResponse, logisticsResponse] = await Promise.all([
+  const [ordersResponse, clientsResponse, calendarResponse, logisticsResponse, planResponse] = await Promise.all([
     request("/api/orders"),
     request("/api/clients"),
     request("/api/calendar"),
     request("/api/logistics"),
+    request("/api/plan"),
   ]);
 
   assert.equal(ordersResponse.status, 200);
   assert.equal(clientsResponse.status, 200);
   assert.equal(calendarResponse.status, 200);
   assert.equal(logisticsResponse.status, 200);
+  assert.equal(planResponse.status, 200);
   assert.equal((await ordersResponse.json()).orders.length, 12);
   assert.ok((await clientsResponse.json()).clients.length > 0);
   assert.equal((await calendarResponse.json()).calendar.length, 12);
   assert.equal((await logisticsResponse.json()).logistics.length, 12);
+  assert.equal((await planResponse.json()).plan.length, 12);
 });
 
 test("crea pedidos mediante POST /api/orders", async () => {

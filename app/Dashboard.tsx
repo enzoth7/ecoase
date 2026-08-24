@@ -8,6 +8,7 @@ import {
   ChevronRight,
   CircleDot,
   ClipboardList,
+  ListChecks,
   PackageCheck,
   Plus,
   Search,
@@ -28,10 +29,11 @@ import {
 } from "./data";
 
 const number = new Intl.NumberFormat("es-UY");
-export type DashboardSection = "pedidos" | "calendario" | "logistica" | "clientes";
+export type DashboardSection = "pedidos" | "plan" | "calendario" | "logistica" | "clientes";
 
 const sectionPaths: Record<DashboardSection, string> = {
   pedidos: "/pedidos",
+  plan: "/plan",
   calendario: "/calendario",
   logistica: "/logistica",
   clientes: "/clientes",
@@ -253,6 +255,35 @@ function LogisticsView({ orders, onOpen }: { orders: OperationOrder[]; onOpen: (
   );
 }
 
+function PlanView({ orders, onOpen }: { orders: OperationOrder[]; onOpen: (id: string) => void }) {
+  const statusPriority: Record<OrderStatus, number> = { bloqueado: 0, coordinacion: 1, completado: 2 };
+  const planOrders = [...orders].sort((a, b) => statusPriority[a.status] - statusPriority[b.status] || a.client.localeCompare(b.client, "es"));
+
+  return (
+    <section className="module-surface plan-surface" aria-labelledby="plan-title">
+      <div className="module-toolbar">
+        <div><h2 id="plan-title">Plan</h2></div>
+      </div>
+      <div className="plan-board" aria-label="Plan operativo">
+        <div className="data-heading plan-heading" aria-hidden="true">
+          <div>Pedido</div><div>Fecha planificada</div><div>Disponibilidad</div><div>Preparación</div><div>Logística</div><div>Próxima acción</div><div />
+        </div>
+        {planOrders.map((order) => (
+          <button type="button" className={`plan-row ${order.status}`} key={order.id} onClick={() => onOpen(order.id)}>
+            <div className="plan-order"><StatusBadge order={order} /><strong>{order.client}</strong><small>{order.reference} · {order.product}</small></div>
+            <div><small>Fecha planificada</small><strong>{order.dateLabel}</strong></div>
+            <div><small>Disponibilidad</small><strong>{order.supply}</strong></div>
+            <div><small>Preparación</small><strong>{order.preparation}</strong></div>
+            <div><small>Logística</small><strong>{order.transport}</strong><small>{order.logistics}</small></div>
+            <div><small>Próxima acción</small><strong>{order.action}</strong></div>
+            <ChevronRight size={19} aria-hidden="true" />
+          </button>
+        ))}
+      </div>
+    </section>
+  );
+}
+
 function AddOrderModal({ onClose, onCreated }: { onClose: () => void; onCreated: (order: OperationOrder) => void }) {
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
@@ -409,6 +440,7 @@ export default function Dashboard({ initialSection = "pedidos" }: { initialSecti
 
   const sectionCopy: Record<DashboardSection, string> = {
     pedidos: "Control operativo",
+    plan: "Plan",
     calendario: "Calendario",
     logistica: "Logística",
     clientes: "Clientes",
@@ -429,6 +461,9 @@ export default function Dashboard({ initialSection = "pedidos" }: { initialSecti
           <nav aria-label="Secciones principales">
             <a className={section === "pedidos" ? "active" : ""} href="/pedidos" aria-current={section === "pedidos" ? "page" : undefined}>
               <ClipboardList size={17} aria-hidden="true" /><small>Pedidos</small>
+            </a>
+            <a className={section === "plan" ? "active" : ""} href="/plan" aria-current={section === "plan" ? "page" : undefined}>
+              <ListChecks size={17} aria-hidden="true" /><small>Plan</small>
             </a>
             <a className={section === "calendario" ? "active" : ""} href="/calendario" aria-current={section === "calendario" ? "page" : undefined}>
               <CalendarDays size={17} aria-hidden="true" /><small>Calendario</small>
@@ -549,7 +584,7 @@ export default function Dashboard({ initialSection = "pedidos" }: { initialSecti
           <div ref={detailRef} className="detail-column">
             <OrderDetail order={selectedOrder} />
           </div>
-        </div> : section === "calendario" ? <CalendarView orders={orderRows} onOpen={openOrder} /> : section === "logistica" ? <LogisticsView orders={orderRows} onOpen={openOrder} /> : <ClientsView clients={clients} onOpen={openClientOrders} />}
+        </div> : section === "plan" ? <PlanView orders={orderRows} onOpen={openOrder} /> : section === "calendario" ? <CalendarView orders={orderRows} onOpen={openOrder} /> : section === "logistica" ? <LogisticsView orders={orderRows} onOpen={openOrder} /> : <ClientsView clients={clients} onOpen={openClientOrders} />}
         </main>
 
         <footer className="dashboard-footer">

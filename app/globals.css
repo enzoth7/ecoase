@@ -1409,6 +1409,80 @@ h3 {
   grid-template-columns: 40px minmax(190px, 1fr) 120px 120px 120px 20px;
 }
 
+.plan-board {
+  display: grid;
+}
+
+.plan-heading,
+.plan-row {
+  grid-template-columns: minmax(180px, 1.1fr) 120px minmax(150px, 1fr) minmax(130px, 0.9fr) minmax(130px, 0.9fr) minmax(180px, 1.2fr) 20px;
+}
+
+.plan-row {
+  width: 100%;
+  min-height: 108px;
+  display: grid;
+  align-items: center;
+  gap: 14px;
+  padding: 14px 18px;
+  border: 0;
+  border-bottom: 1px solid #ebeee9;
+  background: #fff;
+  text-align: left;
+  cursor: pointer;
+  transition: background 180ms ease, box-shadow 180ms ease;
+}
+
+.plan-row:hover {
+  background: #f7faf8;
+}
+
+.plan-row.bloqueado {
+  box-shadow: inset 3px 0 0 var(--red);
+}
+
+.plan-row.coordinacion {
+  box-shadow: inset 3px 0 0 var(--amber);
+}
+
+.plan-row > div {
+  min-width: 0;
+  display: grid;
+  align-content: center;
+  gap: 3px;
+}
+
+.plan-row small {
+  overflow: hidden;
+  color: var(--muted);
+  font-size: 9px;
+  font-weight: 650;
+  line-height: 1.35;
+  text-overflow: ellipsis;
+}
+
+.plan-row > div:not(.plan-order) > small:first-child {
+  text-transform: uppercase;
+}
+
+.plan-row strong {
+  font-size: 11px;
+  line-height: 1.4;
+}
+
+.plan-order {
+  justify-items: start;
+}
+
+.plan-order > strong {
+  margin-top: 2px;
+  font-size: 13px;
+}
+
+.plan-row > svg {
+  color: #8e9692;
+}
+
 @media (max-width: 1180px) {
   .dashboard-kpis {
     grid-template-columns: repeat(2, minmax(0, 1fr));
@@ -1644,6 +1718,21 @@ h3 {
     grid-template-columns: 38px minmax(0, 1fr) 20px;
     gap: 8px 11px;
     padding: 13px 14px;
+  }
+
+  .plan-row {
+    grid-template-columns: minmax(0, 1fr) 20px;
+    gap: 9px 12px;
+    padding: 14px;
+  }
+
+  .plan-row > div:not(.plan-order) {
+    grid-column: 1;
+  }
+
+  .plan-row > svg {
+    grid-column: 2;
+    grid-row: 1;
   }
 
   .logistics-order > div:nth-of-type(2),
