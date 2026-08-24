@@ -1771,6 +1771,10 @@ h3 {
   text-transform: uppercase;
 }
 
+.column-label {
+  display: none;
+}
+
 .client-heading {
   grid-template-columns: 40px minmax(160px, 1fr) repeat(3, minmax(78px, 110px)) 20px;
 }
@@ -2067,6 +2071,10 @@ h3 {
 
   .list-heading {
     display: none;
+  }
+
+  .column-label {
+    display: block;
   }
 
   .order-list {

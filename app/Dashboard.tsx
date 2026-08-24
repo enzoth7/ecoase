@@ -117,9 +117,9 @@ function ClientsView({ clients, onOpen }: { clients: ClientSummary[]; onOpen: (c
           <button type="button" className="client-row" key={client.name} onClick={() => onOpen(client.name)}>
             <i className="client-avatar" aria-hidden="true">{client.name.slice(0, 1)}</i>
             <div className="client-name"><strong>{client.name}</strong><small>{client.orders} {client.orders === 1 ? "pedido" : "pedidos"}</small></div>
-            <div><small>Pedido</small><strong>{number.format(client.requested)}</strong></div>
-            <div><small>Entregado</small><strong>{number.format(client.delivered)}</strong></div>
-            <div className={client.pending > 0 ? "client-pending" : "client-complete"}><small>Saldo</small><strong>{number.format(client.pending)}</strong></div>
+            <div><small className="column-label">Pedido</small><strong>{number.format(client.requested)}</strong></div>
+            <div><small className="column-label">Entregado</small><strong>{number.format(client.delivered)}</strong></div>
+            <div className={client.pending > 0 ? "client-pending" : "client-complete"}><small className="column-label">Saldo</small><strong>{number.format(client.pending)}</strong></div>
             <ChevronRight size={19} aria-hidden="true" />
           </button>
         ))}
@@ -142,8 +142,8 @@ function ProvidersView({ providers }: { providers: Provider[] }) {
         {providers.map((provider) => (
           <article className="provider-row" key={provider.id}>
             <div className="provider-name"><i className={`provider-icon ${provider.type === "Transporte" ? "transport" : ""}`} aria-hidden="true">{provider.type === "Transporte" ? <Truck size={18} /> : <Factory size={18} />}</i><strong>{provider.name}</strong></div>
-            <div><small>Tipo de proveedor</small><strong>{provider.type}</strong></div>
-            <div><small>Qué provee</small><strong>{provider.supplies}</strong></div>
+            <div><small className="column-label">Tipo de proveedor</small><strong>{provider.type}</strong></div>
+            <div><small className="column-label">Qué provee</small><strong>{provider.supplies}</strong></div>
           </article>
         ))}
       </div>
@@ -196,8 +196,8 @@ function LogisticsView({ orders, onOpen }: { orders: OperationOrder[]; onOpen: (
           <button type="button" className="logistics-order" key={order.id} onClick={() => onOpen(order.id)}>
             <i className="logistics-icon"><Truck size={18} aria-hidden="true" /></i>
             <div><strong>{order.client}</strong><small>{[visibleReference(order), order.product].filter(Boolean).join(" · ")}</small></div>
-            <div><small>Fecha</small><strong>{order.dateLabel}</strong></div>
-            <div><small>Transporte</small><strong>{order.transport}</strong></div>
+            <div><small className="column-label">Fecha</small><strong>{order.dateLabel}</strong></div>
+            <div><small className="column-label">Transporte</small><strong>{order.transport}</strong></div>
             <StatusBadge order={order} />
             <ChevronRight size={19} aria-hidden="true" />
           </button>
@@ -412,10 +412,10 @@ function PlanView({ orders, onEdit }: { orders: OperationOrder[]; onEdit: (order
           const dateChanged = Boolean(order.originalPlannedDate && order.originalPlannedDate !== getOrderPlannedDate(order));
           return <article className="plan-row" key={order.id}>
             <div className="plan-client"><strong>{order.client}</strong></div>
-            <div><small>Cantidad de pallets</small><strong>{number.format(order.requested)}</strong></div>
-            <div className={dateChanged ? "plan-date changed" : "plan-date"}><small>Fecha planificada</small><strong>{order.dateLabel}</strong></div>
-            <div><small>Etapa</small><StageBadge stage={getOrderStage(order)} /></div>
-            <div><small>Transportista</small><strong>{order.transport}</strong></div>
+            <div><small className="column-label">Cantidad de pallets</small><strong>{number.format(order.requested)}</strong></div>
+            <div className={dateChanged ? "plan-date changed" : "plan-date"}><small className="column-label">Fecha planificada</small><strong>{order.dateLabel}</strong></div>
+            <div><small className="column-label">Etapa</small><StageBadge stage={getOrderStage(order)} /></div>
+            <div><small className="column-label">Transportista</small><strong>{order.transport}</strong></div>
             <button type="button" className="plan-edit" onClick={() => onEdit(order)} aria-label={`Editar pedido de ${order.client}`}><Pencil size={17} aria-hidden="true" /></button>
           </article>;
         })}
@@ -741,16 +741,16 @@ export default function Dashboard({ initialSection = "pedidos" }: { initialSecti
                       <small>{[visibleReference(order), order.product].filter(Boolean).join(" · ")}</small>
                     </div>
                     <div className="order-stage">
-                      <small>Etapa</small>
+                      <small className="column-label">Etapa</small>
                       <StageBadge stage={getOrderStage(order)} />
                     </div>
                     <div className="order-date">
-                      <small>Fecha</small>
+                      <small className="column-label">Fecha</small>
                       <strong>{order.dateLabel}</strong>
                     </div>
-                    <div className="order-transport"><small>Transporte</small><div><Truck size={14} aria-hidden="true" />{order.transport}</div></div>
+                    <div className="order-transport"><small className="column-label">Transporte</small><div><Truck size={14} aria-hidden="true" />{order.transport}</div></div>
                     <div className="order-quantities">
-                      <small>Palets</small>
+                      <small className="column-label">Palets</small>
                       <strong>{number.format(order.requested)}</strong>
                     </div>
                     <ChevronRight className="row-chevron" size={19} aria-hidden="true" />
