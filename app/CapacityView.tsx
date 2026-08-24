@@ -97,6 +97,7 @@ export default function CapacityView({ providers }: { providers: Provider[] }) {
   };
 
   const selected = capacity?.days.find((day) => day.date === openDate);
+  const todayTeam = capacity?.days.find((day) => day.date === dateKey(today))?.internalTeam;
   const sawmills = providers.filter((provider) => provider.type === "Aserradero");
   const transporters = providers.filter((provider) => provider.type === "Transporte");
 
@@ -131,7 +132,7 @@ export default function CapacityView({ providers }: { providers: Provider[] }) {
     {error && <p className="capacity-error" role="alert">{error}</p>}
     {loading && !capacity ? <div className="module-surface capacity-loading">Cargando capacidad…</div> : capacity && <>
       <div className="capacity-general-heading"><div><h2>Capacidad general</h2><p>Estos valores se repiten de lunes a domingo. Los cambios excepcionales se cargan desde cada día.</p></div></div>
-      <InternalPeopleCapacity team={capacity.internalTeam} onSave={save} />
+      <InternalPeopleCapacity team={capacity.internalTeam} todayTeam={todayTeam} onSave={save} />
       <GeneralInternalProduction capacity={capacity} onSave={save} onDelete={remove} />
       <GeneralExternalProduction capacity={capacity} providers={sawmills} onSave={save} />
       <GeneralTransport capacity={capacity} providers={transporters} onSave={save} />
@@ -141,21 +142,21 @@ export default function CapacityView({ providers }: { providers: Provider[] }) {
   </section>;
 }
 
-function InternalPeopleCapacity({ team, onSave }: { team: CapacitySnapshot["internalTeam"]; onSave: (url: string, body: unknown) => Promise<void> }) {
+function InternalPeopleCapacity({ team, todayTeam, onSave }: { team: CapacitySnapshot["internalTeam"]; todayTeam?: CapacityDay["internalTeam"]; onSave: (url: string, body: unknown) => Promise<void> }) {
   return <section className="module-surface capacity-people" aria-labelledby="team-capacity-title">
     <div className="capacity-section-heading"><div className="capacity-icon"><Users size={20} /></div><div><h2 id="team-capacity-title">Personas disponibles</h2><small>Dotación general para producción interna</small></div></div>
     <div className="capacity-people-content">
       <div className="capacity-people-metrics">
         <Metric label="Disponibles" value={team.availablePeople === undefined ? "Sin definir" : `${number.format(team.availablePeople)} personas`} />
-        <Metric label="Asignadas" value={`${number.format(team.assignedPeople)} personas`} />
-        <Metric label={team.availablePeople === undefined ? "Sin calcular" : team.missingPeople > 0 ? "Faltan asignar" : "Personas libres"} value={team.availablePeople === undefined ? "—" : `${number.format(team.missingPeople > 0 ? team.missingPeople : team.freePeople ?? 0)} personas`} tone={team.missingPeople > 0 ? "danger" : undefined} />
+        <Metric label={todayTeam ? "Asignadas hoy" : "Asignación diaria"} value={todayTeam ? `${number.format(todayTeam.assignedPeople)} personas` : "Abrí un día"} />
+        <Metric label={team.availablePeople === undefined ? "Sin calcular" : todayTeam?.missingPeople ? "Faltan personas" : "Personas libres hoy"} value={team.availablePeople === undefined || !todayTeam ? "—" : `${number.format(todayTeam.missingPeople > 0 ? todayTeam.missingPeople : todayTeam.freePeople ?? 0)} personas`} tone={todayTeam?.missingPeople ? "danger" : undefined} />
       </div>
       <form className="capacity-team-form" onSubmit={(event) => { event.preventDefault(); const form = new FormData(event.currentTarget); void onSave("/api/capacity/team", { availablePeople: Number(form.get("availablePeople")) }); }}>
         <label>Personas disponibles<input name="availablePeople" type="number" min="0" step="1" defaultValue={team.availablePeople ?? ""} required /></label>
         <button type="submit"><Save size={17} />Guardar dotación</button>
       </form>
     </div>
-    <p className="capacity-people-note">Las asignadas son la suma de las personas cargadas en Armado, Marcado y Tratamiento HT.</p>
+    <p className="capacity-people-note">Al abrir un día, asigná personas a Armado, Marcado o Tratamiento HT. Esa asignación se descuenta de esta dotación solo para ese día.</p>
   </section>;
 }
 
@@ -247,7 +248,7 @@ function DayAdjustmentModal({ day, sawmills, transporters, onClose, onSave }: { 
 
   return <div className="modal-backdrop capacity-modal-backdrop" role="presentation" onMouseDown={(event) => { if (event.target === event.currentTarget) onClose(); }}>
     <section className="capacity-day-modal" role="dialog" aria-modal="true" aria-labelledby="day-capacity-title">
-      <header><div><small>Capacidad del día</small><h2 id="day-capacity-title">{formatDay(day.date)}</h2><p>Las asignaciones de este día deben indicar quién aporta la capacidad. No cambian la capacidad general.</p></div><button ref={closeRef} type="button" onClick={onClose} aria-label="Cerrar ajustes"><X size={21} /></button></header>
+      <header><div><small>Capacidad del día</small><h2 id="day-capacity-title">{formatDay(day.date)}</h2><p>Asigná personas y capacidad adicional solo para este día. No se modifica la capacidad general.</p></div><button ref={closeRef} type="button" onClick={onClose} aria-label="Cerrar ajustes"><X size={21} /></button></header>
       {day.issues.length > 0 && <div className="capacity-day-alert"><AlertTriangle size={19} /><div><strong>Este día necesita revisión</strong><p>{day.issues.join(" · ")}</p></div></div>}
       <div className="capacity-day-summary" aria-label="Resumen productivo del día">
         <Metric label="Producción asignada" value={`${number.format(day.productionTotals.committed)} palets`} />
@@ -256,7 +257,8 @@ function DayAdjustmentModal({ day, sawmills, transporters, onClose, onSave }: { 
       </div>
 
       <section className="day-adjustment-section day-internal" aria-labelledby="day-internal-title"><h3 id="day-internal-title"><Factory size={18} />Producción interna</h3>
-        {day.internalProduction.map((entry) => <AdjustmentRow key={entry.operation} name={capacityOperationLabels[entry.operation]} sourceName="Equipo Ecoase" responsible={entry.adjustmentResponsible} needsResponsible baseCapacity={entry.baseCapacity} adjustment={entry.adjustment} committed={entry.committed} capacity={entry.capacity} overload={entry.overload} onSave={(palletAdjustment, responsible) => onSave("/api/capacity/adjustments", { date: day.date, resourceType: "internal_production", operation: entry.operation, palletAdjustment, responsible, status: "confirmed" })} />)}
+        <DayInternalTeamSummary team={day.internalTeam} />
+        {day.internalProduction.map((entry) => <AdjustmentRow key={entry.operation} name={capacityOperationLabels[entry.operation]} sourceName="Ecoase" peopleAssigned={entry.peopleAssigned} baseCapacity={entry.baseCapacity} adjustment={entry.adjustment} committed={entry.committed} capacity={entry.capacity} overload={entry.overload} onSave={(palletAdjustment, responsible, peopleCount) => onSave("/api/capacity/adjustments", { date: day.date, resourceType: "internal_production", operation: entry.operation, palletAdjustment, peopleCount, responsible, status: "confirmed" })} />)}
       </section>
 
       <section className="day-adjustment-section day-external" aria-labelledby="day-external-title"><h3 id="day-external-title"><Factory size={18} />Producción externa</h3>
@@ -304,16 +306,26 @@ function DailyProviderAssignment({ date, kind, providers, onSave }: { date: stri
   </form>;
 }
 
-function AdjustmentRow({ name, sourceName, responsible, needsResponsible = false, baseCapacity, adjustment, committed, capacity, overload, onSave }: { name: string; sourceName: string; responsible?: string; needsResponsible?: boolean; baseCapacity?: number; adjustment: number; committed: number; capacity?: number; overload: number; onSave: (adjustment: number, responsible: string) => Promise<void> }) {
+function DayInternalTeamSummary({ team }: { team: CapacityDay["internalTeam"] }) {
+  const hasTeam = team.availablePeople !== undefined;
+  return <div className="day-internal-team-summary">
+    <div><small>Personas disponibles</small><strong>{hasTeam ? `${number.format(team.availablePeople!)} personas` : "Sin definir"}</strong></div>
+    <div><small>Asignadas hoy</small><strong>{number.format(team.assignedPeople)} personas</strong></div>
+    <div className={team.missingPeople > 0 ? "danger" : ""}><small>{!hasTeam ? "Sin calcular" : team.missingPeople > 0 ? "Faltan personas" : "Personas libres"}</small><strong>{hasTeam ? `${number.format(team.missingPeople > 0 ? team.missingPeople : team.freePeople ?? 0)} personas` : "—"}</strong></div>
+  </div>;
+}
+
+function AdjustmentRow({ name, sourceName, responsible, peopleAssigned, baseCapacity, adjustment, committed, capacity, overload, onSave }: { name: string; sourceName: string; responsible?: string; peopleAssigned?: number; baseCapacity?: number; adjustment: number; committed: number; capacity?: number; overload: number; onSave: (adjustment: number, responsible: string, peopleCount?: number) => Promise<void> }) {
   const [value, setValue] = useState(String(adjustment));
-  const [responsibleValue, setResponsibleValue] = useState(responsible ?? "");
+  const [peopleValue, setPeopleValue] = useState(String(peopleAssigned ?? 0));
   const [saving, setSaving] = useState(false);
+  const assignsPeople = peopleAssigned !== undefined;
   return <article className={`day-adjustment-row ${capacity === undefined || overload > 0 ? "danger" : ""}`}>
-    <div className="day-adjustment-name"><strong>{name}</strong><small>Base: {baseCapacity === undefined ? "sin definir" : `${number.format(baseCapacity)} palets`}</small>{responsible && <small>Asignado a: {responsible}</small>}</div>
+    <div className="day-adjustment-name"><strong>{name}</strong><small>Base: {baseCapacity === undefined ? "sin definir" : `${number.format(baseCapacity)} palets`}</small>{responsible && !assignsPeople && <small>Asignado a: {responsible}</small>}</div>
     <Metric label="Comprometidos" value={number.format(committed)} />
     <Metric label={overload > 0 ? "Sobrecarga" : "Capacidad del día"} value={capacity === undefined ? "Sin calcular" : overload > 0 ? number.format(overload) : number.format(capacity)} tone={overload > 0 ? "danger" : undefined} />
-    <form onSubmit={async (event) => { event.preventDefault(); setSaving(true); try { await onSave(Number(value), needsResponsible ? responsibleValue.trim() : sourceName); } finally { setSaving(false); } }}>
-      {needsResponsible ? <label>Equipo o responsable<input type="text" value={responsibleValue} onChange={(event) => setResponsibleValue(event.target.value)} placeholder="Ej. Turno extra de armado" required={Number(value) !== 0} /></label> : <p className="adjustment-source"><small>Quién aporta</small><strong>{sourceName}</strong></p>}
+    <form onSubmit={async (event) => { event.preventDefault(); setSaving(true); try { await onSave(Number(value), sourceName, assignsPeople ? Number(peopleValue) : undefined); } finally { setSaving(false); } }}>
+      {assignsPeople ? <label>Personas asignadas hoy<input type="number" min="0" step="1" value={peopleValue} onChange={(event) => setPeopleValue(event.target.value)} required /></label> : <p className="adjustment-source"><small>Quién aporta</small><strong>{sourceName}</strong></p>}
       <label>Capacidad adicional hoy<input type="number" step="1" placeholder="+ / − palets" value={value} onChange={(event) => setValue(event.target.value)} aria-label={`Cambio de capacidad para ${name}`} /><small>0 = sin cambio</small></label>
       <button type="submit" disabled={saving}><Save size={16} />{saving ? "Guardando" : "Guardar"}</button>
     </form>

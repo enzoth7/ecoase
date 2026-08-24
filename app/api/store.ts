@@ -552,7 +552,7 @@ type DbInternalDefault = { operation: CapacityOperation; people_count: number; m
 type DbInternalTeam = { available_people: number };
 type DbExternalDefault = { id: string; provider_id: string; operation: CapacityOperation; pallet_capacity: number; status: ExternalProductionDefault["status"] };
 type DbTransportDefault = { id: string; source: TransportSource; provider_id: string | null; pallet_capacity: number; status: TransportCapacityDefault["status"] };
-type DbCapacityAdjustment = { adjustment_date: string; resource_type: CapacityAdjustment["resourceType"]; operation: CapacityOperation | null; source: TransportSource | null; provider_id: string | null; pallet_adjustment: number; responsible: string | null; status: CapacityStatus | null };
+type DbCapacityAdjustment = { adjustment_date: string; resource_type: CapacityAdjustment["resourceType"]; operation: CapacityOperation | null; source: TransportSource | null; provider_id: string | null; pallet_adjustment: number; people_count: number | null; responsible: string | null; status: CapacityStatus | null };
 
 export async function getCapacity(from: string, to: string) {
   if (useMemoryStore) return buildCapacitySnapshot({ from, to, rules: memoryCapacityRules, internalDefaults: memoryInternalDefaults, availablePeople: memoryAvailablePeople, externalDefaults: memoryExternalDefaults, transportDefaults: memoryTransportDefaults, adjustments: memoryCapacityAdjustments, orders: memoryOrders, providers: seededProviders });
@@ -563,7 +563,7 @@ export async function getCapacity(from: string, to: string) {
     supabaseRequest<DbInternalTeam[]>("/rest/v1/internal_team_capacity?select=available_people&id=eq.true"),
     supabaseRequest<DbExternalDefault[]>("/rest/v1/external_production_defaults?select=id,provider_id,operation,pallet_capacity,status"),
     supabaseRequest<DbTransportDefault[]>("/rest/v1/transport_capacity_defaults?select=id,source,provider_id,pallet_capacity,status"),
-    supabaseRequest<DbCapacityAdjustment[]>(`/rest/v1/capacity_daily_adjustments?select=adjustment_date,resource_type,operation,source,provider_id,pallet_adjustment,responsible,status&${range}`),
+    supabaseRequest<DbCapacityAdjustment[]>(`/rest/v1/capacity_daily_adjustments?select=adjustment_date,resource_type,operation,source,provider_id,pallet_adjustment,people_count,responsible,status&${range}`),
     getOrders(), getProviders(),
   ]);
   return buildCapacitySnapshot({
@@ -573,7 +573,7 @@ export async function getCapacity(from: string, to: string) {
     availablePeople: team[0]?.available_people,
     externalDefaults: external.map((item) => ({ id: item.id, providerId: item.provider_id, operation: item.operation, palletCapacity: item.pallet_capacity, status: item.status })),
     transportDefaults: transport.map((item) => ({ id: item.id, source: item.source, providerId: item.provider_id ?? undefined, palletCapacity: item.pallet_capacity, status: item.status })),
-    adjustments: adjustments.map((item) => ({ date: item.adjustment_date, resourceType: item.resource_type, operation: item.operation ?? undefined, source: item.source ?? undefined, providerId: item.provider_id ?? undefined, palletAdjustment: item.pallet_adjustment, responsible: item.responsible ?? undefined, status: item.status ?? undefined })),
+    adjustments: adjustments.map((item) => ({ date: item.adjustment_date, resourceType: item.resource_type, operation: item.operation ?? undefined, source: item.source ?? undefined, providerId: item.provider_id ?? undefined, palletAdjustment: item.pallet_adjustment, peopleCount: item.people_count ?? undefined, responsible: item.responsible ?? undefined, status: item.status ?? undefined })),
   });
 }
 
@@ -605,8 +605,7 @@ export async function saveInternalProduction(value: InternalProductionDefault) {
 export async function saveInternalTeamCapacity(availablePeople: number): Promise<InternalTeamCapacity> {
   if (!useMemoryStore) await supabaseRequest("/rest/v1/rpc/upsert_internal_team_capacity", { method: "POST", body: JSON.stringify({ p_available_people: availablePeople }) });
   else memoryAvailablePeople = availablePeople;
-  const assignedPeople = useMemoryStore ? memoryInternalDefaults.reduce((sum, entry) => sum + entry.peopleCount, 0) : 0;
-  return { availablePeople, assignedPeople, freePeople: Math.max(availablePeople - assignedPeople, 0), missingPeople: Math.max(assignedPeople - availablePeople, 0) };
+  return { availablePeople };
 }
 
 export async function saveExternalProduction(value: ExternalProductionDefault) {
@@ -622,7 +621,7 @@ export async function saveTransportCapacity(value: TransportCapacityDefault) {
 }
 
 export async function saveCapacityAdjustment(value: CapacityAdjustment) {
-  if (!useMemoryStore) await supabaseRequest("/rest/v1/rpc/upsert_capacity_daily_adjustment", { method: "POST", body: JSON.stringify({ p_date: value.date, p_resource_type: value.resourceType, p_operation: value.operation ?? null, p_source: value.source ?? null, p_provider_id: value.providerId ?? null, p_pallet_adjustment: value.palletAdjustment, p_responsible: value.responsible?.trim() || null, p_status: value.status ?? null }) });
+  if (!useMemoryStore) await supabaseRequest("/rest/v1/rpc/upsert_capacity_daily_adjustment", { method: "POST", body: JSON.stringify({ p_date: value.date, p_resource_type: value.resourceType, p_operation: value.operation ?? null, p_source: value.source ?? null, p_provider_id: value.providerId ?? null, p_pallet_adjustment: value.palletAdjustment, p_people_count: value.peopleCount ?? null, p_responsible: value.responsible?.trim() || null, p_status: value.status ?? null }) });
   else upsertMemory(memoryCapacityAdjustments, (item) => item.date === value.date && item.resourceType === value.resourceType && (item.operation ?? "") === (value.operation ?? "") && (item.source ?? "") === (value.source ?? "") && (item.providerId ?? "") === (value.providerId ?? ""), value);
   return value;
 }

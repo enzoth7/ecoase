@@ -2367,6 +2367,12 @@ h3 {
 .day-adjustment-section.day-internal > h3 { border-color: #b6dbc2; background: #dff2e6; color: #1f6348; }
 .day-adjustment-section.day-external > h3 { border-color: #bfd7eb; background: #e0f0ff; color: #18629c; }
 .day-adjustment-section.day-transport > h3 { border-color: #edd49b; background: #fff0c9; color: #855600; }
+.day-internal-team-summary { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; padding: 11px 16px; border-bottom: 1px solid #c8e5d0; background: rgba(255, 255, 255, .4); }
+.day-internal-team-summary div { display: grid; gap: 3px; }
+.day-internal-team-summary small { color: #3e7059; font-size: 9px; font-weight: 750; text-transform: uppercase; }
+.day-internal-team-summary strong { font-size: 13px; font-variant-numeric: tabular-nums; }
+.day-internal-team-summary .danger small,
+.day-internal-team-summary .danger strong { color: var(--danger); }
 .day-adjustment-section.day-internal .day-adjustment-row { border-color: #c8e5d0; }
 .day-adjustment-section.day-external .day-adjustment-row { border-color: #cce1f0; }
 .day-adjustment-section.day-transport .day-adjustment-row { border-color: #f0ddb1; }
@@ -2765,6 +2771,7 @@ h3 {
   .capacity-day-alert { margin: 14px 12px 0; }
   .capacity-day-summary { grid-template-columns: 1fr; margin: 12px; }
   .day-adjustment-section { margin: 14px 12px; }
+  .day-internal-team-summary { grid-template-columns: 1fr; padding: 12px 13px; }
   .day-adjustment-row { grid-template-columns: 1fr 1fr; gap: 9px; padding: 13px; }
   .day-adjustment-name { grid-column: 1 / -1; }
   .day-adjustment-row form { grid-column: 1 / -1; grid-template-columns: 1fr 1fr; }
