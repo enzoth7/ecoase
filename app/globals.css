@@ -1651,6 +1651,16 @@ h3 {
   border-right: 1px solid var(--line);
 }
 
+.calendar-day.today {
+  background: #eff6ff;
+  box-shadow: inset 3px 0 0 #93c5fd;
+}
+
+.calendar-day.today > div:first-child strong,
+.calendar-day.today > div:first-child small {
+  color: #1d4ed8;
+}
+
 .calendar-day:last-child {
   border-right: 0;
 }

@@ -295,6 +295,7 @@ function AddClientModal({ onClose, onSave }: { onClose: () => void; onSave: (inp
 
 function CalendarView({ orders, onOpen }: { orders: OperationOrder[]; onOpen: (id: string) => void }) {
   const [weekStart, setWeekStart] = useState(() => startOfWeek(new Date()));
+  const todayKey = useMemo(() => dateKey(new Date()), []);
   const weekDays = useMemo(() => Array.from({ length: 7 }, (_, index) => {
     const date = new Date(weekStart);
     date.setDate(weekStart.getDate() + index);
@@ -328,7 +329,7 @@ function CalendarView({ orders, onOpen }: { orders: OperationOrder[]; onOpen: (i
         {weekDays.map((day) => {
           const dayOrders = orders.filter((order) => getOrderPlannedDate(order) === day.key);
           return (
-            <section className="calendar-day" key={day.key} aria-label={`${day.name} ${day.date.getDate()}`}>
+            <section className={`calendar-day ${day.key === todayKey ? "today" : ""}`} key={day.key} aria-label={`${day.name} ${day.date.getDate()}${day.key === todayKey ? ", hoy" : ""}`}>
               <div><small>{day.name}</small><strong>{day.date.getDate()}</strong><small>{dayOrders.length} {dayOrders.length === 1 ? "pedido" : "pedidos"}</small></div>
               <div className="calendar-orders">
                 {dayOrders.map((order) => (
