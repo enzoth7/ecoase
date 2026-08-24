@@ -131,12 +131,31 @@ export default function CapacityView({ providers }: { providers: Provider[] }) {
     {error && <p className="capacity-error" role="alert">{error}</p>}
     {loading && !capacity ? <div className="module-surface capacity-loading">Cargando capacidad…</div> : capacity && <>
       <div className="capacity-general-heading"><div><h2>Capacidad general</h2><p>Estos valores se repiten de lunes a domingo. Los cambios excepcionales se cargan desde cada día.</p></div></div>
+      <InternalPeopleCapacity team={capacity.internalTeam} onSave={save} />
       <GeneralInternalProduction capacity={capacity} onSave={save} onDelete={remove} />
       <GeneralExternalProduction capacity={capacity} providers={sawmills} onSave={save} />
       <GeneralTransport capacity={capacity} providers={transporters} onSave={save} />
     </>}
 
     {selected && capacity && <DayAdjustmentModal day={selected} sawmills={sawmills} transporters={transporters} onClose={() => setOpenDate(null)} onSave={save} />}
+  </section>;
+}
+
+function InternalPeopleCapacity({ team, onSave }: { team: CapacitySnapshot["internalTeam"]; onSave: (url: string, body: unknown) => Promise<void> }) {
+  return <section className="module-surface capacity-people" aria-labelledby="team-capacity-title">
+    <div className="capacity-section-heading"><div className="capacity-icon"><Users size={20} /></div><div><h2 id="team-capacity-title">Personas disponibles</h2><small>Dotación general para producción interna</small></div></div>
+    <div className="capacity-people-content">
+      <div className="capacity-people-metrics">
+        <Metric label="Disponibles" value={team.availablePeople === undefined ? "Sin definir" : `${number.format(team.availablePeople)} personas`} />
+        <Metric label="Asignadas" value={`${number.format(team.assignedPeople)} personas`} />
+        <Metric label={team.availablePeople === undefined ? "Sin calcular" : team.missingPeople > 0 ? "Faltan asignar" : "Personas libres"} value={team.availablePeople === undefined ? "—" : `${number.format(team.missingPeople > 0 ? team.missingPeople : team.freePeople ?? 0)} personas`} tone={team.missingPeople > 0 ? "danger" : undefined} />
+      </div>
+      <form className="capacity-team-form" onSubmit={(event) => { event.preventDefault(); const form = new FormData(event.currentTarget); void onSave("/api/capacity/team", { availablePeople: Number(form.get("availablePeople")) }); }}>
+        <label>Personas disponibles<input name="availablePeople" type="number" min="0" step="1" defaultValue={team.availablePeople ?? ""} required /></label>
+        <button type="submit"><Save size={17} />Guardar dotación</button>
+      </form>
+    </div>
+    <p className="capacity-people-note">Las asignadas son la suma de las personas cargadas en Armado, Marcado y Tratamiento HT.</p>
   </section>;
 }
 

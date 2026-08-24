@@ -25,6 +25,7 @@ import {
   type CapacityRule,
   type ExternalProductionDefault,
   type InternalProductionDefault,
+  type InternalTeamCapacity,
   type TransportCapacityDefault,
 } from "../capacity";
 import { supabaseRequest } from "../lib/supabase";
@@ -126,6 +127,7 @@ const memoryProducts: Product[] = structuredClone(seededProducts);
 const memoryClients: Client[] = [...new Set(seededOrders.map((order) => order.client))].map((name, index) => ({ id: `cliente-${index + 1}`, name }));
 const memoryCapacityRules: CapacityRule[] = [];
 const memoryInternalDefaults: InternalProductionDefault[] = [];
+let memoryAvailablePeople: number | undefined;
 const memoryExternalDefaults: ExternalProductionDefault[] = [];
 const memoryTransportDefaults: TransportCapacityDefault[] = [];
 const memoryCapacityAdjustments: CapacityAdjustment[] = [];
@@ -547,16 +549,18 @@ export async function updateOrder(id: string, changes: UpdateOrderInput) {
 
 type DbCapacityRule = { operation: CapacityOperation; people_count: number; pallet_capacity: number };
 type DbInternalDefault = { operation: CapacityOperation; people_count: number; manual_capacity: number | null };
+type DbInternalTeam = { available_people: number };
 type DbExternalDefault = { id: string; provider_id: string; operation: CapacityOperation; pallet_capacity: number; status: ExternalProductionDefault["status"] };
 type DbTransportDefault = { id: string; source: TransportSource; provider_id: string | null; pallet_capacity: number; status: TransportCapacityDefault["status"] };
 type DbCapacityAdjustment = { adjustment_date: string; resource_type: CapacityAdjustment["resourceType"]; operation: CapacityOperation | null; source: TransportSource | null; provider_id: string | null; pallet_adjustment: number; responsible: string | null; status: CapacityStatus | null };
 
 export async function getCapacity(from: string, to: string) {
-  if (useMemoryStore) return buildCapacitySnapshot({ from, to, rules: memoryCapacityRules, internalDefaults: memoryInternalDefaults, externalDefaults: memoryExternalDefaults, transportDefaults: memoryTransportDefaults, adjustments: memoryCapacityAdjustments, orders: memoryOrders, providers: seededProviders });
+  if (useMemoryStore) return buildCapacitySnapshot({ from, to, rules: memoryCapacityRules, internalDefaults: memoryInternalDefaults, availablePeople: memoryAvailablePeople, externalDefaults: memoryExternalDefaults, transportDefaults: memoryTransportDefaults, adjustments: memoryCapacityAdjustments, orders: memoryOrders, providers: seededProviders });
   const range = `adjustment_date=gte.${from}&adjustment_date=lte.${to}`;
-  const [rules, internal, external, transport, adjustments, orders, providers] = await Promise.all([
+  const [rules, internal, team, external, transport, adjustments, orders, providers] = await Promise.all([
     supabaseRequest<DbCapacityRule[]>("/rest/v1/capacity_rules?select=operation,people_count,pallet_capacity&order=operation.asc,people_count.asc"),
     supabaseRequest<DbInternalDefault[]>("/rest/v1/internal_production_defaults?select=operation,people_count,manual_capacity"),
+    supabaseRequest<DbInternalTeam[]>("/rest/v1/internal_team_capacity?select=available_people&id=eq.true"),
     supabaseRequest<DbExternalDefault[]>("/rest/v1/external_production_defaults?select=id,provider_id,operation,pallet_capacity,status"),
     supabaseRequest<DbTransportDefault[]>("/rest/v1/transport_capacity_defaults?select=id,source,provider_id,pallet_capacity,status"),
     supabaseRequest<DbCapacityAdjustment[]>(`/rest/v1/capacity_daily_adjustments?select=adjustment_date,resource_type,operation,source,provider_id,pallet_adjustment,responsible,status&${range}`),
@@ -566,6 +570,7 @@ export async function getCapacity(from: string, to: string) {
     from, to, orders, providers,
     rules: rules.map((item) => ({ operation: item.operation, peopleCount: item.people_count, palletCapacity: item.pallet_capacity })),
     internalDefaults: internal.map((item) => ({ operation: item.operation, peopleCount: item.people_count, manualCapacity: item.manual_capacity ?? undefined })),
+    availablePeople: team[0]?.available_people,
     externalDefaults: external.map((item) => ({ id: item.id, providerId: item.provider_id, operation: item.operation, palletCapacity: item.pallet_capacity, status: item.status })),
     transportDefaults: transport.map((item) => ({ id: item.id, source: item.source, providerId: item.provider_id ?? undefined, palletCapacity: item.pallet_capacity, status: item.status })),
     adjustments: adjustments.map((item) => ({ date: item.adjustment_date, resourceType: item.resource_type, operation: item.operation ?? undefined, source: item.source ?? undefined, providerId: item.provider_id ?? undefined, palletAdjustment: item.pallet_adjustment, responsible: item.responsible ?? undefined, status: item.status ?? undefined })),
@@ -595,6 +600,13 @@ export async function saveInternalProduction(value: InternalProductionDefault) {
   if (!useMemoryStore) await supabaseRequest("/rest/v1/rpc/upsert_internal_production_default", { method: "POST", body: JSON.stringify({ p_operation: value.operation, p_people_count: value.peopleCount, p_manual_capacity: value.manualCapacity ?? null }) });
   else upsertMemory(memoryInternalDefaults, (item) => item.operation === value.operation, value);
   return value;
+}
+
+export async function saveInternalTeamCapacity(availablePeople: number): Promise<InternalTeamCapacity> {
+  if (!useMemoryStore) await supabaseRequest("/rest/v1/rpc/upsert_internal_team_capacity", { method: "POST", body: JSON.stringify({ p_available_people: availablePeople }) });
+  else memoryAvailablePeople = availablePeople;
+  const assignedPeople = useMemoryStore ? memoryInternalDefaults.reduce((sum, entry) => sum + entry.peopleCount, 0) : 0;
+  return { availablePeople, assignedPeople, freePeople: Math.max(availablePeople - assignedPeople, 0), missingPeople: Math.max(assignedPeople - availablePeople, 0) };
 }
 
 export async function saveExternalProduction(value: ExternalProductionDefault) {

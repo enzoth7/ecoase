@@ -2262,12 +2262,15 @@ h3 {
 .capacity-section-heading h2 { font-size: 18px; }
 .capacity-icon { width: 40px; height: 40px; display: grid; place-items: center; border-radius: 10px; background: var(--green-soft); color: var(--forest-2); }
 .capacity-internal { border-color: #b6dbc2; background: #edf8f1; }
+.capacity-people { overflow: hidden; border-color: #efc27b; background: #fff3df; }
 .capacity-external { border-color: #bfd7eb; background: #eff7ff; }
 .capacity-transport { border-color: #edd49b; background: #fff8e6; }
 .capacity-internal .capacity-section-heading,
+.capacity-people .capacity-section-heading,
 .capacity-external .capacity-section-heading,
 .capacity-transport .capacity-section-heading { background: transparent; }
 .capacity-internal .capacity-icon { background: #d9f0e1; color: var(--green); }
+.capacity-people .capacity-icon { background: #ffe0ad; color: #a45b00; }
 .capacity-external .capacity-icon { background: #dceefd; color: var(--blue); }
 .capacity-transport .capacity-icon { background: #ffedbf; color: #9a6500; }
 .capacity-internal .capacity-operation-card,
@@ -2276,6 +2279,14 @@ h3 {
 .capacity-internal .capacity-add-form,
 .capacity-external .capacity-add-form,
 .capacity-transport .capacity-add-form { background: rgba(255, 255, 255, .42); }
+.capacity-people-content { display: grid; grid-template-columns: minmax(0, 1fr) minmax(240px, .5fr); align-items: end; gap: 18px; padding: 16px 20px 8px; }
+.capacity-people-metrics { display: grid; grid-template-columns: repeat(3, 1fr); gap: 9px; }
+.capacity-people .capacity-metric { min-height: 68px; background: rgba(255, 255, 255, .67); }
+.capacity-team-form { display: grid; grid-template-columns: minmax(130px, 1fr) auto; align-items: end; gap: 8px; }
+.capacity-team-form label { display: grid; gap: 5px; color: var(--muted); font-size: 9px; font-weight: 750; }
+.capacity-team-form input { width: 100%; min-height: 42px; padding: 0 10px; border: 1px solid #d6ae69; border-radius: 8px; background: #fff; color: var(--ink); }
+.capacity-team-form button { min-height: 42px; display: flex; align-items: center; justify-content: center; gap: 6px; padding: 0 13px; border: 0; border-radius: 8px; background: #a45b00; color: #fff; font-size: 10px; font-weight: 750; cursor: pointer; }
+.capacity-people-note { margin: 0; padding: 0 20px 16px; color: #76552c; font-size: 10px; line-height: 1.45; }
 .capacity-operation-grid { display: grid; grid-template-columns: repeat(3, 1fr); }
 .capacity-operation-card { min-width: 0; padding: 18px; border-right: 1px solid var(--line); }
 .capacity-operation-card:last-child { border-right: 0; }
@@ -2743,6 +2754,9 @@ h3 {
   .capacity-table-heading { display: none; }
   .capacity-table-row { grid-template-columns: 1fr 1fr; gap: 7px 12px; padding: 14px; }
   .capacity-add-form { grid-template-columns: 1fr; }
+  .capacity-people-content { grid-template-columns: 1fr; padding: 14px; }
+  .capacity-people-metrics { grid-template-columns: 1fr; }
+  .capacity-people-note { padding: 0 14px 14px; }
   .capacity-general-heading { padding-inline: 2px; }
   .capacity-modal-backdrop { padding: 0; }
   .capacity-day-modal { width: 100%; min-height: 100%; max-height: 100vh; border-radius: 0; }

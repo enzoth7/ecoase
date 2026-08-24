@@ -119,6 +119,7 @@ test("administra capacidad general, ajustes diarios y permite sobrecarga", async
 
   const rule = await request("/api/capacity/rules", { method: "PUT", headers: { "content-type": "application/json" }, body: JSON.stringify({ operation: "assembly", peopleCount: 5, palletCapacity: 30 }) });
   const internal = await request("/api/capacity/internal-production", { method: "PUT", headers: { "content-type": "application/json" }, body: JSON.stringify({ operation: "assembly", peopleCount: 5 }) });
+  const team = await request("/api/capacity/team", { method: "PUT", headers: { "content-type": "application/json" }, body: JSON.stringify({ availablePeople: 10 }) });
   const transport = await request("/api/capacity/transport", { method: "PUT", headers: { "content-type": "application/json" }, body: JSON.stringify({ source: "internal", palletCapacity: 25, status: "confirmed" }) });
   const productionAdjustment = await request("/api/capacity/adjustments", { method: "PUT", headers: { "content-type": "application/json" }, body: JSON.stringify({ date: "2026-09-07", resourceType: "internal_production", operation: "assembly", palletAdjustment: 5, responsible: "Turno extra de armado" }) });
   const transportAdjustment = await request("/api/capacity/adjustments", { method: "PUT", headers: { "content-type": "application/json" }, body: JSON.stringify({ date: "2026-09-08", resourceType: "transport", source: "internal", palletAdjustment: 10, responsible: "Flota Ecoase" }) });
@@ -126,6 +127,7 @@ test("administra capacidad general, ajustes diarios y permite sobrecarga", async
   const unnamedAdjustment = await request("/api/capacity/adjustments", { method: "PUT", headers: { "content-type": "application/json" }, body: JSON.stringify({ date: "2026-09-07", resourceType: "internal_production", operation: "marking", palletAdjustment: 5 }) });
   assert.equal(rule.status, 200);
   assert.equal(internal.status, 200);
+  assert.equal(team.status, 200);
   assert.equal(transport.status, 200);
   assert.equal(productionAdjustment.status, 200);
   assert.equal(transportAdjustment.status, 200);
@@ -144,6 +146,7 @@ test("administra capacidad general, ajustes diarios y permite sobrecarga", async
   const snapshot = (await snapshotResponse.json()).capacity;
   const productionDay = snapshot.days.find((day) => day.date === "2026-09-07");
   const deliveryDay = snapshot.days.find((day) => day.date === "2026-09-08");
+  assert.deepEqual(snapshot.internalTeam, { availablePeople: 10, assignedPeople: 5, freePeople: 5, missingPeople: 0 });
   assert.equal(productionDay.internalProduction.find((item) => item.operation === "assembly").capacity, 35);
   assert.equal(productionDay.externalProduction.find((item) => item.providerId === "blanc" && item.operation === "assembly").capacity, 20);
   assert.equal(productionDay.internalProduction.find((item) => item.operation === "assembly").committed, 40);
