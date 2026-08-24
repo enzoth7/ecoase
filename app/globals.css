@@ -1755,6 +1755,14 @@ h3 {
   display: grid;
 }
 
+.logistics-transport-container {
+  margin-top: 18px;
+}
+
+.logistics-transport-container .capacity-section {
+  margin: 0;
+}
+
 .logistics-order {
   width: 100%;
   min-height: 82px;

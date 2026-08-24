@@ -363,7 +363,8 @@ function LogisticsView({ orders, providers, onOpen }: { orders: OperationOrder[]
     fetch(`/api/capacity?from=${dateKey(currentWeek)}&to=${dateKey(end)}`).then((response) => response.json()).then((payload: { capacity?: CapacitySnapshot }) => setCapacity(payload.capacity ?? null)).catch(() => setCapacity(null));
   }, [currentWeek]);
   return (
-    <section className="module-surface" aria-labelledby="logistics-page-title">
+    <>
+    <section className="module-surface logistics-surface" aria-labelledby="logistics-page-title">
       <div className="module-toolbar">
         <div><h2 id="logistics-page-title">Cap. Logística</h2></div>
         <small>{transports.length} transportes registrados</small>
@@ -371,16 +372,6 @@ function LogisticsView({ orders, providers, onOpen }: { orders: OperationOrder[]
       {capacity && <div className="logistics-capacity-strip" aria-label="Capacidad logística de la semana">
         {capacity.days.map((day) => <article key={day.date}><small>{new Intl.DateTimeFormat("es-UY", { weekday: "short", day: "numeric" }).format(new Date(`${day.date}T12:00:00`))}</small><strong>{number.format(day.transportTotals.committed)} a entregar</strong><p>{number.format(day.transportTotals.internal)} interna · {number.format(day.transportTotals.externalConfirmed)} externa</p>{day.transportTotals.missing > 0 && <b>{number.format(day.transportTotals.missing)} faltantes</b>}</article>)}
       </div>}
-      {capacity && <GeneralTransport capacity={capacity} providers={providers.filter((provider) => provider.type === "Transporte")} onSave={async (url, body) => {
-        setCapacityError("");
-        const response = await fetch(url, { method: "PUT", headers: { "content-type": "application/json" }, body: JSON.stringify(body) });
-        const payload = await response.json() as { error?: string };
-        if (!response.ok) { const message = payload.error ?? "No se pudo guardar la capacidad de transporte."; setCapacityError(message); throw new Error(message); }
-        const end = new Date(currentWeek); end.setDate(currentWeek.getDate() + 6);
-        const refreshed = await fetch(`/api/capacity?from=${dateKey(currentWeek)}&to=${dateKey(end)}`).then((item) => item.json()) as { capacity?: CapacitySnapshot };
-        setCapacity(refreshed.capacity ?? null);
-      }} />}
-      {capacityError && <p className="capacity-error" role="alert">{capacityError}</p>}
       <div className="logistics-board">
         <div className="data-heading logistics-heading" aria-hidden="true">
           <div /><div>Cliente y pedido</div><div>Fecha</div><div>Transporte</div><div>Estado</div><div />
@@ -397,6 +388,19 @@ function LogisticsView({ orders, providers, onOpen }: { orders: OperationOrder[]
         ))}
       </div>
     </section>
+    <div className="logistics-transport-container">
+      {capacity && <GeneralTransport capacity={capacity} providers={providers.filter((provider) => provider.type === "Transporte")} onSave={async (url, body) => {
+        setCapacityError("");
+        const response = await fetch(url, { method: "PUT", headers: { "content-type": "application/json" }, body: JSON.stringify(body) });
+        const payload = await response.json() as { error?: string };
+        if (!response.ok) { const message = payload.error ?? "No se pudo guardar la capacidad de transporte."; setCapacityError(message); throw new Error(message); }
+        const end = new Date(currentWeek); end.setDate(currentWeek.getDate() + 6);
+        const refreshed = await fetch(`/api/capacity?from=${dateKey(currentWeek)}&to=${dateKey(end)}`).then((item) => item.json()) as { capacity?: CapacitySnapshot };
+        setCapacity(refreshed.capacity ?? null);
+      }} />}
+      {capacityError && <p className="capacity-error" role="alert">{capacityError}</p>}
+    </div>
+    </>
   );
 }
 
