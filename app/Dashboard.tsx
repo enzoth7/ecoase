@@ -5,6 +5,7 @@ import {
   AlertTriangle,
   CalendarDays,
   CheckCircle2,
+  ChevronLeft,
   ChevronRight,
   ClipboardList,
   Factory,
@@ -77,14 +78,30 @@ function isOrderInPeriod(order: OperationOrder, period: KpiPeriod, today: Date) 
   return orderDay >= weekStart && orderDay < weekEnd;
 }
 
-const weekDays = [
-  { name: "Lun", day: 10 },
-  { name: "Mar", day: 11 },
-  { name: "Mié", day: 12 },
-  { name: "Jue", day: 13 },
-  { name: "Vie", day: 14 },
-  { name: "Sáb", day: 15 },
-];
+function startOfWeek(date: Date) {
+  const start = new Date(date.getFullYear(), date.getMonth(), date.getDate());
+  start.setDate(start.getDate() - ((start.getDay() + 6) % 7));
+  return start;
+}
+
+function dateKey(date: Date) {
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, "0");
+  const day = String(date.getDate()).padStart(2, "0");
+  return `${year}-${month}-${day}`;
+}
+
+function formatCalendarRange(weekStart: Date) {
+  const weekEnd = new Date(weekStart);
+  weekEnd.setDate(weekStart.getDate() + 6);
+  const sameMonth = weekStart.getMonth() === weekEnd.getMonth() && weekStart.getFullYear() === weekEnd.getFullYear();
+  if (sameMonth) {
+    const month = new Intl.DateTimeFormat("es-UY", { month: "long", year: "numeric" }).format(weekStart);
+    return `${weekStart.getDate()}–${weekEnd.getDate()} de ${month}`;
+  }
+  const formatter = new Intl.DateTimeFormat("es-UY", { day: "numeric", month: "short", year: "numeric" });
+  return `${formatter.format(weekStart)} – ${formatter.format(weekEnd)}`;
+}
 
 type ClientSummary = {
   name: string;
@@ -277,18 +294,42 @@ function AddClientModal({ onClose, onSave }: { onClose: () => void; onSave: (inp
 }
 
 function CalendarView({ orders, onOpen }: { orders: OperationOrder[]; onOpen: (id: string) => void }) {
+  const [weekStart, setWeekStart] = useState(() => startOfWeek(new Date()));
+  const weekDays = useMemo(() => Array.from({ length: 7 }, (_, index) => {
+    const date = new Date(weekStart);
+    date.setDate(weekStart.getDate() + index);
+    const weekday = new Intl.DateTimeFormat("es-UY", { weekday: "short" }).format(date).replace(".", "");
+    return {
+      date,
+      key: dateKey(date),
+      name: weekday.charAt(0).toUpperCase() + weekday.slice(1),
+    };
+  }), [weekStart]);
+
+  const moveWeek = (direction: -1 | 1) => {
+    setWeekStart((current) => {
+      const next = new Date(current);
+      next.setDate(current.getDate() + direction * 7);
+      return next;
+    });
+  };
+
   return (
     <section className="module-surface" aria-labelledby="calendar-page-title">
-      <div className="module-toolbar">
+      <div className="module-toolbar calendar-toolbar">
         <div><h2 id="calendar-page-title">Calendario</h2></div>
-        <small>10–15 agosto 2026</small>
+        <div className="calendar-week-controls">
+          <button type="button" onClick={() => moveWeek(-1)} aria-label="Semana anterior"><ChevronLeft size={18} aria-hidden="true" /></button>
+          <strong aria-live="polite">{formatCalendarRange(weekStart)}</strong>
+          <button type="button" onClick={() => moveWeek(1)} aria-label="Semana siguiente"><ChevronRight size={18} aria-hidden="true" /></button>
+        </div>
       </div>
       <div className="calendar-board">
         {weekDays.map((day) => {
-          const dayOrders = orders.filter((order) => Number(order.dateLabel.match(/\d+/)?.[0]) === day.day && !order.dateLabel.includes("julio"));
+          const dayOrders = orders.filter((order) => getOrderPlannedDate(order) === day.key);
           return (
-            <section className="calendar-day" key={day.day} aria-label={`${day.name} ${day.day}`}>
-              <div><small>{day.name}</small><strong>{day.day}</strong><small>{dayOrders.length} {dayOrders.length === 1 ? "pedido" : "pedidos"}</small></div>
+            <section className="calendar-day" key={day.key} aria-label={`${day.name} ${day.date.getDate()}`}>
+              <div><small>{day.name}</small><strong>{day.date.getDate()}</strong><small>{dayOrders.length} {dayOrders.length === 1 ? "pedido" : "pedidos"}</small></div>
               <div className="calendar-orders">
                 {dayOrders.map((order) => (
                   <button type="button" key={order.id} onClick={() => onOpen(order.id)}>

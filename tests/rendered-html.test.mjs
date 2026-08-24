@@ -109,6 +109,14 @@ test("usa rutas reales sin navegación por hash", async () => {
   assert.match(html, /href="\/productos"/i);
 });
 
+test("muestra el calendario por semana con controles de navegación", async () => {
+  const html = await (await request("/calendario")).text();
+  assert.match(html, /Semana anterior/);
+  assert.match(html, /Semana siguiente/);
+  assert.match(html, /Lun/);
+  assert.match(html, /Dom/);
+});
+
 test("muestra el catálogo de productos sin clientes ni catálogos", async () => {
   const [pageResponse, productsResponse] = await Promise.all([request("/productos"), request("/api/products")]);
   assert.equal(pageResponse.status, 200);
