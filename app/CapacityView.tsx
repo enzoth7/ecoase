@@ -258,7 +258,7 @@ function DayAdjustmentModal({ day, sawmills, transporters, onClose, onSave }: { 
 
       <section className="day-adjustment-section day-internal" aria-labelledby="day-internal-title"><h3 id="day-internal-title"><Factory size={18} />Producción interna</h3>
         <DayInternalTeamSummary team={day.internalTeam} />
-        {day.internalProduction.map((entry) => <AdjustmentRow key={entry.operation} name={capacityOperationLabels[entry.operation]} sourceName="Ecoase" peopleAssigned={entry.peopleAssigned} baseCapacity={entry.baseCapacity} adjustment={entry.adjustment} committed={entry.committed} capacity={entry.capacity} overload={entry.overload} onSave={(palletAdjustment, responsible, peopleCount) => onSave("/api/capacity/adjustments", { date: day.date, resourceType: "internal_production", operation: entry.operation, palletAdjustment, peopleCount, responsible, status: "confirmed" })} />)}
+        {day.internalProduction.map((entry) => <AdjustmentRow key={entry.operation} name={capacityOperationLabels[entry.operation]} sourceName="Ecoase" peopleAdditional={entry.peopleAdditional} maxAdditionalPeople={day.internalTeam.availablePeople === undefined ? undefined : Math.max(day.internalTeam.availablePeople - day.internalTeam.basePeople - (day.internalTeam.additionalPeople - entry.peopleAdditional), 0)} baseCapacity={entry.baseCapacity} adjustment={entry.adjustment} committed={entry.committed} capacity={entry.capacity} overload={entry.overload} onSave={(palletAdjustment, responsible, peopleCount) => onSave("/api/capacity/adjustments", { date: day.date, resourceType: "internal_production", operation: entry.operation, palletAdjustment, peopleCount, responsible, status: "confirmed" })} />)}
       </section>
 
       <section className="day-adjustment-section day-external" aria-labelledby="day-external-title"><h3 id="day-external-title"><Factory size={18} />Producción externa</h3>
@@ -309,23 +309,24 @@ function DailyProviderAssignment({ date, kind, providers, onSave }: { date: stri
 function DayInternalTeamSummary({ team }: { team: CapacityDay["internalTeam"] }) {
   const hasTeam = team.availablePeople !== undefined;
   return <div className="day-internal-team-summary">
-    <div><small>Personas disponibles</small><strong>{hasTeam ? `${number.format(team.availablePeople!)} personas` : "Sin definir"}</strong></div>
-    <div><small>Asignadas hoy</small><strong>{number.format(team.assignedPeople)} personas</strong></div>
-    <div className={team.missingPeople > 0 ? "danger" : ""}><small>{!hasTeam ? "Sin calcular" : team.missingPeople > 0 ? "Faltan personas" : "Personas libres"}</small><strong>{hasTeam ? `${number.format(team.missingPeople > 0 ? team.missingPeople : team.freePeople ?? 0)} personas` : "—"}</strong></div>
+    <div><small>Dotación total</small><strong>{hasTeam ? `${number.format(team.availablePeople!)} personas` : "Sin definir"}</strong></div>
+    <div><small>Dotación habitual</small><strong>{number.format(team.basePeople)} personas</strong></div>
+    <div className={team.missingPeople > 0 ? "danger" : ""}><small>{!hasTeam ? "Sin calcular" : team.missingPeople > 0 ? "Faltan personas" : "Libres para refuerzo"}</small><strong>{hasTeam ? `${number.format(team.missingPeople > 0 ? team.missingPeople : team.freePeople ?? 0)} personas` : "—"}</strong></div>
   </div>;
 }
 
-function AdjustmentRow({ name, sourceName, responsible, peopleAssigned, baseCapacity, adjustment, committed, capacity, overload, onSave }: { name: string; sourceName: string; responsible?: string; peopleAssigned?: number; baseCapacity?: number; adjustment: number; committed: number; capacity?: number; overload: number; onSave: (adjustment: number, responsible: string, peopleCount?: number) => Promise<void> }) {
+function AdjustmentRow({ name, sourceName, responsible, peopleAdditional, maxAdditionalPeople, baseCapacity, adjustment, committed, capacity, overload, onSave }: { name: string; sourceName: string; responsible?: string; peopleAdditional?: number; maxAdditionalPeople?: number; baseCapacity?: number; adjustment: number; committed: number; capacity?: number; overload: number; onSave: (adjustment: number, responsible: string, peopleCount?: number) => Promise<void> }) {
   const [value, setValue] = useState(String(adjustment));
-  const [peopleValue, setPeopleValue] = useState(String(peopleAssigned ?? 0));
+  const [peopleValue, setPeopleValue] = useState(String(peopleAdditional ?? 0));
   const [saving, setSaving] = useState(false);
-  const assignsPeople = peopleAssigned !== undefined;
+  const [peopleError, setPeopleError] = useState("");
+  const assignsPeople = peopleAdditional !== undefined;
   return <article className={`day-adjustment-row ${capacity === undefined || overload > 0 ? "danger" : ""}`}>
     <div className="day-adjustment-name"><strong>{name}</strong><small>Base: {baseCapacity === undefined ? "sin definir" : `${number.format(baseCapacity)} palets`}</small>{responsible && !assignsPeople && <small>Asignado a: {responsible}</small>}</div>
     <Metric label="Comprometidos" value={number.format(committed)} />
     <Metric label={overload > 0 ? "Sobrecarga" : "Capacidad del día"} value={capacity === undefined ? "Sin calcular" : overload > 0 ? number.format(overload) : number.format(capacity)} tone={overload > 0 ? "danger" : undefined} />
-    <form onSubmit={async (event) => { event.preventDefault(); setSaving(true); try { await onSave(Number(value), sourceName, assignsPeople ? Number(peopleValue) : undefined); } finally { setSaving(false); } }}>
-      {assignsPeople ? <label>Personas adicionales hoy<input type="number" min="0" step="1" value={peopleValue} onChange={(event) => setPeopleValue(event.target.value)} required /><small>Se suman a la dotación habitual</small></label> : <p className="adjustment-source"><small>Quién aporta</small><strong>{sourceName}</strong></p>}
+    <form onSubmit={async (event) => { event.preventDefault(); const additional = Number(peopleValue); if (assignsPeople && maxAdditionalPeople !== undefined && additional > maxAdditionalPeople) { setPeopleError(`Solo hay ${maxAdditionalPeople} personas libres para refuerzo.`); return; } setPeopleError(""); setSaving(true); try { await onSave(Number(value), sourceName, assignsPeople ? additional : undefined); } finally { setSaving(false); } }}>
+      {assignsPeople ? <label>Personas adicionales hoy<input type="number" min="0" max={maxAdditionalPeople} step="1" value={peopleValue} onChange={(event) => { setPeopleValue(event.target.value); setPeopleError(""); }} required /><small>{maxAdditionalPeople === undefined ? "Se suman a la dotación habitual" : `Máximo disponible: ${maxAdditionalPeople}`}</small>{peopleError && <b className="capacity-input-error" role="alert">{peopleError}</b>}</label> : <p className="adjustment-source"><small>Quién aporta</small><strong>{sourceName}</strong></p>}
       <label>Capacidad adicional hoy<input type="number" step="1" placeholder="+ / − palets" value={value} onChange={(event) => setValue(event.target.value)} aria-label={`Cambio de capacidad para ${name}`} /><small>0 = sin cambio</small></label>
       <button type="submit" disabled={saving}><Save size={16} />{saving ? "Guardando" : "Guardar"}</button>
     </form>

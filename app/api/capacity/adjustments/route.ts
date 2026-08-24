@@ -1,4 +1,4 @@
-import { getProviders, saveCapacityAdjustment } from "../../store";
+import { getCapacity, getProviders, saveCapacityAdjustment } from "../../store";
 import type { CapacityOperation, TransportSource } from "../../../data";
 import type { CapacityAdjustment } from "../../../capacity";
 
@@ -20,6 +20,17 @@ export async function PUT(request: Request) {
     (payload.resourceType === "internal_production" && Boolean(payload.operation && operations.includes(payload.operation)) && !payload.providerId && !payload.source) ||
     (payload.resourceType === "external_production" && Boolean(payload.operation && operations.includes(payload.operation)) && providers.some((provider) => provider.id === payload.providerId && provider.type === "Aserradero") && !payload.source) ||
     (payload.resourceType === "transport" && Boolean(payload.source && (["internal", "external"] as TransportSource[]).includes(payload.source)) && !payload.operation && (payload.source === "internal" ? !payload.providerId : providers.some((provider) => provider.id === payload.providerId && provider.type === "Transporte")));
+
+  if (payload.resourceType === "internal_production" && validDate && validPeople) {
+    const day = (await getCapacity(payload.date!, payload.date!)).days[0];
+    const operation = day?.internalProduction.find((entry) => entry.operation === payload.operation);
+    const maximum = day?.internalTeam.availablePeople === undefined || !operation
+      ? undefined
+      : Math.max(day.internalTeam.availablePeople - day.internalTeam.basePeople - (day.internalTeam.additionalPeople - operation.peopleAdditional), 0);
+    if (maximum !== undefined && peopleCount! > maximum) {
+      return Response.json({ error: `Solo hay ${maximum} personas disponibles para refuerzo en esa fecha.` }, { status: 400 });
+    }
+  }
 
   const requiresResponsible = payload.resourceType !== "internal_production" && adjustment !== 0;
   if (!validDate || !validAmount || !validPeople || !validResource || (requiresResponsible && !responsible)) {

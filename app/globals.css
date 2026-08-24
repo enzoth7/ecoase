@@ -2388,6 +2388,7 @@ h3 {
 .day-adjustment-row form { display: grid; grid-template-columns: minmax(120px, 1.3fr) minmax(110px, 1fr) auto; align-items: end; gap: 8px; }
 .day-adjustment-row form label { display: grid; gap: 5px; color: var(--muted); font-size: 9px; font-weight: 750; }
 .day-adjustment-row form label small { color: var(--muted); font-size: 9px; font-weight: 500; }
+.capacity-input-error { color: var(--danger); font-size: 9px; line-height: 1.35; }
 .day-adjustment-row form input { width: 100%; min-height: 42px; padding: 0 10px; border: 1px solid var(--line-strong); border-radius: 8px; background: #fff; }
 .day-adjustment-row form button { min-height: 42px; display: flex; align-items: center; gap: 6px; padding: 0 13px; border: 0; border-radius: 8px; background: var(--forest-2); color: #fff; font-size: 10px; font-weight: 750; cursor: pointer; }
 .day-adjustment-row form button:disabled { opacity: .65; cursor: wait; }
