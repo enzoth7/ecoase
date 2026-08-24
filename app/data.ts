@@ -89,6 +89,11 @@ export interface Provider {
   supplies: string;
 }
 
+export interface Client {
+  id: string;
+  name: string;
+}
+
 export type ProductKind = "Pallet" | "Piso" | "Bin";
 export type ProductTreatment = "Marcado" | "HT" | "Marcado y HT";
 type ProductCatalog = "Palbin" | "Pamer";

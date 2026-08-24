@@ -113,14 +113,14 @@ type ClientSummary = {
   pending: number;
 };
 
-function ClientsView({ clients, onOpen }: { clients: ClientSummary[]; onOpen: (client: string) => void }) {
+function ClientsView({ clients, onOpen, onAdd }: { clients: ClientSummary[]; onOpen: (client: string) => void; onAdd: () => void }) {
   return (
     <section className="clients-surface" aria-labelledby="clients-title">
       <div className="clients-toolbar">
         <div>
           <h2 id="clients-title">Clientes</h2>
         </div>
-        <small>{clients.length} clientes activos</small>
+        <div className="module-toolbar-actions"><small>{clients.length} clientes</small><button type="button" className="add-order-button" onClick={onAdd}><Plus size={17} aria-hidden="true" />Agregar cliente</button></div>
       </div>
       <div className="client-list">
         <div className="data-heading client-heading" aria-hidden="true">
@@ -169,7 +169,7 @@ type ProductChanges = Pick<Product, "kind"> & {
   treatment?: Product["treatment"];
 };
 
-function ProductsView({ products, onEdit }: { products: Product[]; onEdit: (product: Product) => void }) {
+function ProductsView({ products, onEdit, onAdd }: { products: Product[]; onEdit: (product: Product) => void; onAdd: () => void }) {
   const [productQuery, setProductQuery] = useState("");
   const [productKind, setProductKind] = useState<Product["kind"] | "">("");
   const visibleProducts = useMemo(() => {
@@ -187,11 +187,11 @@ function ProductsView({ products, onEdit }: { products: Product[]; onEdit: (prod
     <section className="module-surface products-surface" aria-labelledby="products-page-title">
       <div className="module-toolbar products-toolbar">
         <div><h2 id="products-page-title">Productos</h2><small>{products.length} productos</small></div>
-        <label className="search-field">
+        <div className="module-toolbar-actions"><label className="search-field">
           <i className="sr-only">Buscar por medida, tipo o tratamiento</i><Search size={17} aria-hidden="true" />
           <input type="search" value={productQuery} onChange={(event) => setProductQuery(event.target.value)} placeholder="Buscar medida, tipo o tratamiento" />
           {productQuery && <button type="button" onClick={() => setProductQuery("")} aria-label="Limpiar búsqueda"><X size={15} aria-hidden="true" /></button>}
-        </label>
+        </label><button type="button" className="add-order-button" onClick={onAdd}><Plus size={17} aria-hidden="true" />Agregar producto</button></div>
       </div>
       <div className="products-board" aria-label={`${visibleProducts.length} productos`}>
         <div className="data-heading products-heading"><div>Medida</div><label className="table-filter"><i className="sr-only">Filtrar por tipo</i><select value={productKind} onChange={(event) => setProductKind(event.target.value as Product["kind"] | "")} aria-label="Filtrar productos por tipo"><option value="">Tipo</option><option value="Pallet">Pallet</option><option value="Piso">Piso</option><option value="Bin">Bin</option></select></label><div>Tratamiento</div><div className="sr-only">Acciones</div></div>
@@ -256,6 +256,37 @@ function EditProductModal({ product, onClose, onSave, onDelete }: { product: Pro
       </section>
     </div>
   );
+}
+
+function AddProductModal({ onClose, onSave }: { onClose: () => void; onSave: (changes: ProductChanges) => Promise<boolean> }) {
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState("");
+  const inputRef = useRef<HTMLSelectElement>(null);
+  useEffect(() => { inputRef.current?.focus(); }, []);
+  const submit = async (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    const form = new FormData(event.currentTarget);
+    setSaving(true); setError("");
+    const saved = await onSave({ kind: String(form.get("kind")) as Product["kind"], measure: String(form.get("measure") ?? ""), treatment: (String(form.get("treatment") ?? "") || undefined) as Product["treatment"] });
+    setSaving(false);
+    if (saved) onClose(); else setError("No se pudo agregar el producto.");
+  };
+  return <div className="modal-backdrop" role="presentation" onMouseDown={(event) => { if (event.target === event.currentTarget) onClose(); }}><section className="edit-product-modal" role="dialog" aria-modal="true" aria-labelledby="add-product-title"><div className="modal-heading"><div><h2 id="add-product-title">Agregar producto</h2></div><button type="button" onClick={onClose} aria-label="Cerrar"><X size={18} aria-hidden="true" /></button></div><form onSubmit={submit}><label>Tipo<select ref={inputRef} name="kind" defaultValue="Pallet"><option value="Pallet">Pallet</option><option value="Piso">Piso</option><option value="Bin">Bin</option></select></label><label>Medida<input name="measure" placeholder="Ej. 120 × 100" /></label><label>Tratamiento<select name="treatment" defaultValue=""><option value="">Sin tratamiento</option><option value="Marcado">Marcado</option><option value="HT">HT</option><option value="Marcado y HT">Marcado y HT</option></select></label>{error && <p className="form-error" role="alert">{error}</p>}<div className="modal-actions"><button type="button" className="secondary-button" onClick={onClose}>Cancelar</button><button type="submit" className="primary-button" disabled={saving}>{saving ? "Guardando…" : "Agregar producto"}</button></div></form></section></div>;
+}
+
+function AddClientModal({ onClose, onSave }: { onClose: () => void; onSave: (name: string) => Promise<boolean> }) {
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState("");
+  const inputRef = useRef<HTMLInputElement>(null);
+  useEffect(() => { inputRef.current?.focus(); }, []);
+  const submit = async (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    setSaving(true); setError("");
+    const saved = await onSave(String(new FormData(event.currentTarget).get("name") ?? ""));
+    setSaving(false);
+    if (saved) onClose(); else setError("No se pudo agregar el cliente.");
+  };
+  return <div className="modal-backdrop" role="presentation" onMouseDown={(event) => { if (event.target === event.currentTarget) onClose(); }}><section className="add-client-modal" role="dialog" aria-modal="true" aria-labelledby="add-client-title"><div className="modal-heading"><div><h2 id="add-client-title">Agregar cliente</h2></div><button type="button" onClick={onClose} aria-label="Cerrar"><X size={18} aria-hidden="true" /></button></div><form onSubmit={submit}><label>Nombre de la empresa<input ref={inputRef} name="name" required /></label>{error && <p className="form-error" role="alert">{error}</p>}<div className="modal-actions"><button type="button" className="secondary-button" onClick={onClose}>Cancelar</button><button type="submit" className="primary-button" disabled={saving}>{saving ? "Guardando…" : "Agregar cliente"}</button></div></form></section></div>;
 }
 
 function CalendarView({ orders, onOpen }: { orders: OperationOrder[]; onOpen: (id: string) => void }) {
@@ -623,8 +654,11 @@ export default function Dashboard({ initialSection = "pedidos" }: { initialSecti
   const [orderRows, setOrderRows] = useState<OperationOrder[]>(initialOrders);
   const [providerRows, setProviderRows] = useState<Provider[]>(initialProviders);
   const [productRows, setProductRows] = useState<Product[]>(initialProducts);
+  const [registeredClientNames, setRegisteredClientNames] = useState<string[]>([]);
   const [selectedId, setSelectedId] = useState(initialOrders[0].id);
   const [showAddOrder, setShowAddOrder] = useState(false);
+  const [showAddProduct, setShowAddProduct] = useState(false);
+  const [showAddClient, setShowAddClient] = useState(false);
   const [editingPlanOrder, setEditingPlanOrder] = useState<OperationOrder | null>(null);
   const [editingProduct, setEditingProduct] = useState<Product | null>(null);
   const [updatingOrder, setUpdatingOrder] = useState<OperationOrder | null>(null);
@@ -633,24 +667,27 @@ export default function Dashboard({ initialSection = "pedidos" }: { initialSecti
   const today = useMemo(() => new Date(), []);
 
   useEffect(() => {
-    Promise.all([fetch("/api/orders"), fetch("/api/history"), fetch("/api/providers"), fetch("/api/products")])
-      .then(async ([ordersResponse, historyResponse, providersResponse, productsResponse]) => {
-        const [ordersPayload, historyPayload, providersPayload, productsPayload] = await Promise.all([
+    Promise.all([fetch("/api/orders"), fetch("/api/history"), fetch("/api/providers"), fetch("/api/products"), fetch("/api/clients")])
+      .then(async ([ordersResponse, historyResponse, providersResponse, productsResponse, clientsResponse]) => {
+        const [ordersPayload, historyPayload, providersPayload, productsPayload, clientsPayload] = await Promise.all([
           ordersResponse.json() as Promise<{ orders?: OperationOrder[] }>,
           historyResponse.json() as Promise<{ history?: OperationOrder[] }>,
           providersResponse.json() as Promise<{ providers?: Provider[] }>,
           productsResponse.json() as Promise<{ products?: Product[] }>,
+          clientsResponse.json() as Promise<{ clients?: ClientSummary[] }>,
         ]);
         return {
           orders: [...(ordersPayload.orders ?? []), ...(historyPayload.history ?? [])],
           providers: providersPayload.providers ?? [],
           products: productsPayload.products ?? [],
+          clients: clientsPayload.clients ?? [],
         };
       })
-      .then(({ orders, providers, products }) => {
+      .then(({ orders, providers, products, clients }) => {
         setOrderRows(orders);
         setProviderRows(providers);
         setProductRows(products);
+        setRegisteredClientNames(clients.map((client) => client.name));
       })
       .catch(() => undefined);
   }, []);
@@ -693,8 +730,11 @@ export default function Dashboard({ initialSection = "pedidos" }: { initialSecti
       current.pending += order.pending;
       summaries.set(order.client, current);
     });
+    registeredClientNames.forEach((name) => {
+      if (!summaries.has(name)) summaries.set(name, { name, orders: 0, requested: 0, delivered: 0, pending: 0 });
+    });
     return [...summaries.values()].sort((a, b) => b.pending - a.pending || a.name.localeCompare(b.name, "es"));
-  }, [orderRows]);
+  }, [orderRows, registeredClientNames]);
 
   const selectOrder = (id: string) => {
     setSelectedId(id);
@@ -779,6 +819,22 @@ export default function Dashboard({ initialSection = "pedidos" }: { initialSecti
     const response = await fetch(`/api/products/${id}`, { method: "DELETE" });
     if (!response.ok) return false;
     setProductRows((current) => current.filter((product) => product.id !== id));
+    return true;
+  };
+
+  const addProduct = async (changes: ProductChanges) => {
+    const response = await fetch("/api/products", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(changes) });
+    const payload = (await response.json()) as { product?: Product };
+    if (!response.ok || !payload.product) return false;
+    setProductRows((current) => [...current, payload.product!].sort((a, b) => productOptionLabel(a).localeCompare(productOptionLabel(b), "es")));
+    return true;
+  };
+
+  const addClient = async (name: string) => {
+    const response = await fetch("/api/clients", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ name }) });
+    const payload = (await response.json()) as { client?: { name: string } };
+    if (!response.ok || !payload.client) return false;
+    setRegisteredClientNames((current) => [...new Set([...current, payload.client!.name])].sort((a, b) => a.localeCompare(b, "es")));
     return true;
   };
 
@@ -929,11 +985,13 @@ export default function Dashboard({ initialSection = "pedidos" }: { initialSecti
           </section>
 
           <OrderTrackingPanel key={selectedOrder?.id ?? "empty"} order={selectedOrder} refreshKey={trackingRevision} onAdd={setUpdatingOrder} />
-        </div> : section === "plan" ? <><PlanView orders={activeOrders} onEdit={setEditingPlanOrder} />{updateError && <p className="plan-error" role="alert">{updateError}</p>}</> : section === "calendario" ? <CalendarView orders={activeOrders} onOpen={openOrder} /> : section === "logistica" ? <LogisticsView orders={activeOrders} onOpen={openOrder} /> : section === "productos" ? <ProductsView products={productRows} onEdit={setEditingProduct} /> : section === "proveedores" ? <ProvidersView providers={providerRows} /> : <ClientsView clients={clients} onOpen={openClientOrders} />}
+        </div> : section === "plan" ? <><PlanView orders={activeOrders} onEdit={setEditingPlanOrder} />{updateError && <p className="plan-error" role="alert">{updateError}</p>}</> : section === "calendario" ? <CalendarView orders={activeOrders} onOpen={openOrder} /> : section === "logistica" ? <LogisticsView orders={activeOrders} onOpen={openOrder} /> : section === "productos" ? <ProductsView products={productRows} onEdit={setEditingProduct} onAdd={() => setShowAddProduct(true)} /> : section === "proveedores" ? <ProvidersView providers={providerRows} /> : <ClientsView clients={clients} onOpen={openClientOrders} onAdd={() => setShowAddClient(true)} />}
         </main>
 
       </div>
       {showAddOrder && <AddOrderModal clientOptions={clients.map((client) => client.name)} products={productRows} transportOptions={providerRows.filter((provider) => provider.type === "Transporte").map((provider) => provider.name)} onClose={() => setShowAddOrder(false)} onCreated={addCreatedOrder} />}
+      {showAddProduct && <AddProductModal onClose={() => setShowAddProduct(false)} onSave={addProduct} />}
+      {showAddClient && <AddClientModal onClose={() => setShowAddClient(false)} onSave={addClient} />}
       {editingPlanOrder && <EditPlanModal order={editingPlanOrder} transportOptions={providerRows.filter((provider) => provider.type === "Transporte").map((provider) => provider.name)} onClose={() => setEditingPlanOrder(null)} onSave={(changes) => updateOrder(editingPlanOrder.id, changes)} />}
       {editingProduct && <EditProductModal product={editingProduct} onClose={() => setEditingProduct(null)} onSave={updateProduct} onDelete={removeProduct} />}
       {updatingOrder && <OrderUpdateModal order={updatingOrder} onClose={() => setUpdatingOrder(null)} onSave={(update) => recordUpdate(updatingOrder.id, update)} />}

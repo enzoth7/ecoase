@@ -12,6 +12,7 @@ import {
   type OrderUpdateKind,
   type OrderStatus,
   type Provider,
+  type Client,
   type Product,
   type ProductKind,
 } from "../data";
@@ -51,6 +52,9 @@ export type UpdateProductInput = {
   measure?: string;
   treatment?: Product["treatment"];
 };
+
+export type CreateProductInput = UpdateProductInput;
+export type CreateClientInput = { name: string };
 
 type DbLine = { id: string; product: string; quantity: number; preparation: string | null; position: number };
 type DbOrder = {
@@ -96,6 +100,7 @@ const useMemoryStore = process.env.ECOASE_DATA_BACKEND === "memory";
 const memoryOrders: OperationOrder[] = structuredClone(seededOrders);
 const memoryHistory = new Map<string, OrderChange[]>();
 const memoryProducts: Product[] = structuredClone(seededProducts);
+const memoryClients: Client[] = [...new Set(seededOrders.map((order) => order.client))].map((name, index) => ({ id: `cliente-${index + 1}`, name }));
 const statusLabels: Record<OrderStatus, OperationOrder["statusLabel"]> = {
   bloqueado: "Bloqueado",
   coordinacion: "En coordinación",
@@ -165,6 +170,43 @@ export async function getProducts() {
     order: "kind.asc,measure.asc",
   });
   return supabaseRequest<Product[]>(`/rest/v1/products?${query}`);
+}
+
+export async function getClients() {
+  if (useMemoryStore) return memoryClients;
+  return supabaseRequest<Client[]>("/rest/v1/clients?select=id,name&order=name.asc");
+}
+
+export async function createClient(input: CreateClientInput) {
+  const name = input.name.trim();
+  if (!name) throw new Error("Indique el nombre del cliente.");
+  if (!useMemoryStore) {
+    const id = await supabaseRequest<string>("/rest/v1/rpc/create_operation_client", { method: "POST", body: JSON.stringify({ p_name: name }) });
+    const client = (await getClients()).find((item) => item.id === id);
+    if (!client) throw new Error("El cliente se creó pero no pudo recuperarse.");
+    return client;
+  }
+  if (memoryClients.some((client) => client.name.localeCompare(name, "es", { sensitivity: "accent" }) === 0)) throw new Error("Ese cliente ya existe.");
+  const client = { id: `cliente-${Date.now()}`, name };
+  memoryClients.push(client);
+  return client;
+}
+
+export async function createProduct(input: CreateProductInput) {
+  const measure = input.measure?.trim() || undefined;
+  if (!useMemoryStore) {
+    const id = await supabaseRequest<string>("/rest/v1/rpc/create_catalog_product", {
+      method: "POST",
+      body: JSON.stringify({ p_kind: input.kind, p_measure: measure ?? null, p_treatment: input.treatment ?? null }),
+    });
+    const product = (await getProducts()).find((item) => item.id === id);
+    if (!product) throw new Error("El producto se creó pero no pudo recuperarse.");
+    return product;
+  }
+  if (memoryProducts.some((product) => product.kind === input.kind && (product.measure ?? "") === (measure ?? ""))) throw new Error("Ya existe un producto con ese tipo y medida.");
+  const product = { id: `producto-${Date.now()}`, kind: input.kind, measure, treatment: input.treatment } satisfies Product;
+  memoryProducts.push(product);
+  return product;
 }
 
 export async function updateProduct(id: string, input: UpdateProductInput) {

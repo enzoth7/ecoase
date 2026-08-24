@@ -1347,7 +1347,8 @@ h3 {
 .add-order-modal,
 .edit-plan-modal,
 .order-update-modal,
-.edit-product-modal {
+.edit-product-modal,
+.add-client-modal {
   width: min(560px, 100%);
   max-height: calc(100vh - 40px);
   overflow-y: auto;
@@ -1371,6 +1372,10 @@ h3 {
 
 .edit-product-modal {
   width: min(700px, 100%);
+}
+
+.add-client-modal {
+  width: min(480px, 100%);
 }
 
 .modal-heading {
@@ -1405,10 +1410,23 @@ h3 {
   gap: 14px;
 }
 
+.add-client-modal form {
+  display: grid;
+  gap: 14px;
+}
+
 .add-order-modal label,
 .edit-plan-modal label,
 .order-update-modal label,
 .edit-product-modal label {
+  display: grid;
+  gap: 6px;
+  color: #49554f;
+  font-size: 11px;
+  font-weight: 700;
+}
+
+.add-client-modal label {
   display: grid;
   gap: 6px;
   color: #49554f;
@@ -1435,7 +1453,8 @@ h3 {
 .order-update-modal select,
 .order-update-modal textarea,
 .edit-product-modal input,
-.edit-product-modal select {
+.edit-product-modal select,
+.add-client-modal input {
   width: 100%;
   min-height: 44px;
   padding: 0 11px;
@@ -1458,7 +1477,8 @@ h3 {
 }
 
 .edit-product-modal input:focus,
-.edit-product-modal select:focus {
+.edit-product-modal select:focus,
+.add-client-modal input:focus {
   border-color: var(--forest-2);
 }
 
@@ -1581,6 +1601,13 @@ h3 {
   color: var(--muted);
   font-size: 11px;
   font-weight: 700;
+}
+
+.module-toolbar-actions {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 10px;
 }
 
 .client-list {

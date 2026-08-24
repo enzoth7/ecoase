@@ -289,6 +289,27 @@ test("crea pedidos mediante POST /api/orders", async () => {
   assert.equal(payload.order.notes, "Descargar por el acceso norte.");
 });
 
+test("agrega productos y clientes mediante sus endpoints", async () => {
+  const productResponse = await request("/api/products", {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ kind: "Pallet", measure: "123 × 99", treatment: "HT" }),
+  });
+  assert.equal(productResponse.status, 201);
+  assert.deepEqual((await productResponse.json()).product.kind, "Pallet");
+
+  const clientResponse = await request("/api/clients", {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ name: "Cliente nuevo" }),
+  });
+  assert.equal(clientResponse.status, 201);
+  assert.equal((await clientResponse.json()).client.name, "Cliente nuevo");
+
+  const clients = (await (await request("/api/clients")).json()).clients;
+  assert.ok(clients.some((client) => client.name === "Cliente nuevo" && client.orders === 0));
+});
+
 test("edita y elimina productos mediante endpoints separados", async () => {
   const before = (await (await request("/api/products")).json()).products;
   const editResponse = await request("/api/products/palbin-p05", {
