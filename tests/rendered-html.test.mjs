@@ -114,8 +114,12 @@ test("administra capacidad general, ajustes diarios y permite sobrecarga", async
   const capacityPage = await request("/capacidad");
   assert.equal(capacityPage.status, 200);
   const html = await capacityPage.text();
-  assert.match(html, /Capacidad semanal/);
+  assert.match(html, /Cap\. Producción semanal/);
   assert.match(html, /capacidad general se aplica todos los días/i);
+  assert.doesNotMatch(html, /Capacidad diaria habitual en palets/);
+
+  const logisticsHtml = await (await request("/logistica")).text();
+  assert.match(logisticsHtml, /Cap\. Logística/);
 
   const rule = await request("/api/capacity/rules", { method: "PUT", headers: { "content-type": "application/json" }, body: JSON.stringify({ operation: "assembly", peopleCount: 5, palletCapacity: 30 }) });
   const internal = await request("/api/capacity/internal-production", { method: "PUT", headers: { "content-type": "application/json" }, body: JSON.stringify({ operation: "assembly", peopleCount: 5 }) });

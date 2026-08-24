@@ -104,7 +104,7 @@ export default function CapacityView({ providers }: { providers: Provider[] }) {
   return <section className="capacity-page" aria-labelledby="capacity-title">
     <div className="module-surface capacity-week">
       <div className="module-toolbar capacity-toolbar">
-        <div><h2 id="capacity-title">Capacidad semanal</h2><small>La capacidad general se aplica todos los días</small></div>
+        <div><h2 id="capacity-title">Cap. Producción semanal</h2><small>La capacidad general se aplica todos los días</small></div>
         <div className="calendar-week-controls">
           <button type="button" onClick={() => moveWeek(-1)} aria-label="Semana anterior"><ChevronLeft size={18} /></button>
           <strong>{formatRange(week)}</strong>
@@ -131,11 +131,10 @@ export default function CapacityView({ providers }: { providers: Provider[] }) {
 
     {error && <p className="capacity-error" role="alert">{error}</p>}
     {loading && !capacity ? <div className="module-surface capacity-loading">Cargando capacidad…</div> : capacity && <>
-      <div className="capacity-general-heading"><div><h2>Capacidad general</h2><p>Estos valores se repiten de lunes a domingo. Los cambios excepcionales se cargan desde cada día.</p></div></div>
+      <div className="capacity-general-heading"><div><h2>Cap. Producción general</h2><p>Estos valores se repiten de lunes a domingo. Los cambios excepcionales se cargan desde cada día.</p></div></div>
       <InternalPeopleCapacity team={capacity.internalTeam} todayTeam={todayTeam} onSave={save} />
       <GeneralInternalProduction capacity={capacity} onSave={save} onDelete={remove} />
       <GeneralExternalProduction capacity={capacity} providers={sawmills} onSave={save} />
-      <GeneralTransport capacity={capacity} providers={transporters} onSave={save} />
     </>}
 
     {selected && capacity && <DayAdjustmentModal day={selected} sawmills={sawmills} transporters={transporters} onClose={() => setOpenDate(null)} onSave={save} />}
@@ -217,7 +216,7 @@ function GeneralExternalProduction({ capacity, providers, onSave }: { capacity: 
   </section>;
 }
 
-function GeneralTransport({ capacity, providers, onSave }: { capacity: CapacitySnapshot; providers: Provider[]; onSave: (url: string, body: unknown) => Promise<void> }) {
+export function GeneralTransport({ capacity, providers, onSave }: { capacity: CapacitySnapshot; providers: Provider[]; onSave: (url: string, body: unknown) => Promise<void> }) {
   const [source, setSource] = useState<TransportSource>("internal");
   const submit = (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();

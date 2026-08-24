@@ -38,7 +38,7 @@ import {
 import type { CapacityOperation, ProductionSource, TransportSource } from "./data";
 import type { CapacitySnapshot } from "./capacity";
 import { capacityOperationLabels } from "./capacity";
-import CapacityView from "./CapacityView";
+import CapacityView, { GeneralTransport } from "./CapacityView";
 
 const number = new Intl.NumberFormat("es-UY");
 export type DashboardSection = "pedidos" | "plan" | "calendario" | "logistica" | "capacidad" | "clientes" | "historial" | "proveedores" | "productos";
@@ -353,10 +353,11 @@ function CalendarView({ orders, onOpen }: { orders: OperationOrder[]; onOpen: (i
   );
 }
 
-function LogisticsView({ orders, onOpen }: { orders: OperationOrder[]; onOpen: (id: string) => void }) {
+function LogisticsView({ orders, providers, onOpen }: { orders: OperationOrder[]; providers: Provider[]; onOpen: (id: string) => void }) {
   const transports = [...new Set(orders.map((order) => order.transport))];
   const currentWeek = useMemo(() => startOfWeek(new Date()), []);
   const [capacity, setCapacity] = useState<CapacitySnapshot | null>(null);
+  const [capacityError, setCapacityError] = useState("");
   useEffect(() => {
     const end = new Date(currentWeek); end.setDate(currentWeek.getDate() + 6);
     fetch(`/api/capacity?from=${dateKey(currentWeek)}&to=${dateKey(end)}`).then((response) => response.json()).then((payload: { capacity?: CapacitySnapshot }) => setCapacity(payload.capacity ?? null)).catch(() => setCapacity(null));
@@ -364,12 +365,22 @@ function LogisticsView({ orders, onOpen }: { orders: OperationOrder[]; onOpen: (
   return (
     <section className="module-surface" aria-labelledby="logistics-page-title">
       <div className="module-toolbar">
-        <div><h2 id="logistics-page-title">Logística</h2></div>
+        <div><h2 id="logistics-page-title">Cap. Logística</h2></div>
         <small>{transports.length} transportes registrados</small>
       </div>
       {capacity && <div className="logistics-capacity-strip" aria-label="Capacidad logística de la semana">
         {capacity.days.map((day) => <article key={day.date}><small>{new Intl.DateTimeFormat("es-UY", { weekday: "short", day: "numeric" }).format(new Date(`${day.date}T12:00:00`))}</small><strong>{number.format(day.transportTotals.committed)} a entregar</strong><p>{number.format(day.transportTotals.internal)} interna · {number.format(day.transportTotals.externalConfirmed)} externa</p>{day.transportTotals.missing > 0 && <b>{number.format(day.transportTotals.missing)} faltantes</b>}</article>)}
       </div>}
+      {capacity && <GeneralTransport capacity={capacity} providers={providers.filter((provider) => provider.type === "Transporte")} onSave={async (url, body) => {
+        setCapacityError("");
+        const response = await fetch(url, { method: "PUT", headers: { "content-type": "application/json" }, body: JSON.stringify(body) });
+        const payload = await response.json() as { error?: string };
+        if (!response.ok) { const message = payload.error ?? "No se pudo guardar la capacidad de transporte."; setCapacityError(message); throw new Error(message); }
+        const end = new Date(currentWeek); end.setDate(currentWeek.getDate() + 6);
+        const refreshed = await fetch(`/api/capacity?from=${dateKey(currentWeek)}&to=${dateKey(end)}`).then((item) => item.json()) as { capacity?: CapacitySnapshot };
+        setCapacity(refreshed.capacity ?? null);
+      }} />}
+      {capacityError && <p className="capacity-error" role="alert">{capacityError}</p>}
       <div className="logistics-board">
         <div className="data-heading logistics-heading" aria-hidden="true">
           <div /><div>Cliente y pedido</div><div>Fecha</div><div>Transporte</div><div>Estado</div><div />
@@ -1004,8 +1015,8 @@ export default function Dashboard({ initialSection = "pedidos" }: { initialSecti
     pedidos: "Control operativo",
     plan: "Plan",
     calendario: "Calendario",
-    logistica: "Logística",
-    capacidad: "Capacidad",
+    logistica: "Cap. Logística",
+    capacidad: "Cap. Producción",
     clientes: "Clientes",
     productos: "Productos",
     historial: "Historial",
@@ -1035,10 +1046,10 @@ export default function Dashboard({ initialSection = "pedidos" }: { initialSecti
               <CalendarDays size={17} aria-hidden="true" /><small>Calendario</small>
             </a>
             <a className={section === "logistica" ? "active" : ""} href="/logistica" aria-current={section === "logistica" ? "page" : undefined}>
-              <Truck size={17} aria-hidden="true" /><small>Logística</small>
+              <Truck size={17} aria-hidden="true" /><small>Cap. Logística</small>
             </a>
             <a className={section === "capacidad" ? "active" : ""} href="/capacidad" aria-current={section === "capacidad" ? "page" : undefined}>
-              <Gauge size={17} aria-hidden="true" /><small>Capacidad</small>
+              <Gauge size={17} aria-hidden="true" /><small>Cap. Producción</small>
             </a>
             <a className={section === "clientes" ? "active" : ""} href="/clientes" aria-current={section === "clientes" ? "page" : undefined}>
               <Users size={17} aria-hidden="true" /><small>Clientes</small>
@@ -1143,7 +1154,7 @@ export default function Dashboard({ initialSection = "pedidos" }: { initialSecti
           </section>
 
           <OrderTrackingPanel key={selectedOrder?.id ?? "empty"} order={selectedOrder} providers={providerRows} refreshKey={trackingRevision} onAdd={setUpdatingOrder} />
-        </div> : section === "plan" ? <><PlanView orders={activeOrders} onEdit={setEditingPlanOrder} />{updateError && <p className="plan-error" role="alert">{updateError}</p>}</> : section === "calendario" ? <CalendarView orders={activeOrders} onOpen={openOrder} /> : section === "logistica" ? <LogisticsView orders={activeOrders} onOpen={openOrder} /> : section === "capacidad" ? <CapacityView providers={providerRows} /> : section === "productos" ? <ProductsView products={productRows} onEdit={setEditingProduct} onAdd={() => setShowAddProduct(true)} /> : section === "proveedores" ? <ProvidersView providers={providerRows} /> : <ClientsView clients={clients} onOpen={openClientOrders} onAdd={() => setShowAddClient(true)} />}
+        </div> : section === "plan" ? <><PlanView orders={activeOrders} onEdit={setEditingPlanOrder} />{updateError && <p className="plan-error" role="alert">{updateError}</p>}</> : section === "calendario" ? <CalendarView orders={activeOrders} onOpen={openOrder} /> : section === "logistica" ? <LogisticsView orders={activeOrders} providers={providerRows} onOpen={openOrder} /> : section === "capacidad" ? <CapacityView providers={providerRows} /> : section === "productos" ? <ProductsView products={productRows} onEdit={setEditingProduct} onAdd={() => setShowAddProduct(true)} /> : section === "proveedores" ? <ProvidersView providers={providerRows} /> : <ClientsView clients={clients} onOpen={openClientOrders} onAdd={() => setShowAddClient(true)} />}
         </main>
 
       </div>
