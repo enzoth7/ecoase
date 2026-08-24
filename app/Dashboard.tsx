@@ -3,7 +3,6 @@
 import {
   AlertTriangle,
   Boxes,
-  BarChart3,
   CalendarDays,
   CheckCircle2,
   ChevronRight,
@@ -56,10 +55,10 @@ const statusIcons: Record<OrderStatus, LucideIcon> = {
 function StatusBadge({ order }: { order: OperationOrder }) {
   const Icon = statusIcons[order.status];
   return (
-    <span className={`status-badge ${order.status}`}>
+    <small className={`status-badge ${order.status}`}>
       <Icon size={14} aria-hidden="true" />
       {order.statusLabel}
-    </span>
+    </small>
   );
 }
 
@@ -67,15 +66,15 @@ function QuantitySummary({ order }: { order: OperationOrder }) {
   return (
     <div className="quantity-summary" aria-label="Cantidades del pedido">
       <div>
-        <span>Pedido</span>
+        <small>Pedido</small>
         <strong>{number.format(order.requested)}</strong>
       </div>
       <div>
-        <span>Entregado</span>
+        <small>Entregado</small>
         <strong>{number.format(order.delivered)}</strong>
       </div>
       <div className={order.pending > 0 ? "pending" : ""}>
-        <span>Saldo</span>
+        <small>Saldo</small>
         <strong>{number.format(order.pending)}</strong>
       </div>
     </div>
@@ -85,9 +84,9 @@ function QuantitySummary({ order }: { order: OperationOrder }) {
 function OperationFact({ icon: Icon, label, value }: { icon: LucideIcon; label: string; value: string }) {
   return (
     <article className="operation-fact">
-      <span className="fact-icon"><Icon size={17} aria-hidden="true" /></span>
+      <i className="fact-icon"><Icon size={17} aria-hidden="true" /></i>
       <div>
-        <span>{label}</span>
+        <small>{label}</small>
         <strong>{value}</strong>
       </div>
     </article>
@@ -105,18 +104,18 @@ function OrderDetail({ order }: { order: OperationOrder }) {
           <h2 id="order-detail-title">{order.client}</h2>
           <p>{order.product}</p>
         </div>
-        <span className="order-reference">{order.reference}</span>
+        <small className="order-reference">{order.reference}</small>
       </div>
 
       <div className="detail-meta">
-        <span><CalendarDays size={15} aria-hidden="true" />{order.dateLabel}</span>
-        <span><Truck size={15} aria-hidden="true" />{order.transport}</span>
+        <div><CalendarDays size={15} aria-hidden="true" />{order.dateLabel}</div>
+        <div><Truck size={15} aria-hidden="true" />{order.transport}</div>
       </div>
 
       <QuantitySummary order={order} />
 
       <div className="detail-progress" aria-label={`${progress}% entregado`}>
-        <span><b>Avance</b><strong>{progress}%</strong></span>
+        <div><b>Avance</b><strong>{progress}%</strong></div>
         <i><b style={{ width: `${progress}%` }} /></i>
       </div>
 
@@ -139,15 +138,15 @@ function OrderDetail({ order }: { order: OperationOrder }) {
             <p>Pedido</p>
             <h3 id="lines-title">{order.lines.length} {order.lines.length === 1 ? "línea" : "líneas"}</h3>
           </div>
-          {order.remittance && <span>Remito {order.remittance}</span>}
+          {order.remittance && <small>Remito {order.remittance}</small>}
         </div>
         <div className="line-list">
           {order.lines.map((line) => (
             <div key={line.id}>
-              <span>
+              <div>
                 <strong>{line.product}</strong>
                 {line.preparation && <small>{line.preparation}</small>}
-              </span>
+              </div>
               <b>{number.format(line.quantity)}</b>
             </div>
           ))}
@@ -155,7 +154,7 @@ function OrderDetail({ order }: { order: OperationOrder }) {
       </section>
 
       <div className={`action-card ${order.status}`}>
-        <span>{order.status === "completado" ? "Estado" : "Acción operativa"}</span>
+        <small>{order.status === "completado" ? "Estado" : "Acción operativa"}</small>
         <strong>{order.action}</strong>
       </div>
     </aside>
@@ -178,16 +177,19 @@ function ClientsView({ clients, onOpen }: { clients: ClientSummary[]; onOpen: (c
           <p className="eyebrow">Cartera operativa</p>
           <h2 id="clients-title">Clientes</h2>
         </div>
-        <span>{clients.length} clientes activos</span>
+        <small>{clients.length} clientes activos</small>
       </div>
       <div className="client-list">
+        <div className="data-heading client-heading" aria-hidden="true">
+          <div /><div>Cliente</div><div>Pedido</div><div>Entregado</div><div>Saldo</div><div />
+        </div>
         {clients.map((client) => (
           <button type="button" className="client-row" key={client.name} onClick={() => onOpen(client.name)}>
-            <span className="client-avatar" aria-hidden="true">{client.name.slice(0, 1)}</span>
-            <span className="client-name"><strong>{client.name}</strong><small>{client.orders} {client.orders === 1 ? "pedido" : "pedidos"}</small></span>
-            <span><small>Pedido</small><strong>{number.format(client.requested)}</strong></span>
-            <span><small>Entregado</small><strong>{number.format(client.delivered)}</strong></span>
-            <span className={client.pending > 0 ? "client-pending" : "client-complete"}><small>Saldo</small><strong>{number.format(client.pending)}</strong></span>
+            <i className="client-avatar" aria-hidden="true">{client.name.slice(0, 1)}</i>
+            <div className="client-name"><strong>{client.name}</strong><small>{client.orders} {client.orders === 1 ? "pedido" : "pedidos"}</small></div>
+            <div><small>Pedido</small><strong>{number.format(client.requested)}</strong></div>
+            <div><small>Entregado</small><strong>{number.format(client.delivered)}</strong></div>
+            <div className={client.pending > 0 ? "client-pending" : "client-complete"}><small>Saldo</small><strong>{number.format(client.pending)}</strong></div>
             <ChevronRight size={19} aria-hidden="true" />
           </button>
         ))}
@@ -201,18 +203,18 @@ function CalendarView({ orders, onOpen }: { orders: OperationOrder[]; onOpen: (i
     <section className="module-surface" aria-labelledby="calendar-page-title">
       <div className="module-toolbar">
         <div><p className="eyebrow">Semana 33</p><h2 id="calendar-page-title">Calendario</h2></div>
-        <span>10–15 agosto 2026</span>
+        <small>10–15 agosto 2026</small>
       </div>
       <div className="calendar-board">
         {weekDays.map((day) => {
           const dayOrders = orders.filter((order) => Number(order.dateLabel.match(/\d+/)?.[0]) === day.day && !order.dateLabel.includes("julio"));
           return (
             <section className="calendar-day" key={day.day} aria-label={`${day.name} ${day.day}`}>
-              <div><span>{day.name}</span><strong>{day.day}</strong><small>{dayOrders.length} {dayOrders.length === 1 ? "pedido" : "pedidos"}</small></div>
+              <div><small>{day.name}</small><strong>{day.day}</strong><small>{dayOrders.length} {dayOrders.length === 1 ? "pedido" : "pedidos"}</small></div>
               <div className="calendar-orders">
                 {dayOrders.map((order) => (
                   <button type="button" key={order.id} onClick={() => onOpen(order.id)}>
-                    <StatusBadge order={order} /><strong>{order.client}</strong><span>{order.reference}</span><small>{number.format(order.requested)} unidades</small>
+                    <StatusBadge order={order} /><strong>{order.client}</strong><small>{order.reference}</small><small>{number.format(order.requested)} unidades</small>
                   </button>
                 ))}
                 {dayOrders.length === 0 && <p>Sin entregas</p>}
@@ -231,15 +233,18 @@ function LogisticsView({ orders, onOpen }: { orders: OperationOrder[]; onOpen: (
     <section className="module-surface" aria-labelledby="logistics-page-title">
       <div className="module-toolbar">
         <div><p className="eyebrow">Distribución</p><h2 id="logistics-page-title">Logística</h2></div>
-        <span>{transports.length} transportes registrados</span>
+        <small>{transports.length} transportes registrados</small>
       </div>
       <div className="logistics-board">
+        <div className="data-heading logistics-heading" aria-hidden="true">
+          <div /><div>Cliente y pedido</div><div>Fecha</div><div>Transporte</div><div>Estado</div><div />
+        </div>
         {orders.map((order) => (
           <button type="button" className="logistics-order" key={order.id} onClick={() => onOpen(order.id)}>
-            <span className="logistics-icon"><Truck size={18} aria-hidden="true" /></span>
-            <span><strong>{order.client}</strong><small>{order.reference} · {order.product}</small></span>
-            <span><small>Fecha</small><strong>{order.dateLabel}</strong></span>
-            <span><small>Transporte</small><strong>{order.transport}</strong></span>
+            <i className="logistics-icon"><Truck size={18} aria-hidden="true" /></i>
+            <div><strong>{order.client}</strong><small>{order.reference} · {order.product}</small></div>
+            <div><small>Fecha</small><strong>{order.dateLabel}</strong></div>
+            <div><small>Transporte</small><strong>{order.transport}</strong></div>
             <StatusBadge order={order} />
             <ChevronRight size={19} aria-hidden="true" />
           </button>
@@ -416,31 +421,31 @@ export default function Dashboard({ initialSection = "pedidos" }: { initialSecti
 
       <aside className="app-sidebar" aria-label="Navegación principal">
         <div className="brand" aria-label="Ecoase">
-          <span className="brand-mark" aria-hidden="true">E</span>
-          <span><strong>Ecoase</strong><small>Control operativo</small></span>
+          <i className="brand-mark" aria-hidden="true">E</i>
+          <div><strong>Ecoase</strong><small>Control operativo</small></div>
         </div>
 
         <div className="sidebar-section">
           <p>Principal</p>
           <nav aria-label="Secciones principales">
             <a className={section === "pedidos" ? "active" : ""} href="/pedidos" aria-current={section === "pedidos" ? "page" : undefined}>
-              <ClipboardList size={17} aria-hidden="true" /><span>Pedidos</span>
+              <ClipboardList size={17} aria-hidden="true" /><small>Pedidos</small>
             </a>
             <a className={section === "calendario" ? "active" : ""} href="/calendario" aria-current={section === "calendario" ? "page" : undefined}>
-              <CalendarDays size={17} aria-hidden="true" /><span>Calendario</span>
+              <CalendarDays size={17} aria-hidden="true" /><small>Calendario</small>
             </a>
             <a className={section === "logistica" ? "active" : ""} href="/logistica" aria-current={section === "logistica" ? "page" : undefined}>
-              <Truck size={17} aria-hidden="true" /><span>Logística</span>
+              <Truck size={17} aria-hidden="true" /><small>Logística</small>
             </a>
             <a className={section === "clientes" ? "active" : ""} href="/clientes" aria-current={section === "clientes" ? "page" : undefined}>
-              <Users size={17} aria-hidden="true" /><span>Clientes</span>
+              <Users size={17} aria-hidden="true" /><small>Clientes</small>
             </a>
           </nav>
         </div>
 
         <div className="sidebar-week">
           <CalendarDays size={17} aria-hidden="true" />
-          <span><small>Plan semanal</small><strong>10–15 agosto 2026</strong></span>
+          <div><small>Plan semanal</small><strong>10–15 agosto 2026</strong></div>
         </div>
       </aside>
 
@@ -455,10 +460,10 @@ export default function Dashboard({ initialSection = "pedidos" }: { initialSecti
 
         {section === "pedidos" && (
           <section className="dashboard-kpis" aria-label="Indicadores de pedidos">
-            <button type="button" onClick={() => setFilter("gestion")}><span><CircleDot size={17} aria-hidden="true" />En gestión</span><strong>{inManagement}</strong><small>{blocked} bloqueado</small></button>
-            <button type="button" onClick={() => setFilter("completados")}><span><CheckCircle2 size={17} aria-hidden="true" />Completados</span><strong>{completed}</strong><small>{number.format(totalDelivered)} entregados</small></button>
-            <article><span><Boxes size={17} aria-hidden="true" />Volumen pedido</span><strong>{number.format(totalRequested)}</strong><small>unidades totales</small></article>
-            <article className="kpi-progress"><span><BarChart3 size={17} aria-hidden="true" />Cumplimiento</span><strong>{deliveryRate}%</strong><i><b style={{ width: `${deliveryRate}%` }} /></i></article>
+            <button type="button" onClick={() => setFilter("gestion")}><strong>{inManagement}</strong><small>En gestión · {blocked} bloqueado</small></button>
+            <button type="button" onClick={() => setFilter("completados")}><strong>{completed}</strong><small>Completados · {number.format(totalDelivered)} entregados</small></button>
+            <article><strong>{number.format(totalRequested)}</strong><small>Volumen pedido · unidades totales</small></article>
+            <article className="kpi-progress"><strong>{deliveryRate}%</strong><small>Cumplimiento</small><i><b style={{ width: `${deliveryRate}%` }} /></i></article>
           </section>
         )}
 
@@ -471,7 +476,7 @@ export default function Dashboard({ initialSection = "pedidos" }: { initialSecti
               </div>
               <div className="orders-actions">
               <label className="search-field">
-                <span className="sr-only">Buscar cliente, pedido, producto o transporte</span>
+                <i className="sr-only">Buscar cliente, pedido, producto o transporte</i>
                 <Search size={17} aria-hidden="true" />
                 <input
                   type="search"
@@ -494,14 +499,14 @@ export default function Dashboard({ initialSection = "pedidos" }: { initialSecti
                 const count = orderRows.filter((order) => matchesFilter(order, item.id)).length;
                 return (
                   <button type="button" key={item.id} className={filter === item.id ? "active" : ""} onClick={() => setFilter(item.id)} aria-pressed={filter === item.id}>
-                    {item.label}<span>{count}</span>
+                    {item.label}<small>{count}</small>
                   </button>
                 );
               })}
             </div>
 
             <div className="list-heading" aria-hidden="true">
-              <span>Cliente y pedido</span><span>Fecha / transporte</span><span>Cantidades</span><span />
+              <div>Cliente y pedido</div><div>Fecha / transporte</div><div>Cantidades</div><div />
             </div>
 
             <div className="order-list" aria-label={`${visibleOrders.length} pedidos`}>
@@ -520,14 +525,14 @@ export default function Dashboard({ initialSection = "pedidos" }: { initialSecti
                     <div className="order-main">
                       <StatusBadge order={order} />
                       <strong>{order.client}</strong>
-                      <span>{order.reference} · {order.product}</span>
+                      <small>{order.reference} · {order.product}</small>
                     </div>
                     <div className="order-schedule">
                       <strong>{order.dateLabel}</strong>
-                      <span><Truck size={14} aria-hidden="true" />{order.transport}</span>
+                      <div><Truck size={14} aria-hidden="true" />{order.transport}</div>
                     </div>
                     <div className="order-quantities">
-                      <span><b>{number.format(order.delivered)}</b> / {number.format(order.requested)}</span>
+                      <div><b>{number.format(order.delivered)}</b> / {number.format(order.requested)}</div>
                       <i><b style={{ width: `${progress}%` }} /></i>
                       <small>{order.pending > 0 ? `${number.format(order.pending)} pendientes` : "Completo"}</small>
                     </div>
@@ -552,7 +557,7 @@ export default function Dashboard({ initialSection = "pedidos" }: { initialSecti
 
         <footer className="dashboard-footer">
           <Boxes size={17} aria-hidden="true" />
-          <span>Ecoase · Control de pedidos</span>
+          <small>Ecoase · Control de pedidos</small>
         </footer>
       </div>
       {showAddOrder && <AddOrderModal onClose={() => setShowAddOrder(false)} onCreated={addCreatedOrder} />}
