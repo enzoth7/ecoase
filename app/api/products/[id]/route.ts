@@ -2,6 +2,7 @@ import { deleteProduct, updateProduct } from "../../store";
 
 const productKinds = new Set(["Pallet", "Piso", "Bin"]);
 const treatments = new Set(["", "Marcado", "HT"]);
+const productNameHasMeasure = /\d+(?:[,.]\d+)?\s*[x×]\s*\d+/i;
 
 export async function PATCH(request: Request, { params }: { params: Promise<{ id: string }> }) {
   try {
@@ -14,6 +15,9 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ id
     const treatment = typeof body.treatment === "string" ? body.treatment : "";
     if (!code.trim() || !name.trim() || !productKinds.has(kind)) {
       return Response.json({ error: "Código, producto y tipo son obligatorios." }, { status: 400 });
+    }
+    if (productNameHasMeasure.test(name)) {
+      return Response.json({ error: "La medida debe cargarse en su columna." }, { status: 400 });
     }
     if (!treatments.has(treatment)) {
       return Response.json({ error: "El tratamiento indicado no es válido." }, { status: 400 });

@@ -114,11 +114,13 @@ test("muestra el catálogo de productos sin clientes ni catálogos", async () =>
   assert.equal(productsResponse.status, 200);
   const html = await pageResponse.text();
   assert.match(html, /Productos/);
+  assert.match(html, /Medida/);
+  assert.match(html, /Tratamiento/);
   assert.match(html, /Filtrar productos por tipo/);
-  assert.match(html, /Editar Cristal PET/);
+  assert.match(html, /Editar Pallet 106 × 119/);
   assert.doesNotMatch(html, /Cliente \/ asignación|Catálogo|Azucarlito|Reparados|Granja Pocha punto rojo/);
-  assert.match(html, /Cristal PET/);
-  assert.match(html, /216 × 110 simples reforzadas/);
+  assert.match(html, /216 × 110/);
+  assert.doesNotMatch(html, /abiertas|cerradas|reforzadas|Mercosur liviano/i);
   assert.equal((await productsResponse.json()).products.length, 58);
 });
 
@@ -275,11 +277,11 @@ test("edita y elimina productos mediante endpoints separados", async () => {
   const editResponse = await request("/api/products/palbin-p05", {
     method: "PATCH",
     headers: { "content-type": "application/json" },
-    body: JSON.stringify({ code: "P05", name: "Pallet 122 × 102 reforzado", kind: "Pallet", measure: "122 × 102", treatment: "Marcado" }),
+    body: JSON.stringify({ code: "P05", name: "Pallet nuevo", kind: "Pallet", measure: "122 × 102", treatment: "Marcado" }),
   });
   assert.equal(editResponse.status, 200);
   const edited = await editResponse.json();
-  assert.equal(edited.product.name, "Pallet 122 × 102 reforzado");
+  assert.equal(edited.product.name, "Pallet nuevo");
   assert.equal(edited.product.assignment, undefined);
 
   const deleteResponse = await request("/api/products/palbin-p05", { method: "DELETE" });

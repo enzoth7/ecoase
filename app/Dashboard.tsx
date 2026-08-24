@@ -155,7 +155,7 @@ function ProvidersView({ providers }: { providers: Provider[] }) {
   );
 }
 
-type ProductChanges = Pick<Product, "name" | "kind"> & {
+type ProductChanges = Pick<Product, "kind"> & {
   measure?: string;
   treatment?: Product["treatment"];
 };
@@ -167,7 +167,7 @@ function ProductsView({ products, onEdit }: { products: Product[]; onEdit: (prod
     const normalized = productQuery.trim().toLocaleLowerCase("es");
     return products.filter((product) => {
       const kindMatches = !productKind || product.kind === productKind;
-      const queryMatches = !normalized || [product.name, product.kind, product.measure, product.specification, product.treatment]
+      const queryMatches = !normalized || [product.kind, product.measure, product.treatment]
         .filter((value): value is string => Boolean(value))
         .some((value) => value.toLocaleLowerCase("es").includes(normalized));
       return kindMatches && queryMatches;
@@ -179,20 +179,19 @@ function ProductsView({ products, onEdit }: { products: Product[]; onEdit: (prod
       <div className="module-toolbar products-toolbar">
         <div><h2 id="products-page-title">Productos</h2><small>{products.length} productos</small></div>
         <label className="search-field">
-          <i className="sr-only">Buscar producto</i><Search size={17} aria-hidden="true" />
-          <input type="search" value={productQuery} onChange={(event) => setProductQuery(event.target.value)} placeholder="Buscar producto o medida" />
+          <i className="sr-only">Buscar por medida, tipo o tratamiento</i><Search size={17} aria-hidden="true" />
+          <input type="search" value={productQuery} onChange={(event) => setProductQuery(event.target.value)} placeholder="Buscar medida, tipo o tratamiento" />
           {productQuery && <button type="button" onClick={() => setProductQuery("")} aria-label="Limpiar búsqueda"><X size={15} aria-hidden="true" /></button>}
         </label>
       </div>
       <div className="products-board" aria-label={`${visibleProducts.length} productos`}>
-        <div className="data-heading products-heading"><div>Producto</div><label className="table-filter"><i className="sr-only">Filtrar por tipo</i><select value={productKind} onChange={(event) => setProductKind(event.target.value as Product["kind"] | "")} aria-label="Filtrar productos por tipo"><option value="">Tipo</option><option value="Pallet">Pallet</option><option value="Piso">Piso</option><option value="Bin">Bin</option></select></label><div>Medida</div><div>Tratamiento</div><div className="sr-only">Acciones</div></div>
+        <div className="data-heading products-heading"><div>Medida</div><label className="table-filter"><i className="sr-only">Filtrar por tipo</i><select value={productKind} onChange={(event) => setProductKind(event.target.value as Product["kind"] | "")} aria-label="Filtrar productos por tipo"><option value="">Tipo</option><option value="Pallet">Pallet</option><option value="Piso">Piso</option><option value="Bin">Bin</option></select></label><div>Tratamiento</div><div className="sr-only">Acciones</div></div>
         {visibleProducts.length > 0 ? visibleProducts.map((product) => (
           <article className="product-row" key={product.id}>
-            <div className="product-name"><i className={`product-icon ${product.kind.toLocaleLowerCase("es")}`} aria-hidden="true"><Package size={17} /></i><div><strong>{product.name}</strong>{product.specification && <small>{product.specification}</small>}</div></div>
-            <div><small className="column-label">Tipo</small><strong>{product.kind}</strong></div>
             <div><small className="column-label">Medida</small><strong>{product.measure ?? "—"}</strong></div>
+            <div><small className="column-label">Tipo</small><strong>{product.kind}</strong></div>
             <div><small className="column-label">Tratamiento</small><strong>{product.treatment ?? "—"}</strong></div>
-            <button type="button" className="product-edit" onClick={() => onEdit(product)} aria-label={`Editar ${product.name}`}><Pencil size={17} aria-hidden="true" /></button>
+            <button type="button" className="product-edit" onClick={() => onEdit(product)} aria-label={`Editar ${product.kind}${product.measure ? ` ${product.measure}` : ""}`}><Pencil size={17} aria-hidden="true" /></button>
           </article>
         )) : <div className="empty-state"><Package size={28} aria-hidden="true" /><strong>No hay productos para ese filtro</strong><button type="button" onClick={() => { setProductQuery(""); setProductKind(""); }}>Limpiar filtros</button></div>}
       </div>
@@ -217,7 +216,6 @@ function EditProductModal({ product, onClose, onSave, onDelete }: { product: Pro
     setSaving(true);
     setError("");
     const saved = await onSave(product.id, {
-      name: String(form.get("name") ?? ""),
       kind: String(form.get("kind") ?? "Pallet") as Product["kind"],
       measure: String(form.get("measure") ?? ""),
       treatment: (String(form.get("treatment") ?? "") || undefined) as Product["treatment"],
@@ -241,7 +239,6 @@ function EditProductModal({ product, onClose, onSave, onDelete }: { product: Pro
         <div className="modal-heading"><div><h2 id="edit-product-title">Editar producto</h2></div><button type="button" onClick={onClose} aria-label="Cerrar"><X size={18} aria-hidden="true" /></button></div>
         <form onSubmit={save}>
           <label>Tipo<select name="kind" defaultValue={product.kind}><option value="Pallet">Pallet</option><option value="Piso">Piso</option><option value="Bin">Bin</option></select></label>
-          <label>Producto<input name="name" defaultValue={product.name} required /></label>
           <label>Medida<input name="measure" defaultValue={product.measure ?? ""} /></label>
           <label>Tratamiento<select name="treatment" defaultValue={product.treatment ?? ""}><option value="">Sin tratamiento</option><option value="Marcado">Marcado</option><option value="HT">HT</option></select></label>
           {error && <p className="form-error" role="alert">{error}</p>}
@@ -739,7 +736,7 @@ export default function Dashboard({ initialSection = "pedidos" }: { initialSecti
     const response = await fetch(`/api/products/${id}`, {
       method: "PATCH",
       headers: { "content-type": "application/json" },
-      body: JSON.stringify({ ...changes, code: currentProduct.code }),
+      body: JSON.stringify({ ...changes, code: currentProduct.code, name: currentProduct.name }),
     });
     const payload = (await response.json()) as { product?: Product; error?: string };
     if (!response.ok || !payload.product) return false;

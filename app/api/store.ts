@@ -88,6 +88,7 @@ const useMemoryStore = process.env.ECOASE_DATA_BACKEND === "memory";
 const memoryOrders: OperationOrder[] = structuredClone(seededOrders);
 const memoryHistory = new Map<string, OrderChange[]>();
 const memoryProducts: Product[] = structuredClone(seededProducts);
+const productNameHasMeasure = /\d+(?:[,.]\d+)?\s*[x×]\s*\d+/i;
 const statusLabels: Record<OrderStatus, OperationOrder["statusLabel"]> = {
   bloqueado: "Bloqueado",
   coordinacion: "En coordinación",
@@ -160,6 +161,7 @@ export async function updateProduct(id: string, input: UpdateProductInput) {
   const name = input.name.trim();
   const measure = input.measure?.trim() || undefined;
   if (!code || !name) throw new Error("El código y el nombre son obligatorios.");
+  if (productNameHasMeasure.test(name)) throw new Error("La medida debe cargarse en su columna.");
 
   if (!useMemoryStore) {
     await supabaseRequest<string>("/rest/v1/rpc/update_catalog_product", {

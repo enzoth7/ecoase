@@ -26,8 +26,10 @@ test("incluye el catálogo depurado de Palbin y Pamer", () => {
   assert.equal(products.filter((product) => product.catalog === "Palbin" && product.kind === "Piso").length, 2);
   assert.equal(products.filter((product) => product.catalog === "Pamer" && product.kind === "Pallet").length, 22);
   assert.ok(products.some((product) => product.name === "Proquimur" && product.measure === "120 × 100"));
-  assert.ok(products.some((product) => product.name === "Pallet 122 × 102" && product.measure === "122 × 102"));
-  assert.ok(products.some((product) => product.name === "216 × 110 simples reforzadas" && product.catalog === "Pamer"));
+  assert.ok(products.some((product) => product.name === "Pallet" && product.measure === "122 × 102"));
+  assert.ok(products.some((product) => product.name === "Pallet" && product.measure === "216 × 110" && product.catalog === "Pamer"));
+  assert.equal(products.some((product) => product.specification), false);
+  assert.equal(products.some((product) => product.name.includes("×")), false);
   assert.equal(products.some((product) => ["Azucarlito", "Reparados", "Granja Pocha punto rojo"].includes(product.name)), false);
 });
 
