@@ -92,6 +92,8 @@ export interface Provider {
 export interface Client {
   id: string;
   name: string;
+  address?: string;
+  department?: string;
 }
 
 export type ProductKind = "Pallet" | "Piso" | "Bin";

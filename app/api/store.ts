@@ -54,7 +54,7 @@ export type UpdateProductInput = {
 };
 
 export type CreateProductInput = UpdateProductInput;
-export type CreateClientInput = { name: string };
+export type CreateClientInput = { name: string; address?: string; department?: string };
 
 type DbLine = { id: string; product: string; quantity: number; preparation: string | null; position: number };
 type DbOrder = {
@@ -174,20 +174,20 @@ export async function getProducts() {
 
 export async function getClients() {
   if (useMemoryStore) return memoryClients;
-  return supabaseRequest<Client[]>("/rest/v1/clients?select=id,name&order=name.asc");
+  return supabaseRequest<Client[]>("/rest/v1/clients?select=id,name,address,department&order=name.asc");
 }
 
 export async function createClient(input: CreateClientInput) {
   const name = input.name.trim();
   if (!name) throw new Error("Indique el nombre del cliente.");
   if (!useMemoryStore) {
-    const id = await supabaseRequest<string>("/rest/v1/rpc/create_operation_client", { method: "POST", body: JSON.stringify({ p_name: name }) });
+    const id = await supabaseRequest<string>("/rest/v1/rpc/create_operation_client", { method: "POST", body: JSON.stringify({ p_name: name, p_address: input.address?.trim() || null, p_department: input.department?.trim() || null }) });
     const client = (await getClients()).find((item) => item.id === id);
     if (!client) throw new Error("El cliente se creó pero no pudo recuperarse.");
     return client;
   }
   if (memoryClients.some((client) => client.name.localeCompare(name, "es", { sensitivity: "accent" }) === 0)) throw new Error("Ese cliente ya existe.");
-  const client = { id: `cliente-${Date.now()}`, name };
+  const client = { id: `cliente-${Date.now()}`, name, address: input.address?.trim() || undefined, department: input.department?.trim() || undefined };
   memoryClients.push(client);
   return client;
 }

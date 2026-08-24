@@ -1618,7 +1618,7 @@ h3 {
   width: 100%;
   min-height: 82px;
   display: grid;
-  grid-template-columns: 40px minmax(160px, 1fr) repeat(3, minmax(78px, 110px)) 20px;
+  grid-template-columns: 40px minmax(150px, .9fr) minmax(160px, 1.15fr) minmax(120px, .7fr) minmax(140px, .75fr) 110px 20px;
   align-items: center;
   gap: 14px;
   padding: 13px 18px;
@@ -1983,7 +1983,7 @@ h3 {
 }
 
 .client-heading {
-  grid-template-columns: 40px minmax(160px, 1fr) repeat(3, minmax(78px, 110px)) 20px;
+  grid-template-columns: 40px minmax(150px, .9fr) minmax(160px, 1.15fr) minmax(120px, .7fr) minmax(140px, .75fr) 110px 20px;
 }
 
 .logistics-heading {

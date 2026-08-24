@@ -301,13 +301,16 @@ test("agrega productos y clientes mediante sus endpoints", async () => {
   const clientResponse = await request("/api/clients", {
     method: "POST",
     headers: { "content-type": "application/json" },
-    body: JSON.stringify({ name: "Cliente nuevo" }),
+    body: JSON.stringify({ name: "Cliente nuevo", address: "Camino de los Aromos 120", department: "Canelones" }),
   });
   assert.equal(clientResponse.status, 201);
-  assert.equal((await clientResponse.json()).client.name, "Cliente nuevo");
+  const createdClient = (await clientResponse.json()).client;
+  assert.equal(createdClient.name, "Cliente nuevo");
+  assert.equal(createdClient.address, "Camino de los Aromos 120");
+  assert.equal(createdClient.department, "Canelones");
 
   const clients = (await (await request("/api/clients")).json()).clients;
-  assert.ok(clients.some((client) => client.name === "Cliente nuevo" && client.orders === 0));
+  assert.ok(clients.some((client) => client.name === "Cliente nuevo" && client.orders === 0 && client.activeOrders === 0));
 });
 
 test("edita y elimina productos mediante endpoints separados", async () => {

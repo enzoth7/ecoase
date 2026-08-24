@@ -107,10 +107,13 @@ function StatusBadge({ order }: { order: OperationOrder }) {
 
 type ClientSummary = {
   name: string;
+  address?: string;
+  department?: string;
   orders: number;
   requested: number;
   delivered: number;
   pending: number;
+  activeOrders: number;
 };
 
 function ClientsView({ clients, onOpen, onAdd }: { clients: ClientSummary[]; onOpen: (client: string) => void; onAdd: () => void }) {
@@ -124,15 +127,16 @@ function ClientsView({ clients, onOpen, onAdd }: { clients: ClientSummary[]; onO
       </div>
       <div className="client-list">
         <div className="data-heading client-heading" aria-hidden="true">
-          <div /><div>Cliente</div><div>Pedido</div><div>Entregado</div><div>Saldo</div><div />
+          <div /><div>Cliente</div><div>Dirección</div><div>Departamento</div><div>Histórico de palets</div><div>Pedidos activos</div><div />
         </div>
         {clients.map((client) => (
           <button type="button" className="client-row" key={client.name} onClick={() => onOpen(client.name)}>
             <i className="client-avatar" aria-hidden="true">{client.name.slice(0, 1)}</i>
-            <div className="client-name"><strong>{client.name}</strong><small>{client.orders} {client.orders === 1 ? "pedido" : "pedidos"}</small></div>
-            <div><small className="column-label">Pedido</small><strong>{number.format(client.requested)}</strong></div>
-            <div><small className="column-label">Entregado</small><strong>{number.format(client.delivered)}</strong></div>
-            <div className={client.pending > 0 ? "client-pending" : "client-complete"}><small className="column-label">Saldo</small><strong>{number.format(client.pending)}</strong></div>
+            <div className="client-name"><strong>{client.name}</strong></div>
+            <div><strong>{client.address ?? "—"}</strong></div>
+            <div><strong>{client.department ?? "—"}</strong></div>
+            <div><strong>{number.format(client.delivered)}</strong></div>
+            <div className={client.activeOrders > 0 ? "client-pending" : "client-complete"}><strong>{client.activeOrders > 0 ? `Sí · ${client.activeOrders}` : "No"}</strong></div>
             <ChevronRight size={19} aria-hidden="true" />
           </button>
         ))}
@@ -274,7 +278,7 @@ function AddProductModal({ onClose, onSave }: { onClose: () => void; onSave: (ch
   return <div className="modal-backdrop" role="presentation" onMouseDown={(event) => { if (event.target === event.currentTarget) onClose(); }}><section className="edit-product-modal" role="dialog" aria-modal="true" aria-labelledby="add-product-title"><div className="modal-heading"><div><h2 id="add-product-title">Agregar producto</h2></div><button type="button" onClick={onClose} aria-label="Cerrar"><X size={18} aria-hidden="true" /></button></div><form onSubmit={submit}><label>Tipo<select ref={inputRef} name="kind" defaultValue="Pallet"><option value="Pallet">Pallet</option><option value="Piso">Piso</option><option value="Bin">Bin</option></select></label><label>Medida<input name="measure" placeholder="Ej. 120 × 100" /></label><label>Tratamiento<select name="treatment" defaultValue=""><option value="">Sin tratamiento</option><option value="Marcado">Marcado</option><option value="HT">HT</option><option value="Marcado y HT">Marcado y HT</option></select></label>{error && <p className="form-error" role="alert">{error}</p>}<div className="modal-actions"><button type="button" className="secondary-button" onClick={onClose}>Cancelar</button><button type="submit" className="primary-button" disabled={saving}>{saving ? "Guardando…" : "Agregar producto"}</button></div></form></section></div>;
 }
 
-function AddClientModal({ onClose, onSave }: { onClose: () => void; onSave: (name: string) => Promise<boolean> }) {
+function AddClientModal({ onClose, onSave }: { onClose: () => void; onSave: (input: { name: string; address: string; department: string }) => Promise<boolean> }) {
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
   const inputRef = useRef<HTMLInputElement>(null);
@@ -282,11 +286,12 @@ function AddClientModal({ onClose, onSave }: { onClose: () => void; onSave: (nam
   const submit = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
     setSaving(true); setError("");
-    const saved = await onSave(String(new FormData(event.currentTarget).get("name") ?? ""));
+    const form = new FormData(event.currentTarget);
+    const saved = await onSave({ name: String(form.get("name") ?? ""), address: String(form.get("address") ?? ""), department: String(form.get("department") ?? "") });
     setSaving(false);
     if (saved) onClose(); else setError("No se pudo agregar el cliente.");
   };
-  return <div className="modal-backdrop" role="presentation" onMouseDown={(event) => { if (event.target === event.currentTarget) onClose(); }}><section className="add-client-modal" role="dialog" aria-modal="true" aria-labelledby="add-client-title"><div className="modal-heading"><div><h2 id="add-client-title">Agregar cliente</h2></div><button type="button" onClick={onClose} aria-label="Cerrar"><X size={18} aria-hidden="true" /></button></div><form onSubmit={submit}><label>Nombre de la empresa<input ref={inputRef} name="name" required /></label>{error && <p className="form-error" role="alert">{error}</p>}<div className="modal-actions"><button type="button" className="secondary-button" onClick={onClose}>Cancelar</button><button type="submit" className="primary-button" disabled={saving}>{saving ? "Guardando…" : "Agregar cliente"}</button></div></form></section></div>;
+  return <div className="modal-backdrop" role="presentation" onMouseDown={(event) => { if (event.target === event.currentTarget) onClose(); }}><section className="add-client-modal" role="dialog" aria-modal="true" aria-labelledby="add-client-title"><div className="modal-heading"><div><h2 id="add-client-title">Agregar cliente</h2></div><button type="button" onClick={onClose} aria-label="Cerrar"><X size={18} aria-hidden="true" /></button></div><form onSubmit={submit}><label className="field-wide">Nombre de la empresa<input ref={inputRef} name="name" required /></label><label>Dirección<input name="address" autoComplete="street-address" /></label><label>Departamento<input name="department" /></label>{error && <p className="form-error" role="alert">{error}</p>}<div className="modal-actions"><button type="button" className="secondary-button" onClick={onClose}>Cancelar</button><button type="submit" className="primary-button" disabled={saving}>{saving ? "Guardando…" : "Agregar cliente"}</button></div></form></section></div>;
 }
 
 function CalendarView({ orders, onOpen }: { orders: OperationOrder[]; onOpen: (id: string) => void }) {
@@ -654,7 +659,7 @@ export default function Dashboard({ initialSection = "pedidos" }: { initialSecti
   const [orderRows, setOrderRows] = useState<OperationOrder[]>(initialOrders);
   const [providerRows, setProviderRows] = useState<Provider[]>(initialProviders);
   const [productRows, setProductRows] = useState<Product[]>(initialProducts);
-  const [registeredClientNames, setRegisteredClientNames] = useState<string[]>([]);
+  const [registeredClients, setRegisteredClients] = useState<Array<Pick<ClientSummary, "name" | "address" | "department">>>([]);
   const [selectedId, setSelectedId] = useState(initialOrders[0].id);
   const [showAddOrder, setShowAddOrder] = useState(false);
   const [showAddProduct, setShowAddProduct] = useState(false);
@@ -687,7 +692,7 @@ export default function Dashboard({ initialSection = "pedidos" }: { initialSecti
         setOrderRows(orders);
         setProviderRows(providers);
         setProductRows(products);
-        setRegisteredClientNames(clients.map((client) => client.name));
+        setRegisteredClients(clients.map((client) => ({ name: client.name, address: client.address, department: client.department })));
       })
       .catch(() => undefined);
   }, []);
@@ -723,18 +728,21 @@ export default function Dashboard({ initialSection = "pedidos" }: { initialSecti
   const clients = useMemo<ClientSummary[]>(() => {
     const summaries = new Map<string, ClientSummary>();
     orderRows.forEach((order) => {
-      const current = summaries.get(order.client) ?? { name: order.client, orders: 0, requested: 0, delivered: 0, pending: 0 };
+      const current = summaries.get(order.client) ?? { name: order.client, orders: 0, requested: 0, delivered: 0, pending: 0, activeOrders: 0 };
       current.orders += 1;
       current.requested += order.requested;
       current.delivered += order.delivered;
       current.pending += order.pending;
+      if (order.status !== "completado") current.activeOrders += 1;
       summaries.set(order.client, current);
     });
-    registeredClientNames.forEach((name) => {
-      if (!summaries.has(name)) summaries.set(name, { name, orders: 0, requested: 0, delivered: 0, pending: 0 });
+    registeredClients.forEach((client) => {
+      const current = summaries.get(client.name);
+      if (current) Object.assign(current, { address: client.address, department: client.department });
+      else summaries.set(client.name, { ...client, orders: 0, requested: 0, delivered: 0, pending: 0, activeOrders: 0 });
     });
     return [...summaries.values()].sort((a, b) => b.pending - a.pending || a.name.localeCompare(b.name, "es"));
-  }, [orderRows, registeredClientNames]);
+  }, [orderRows, registeredClients]);
 
   const selectOrder = (id: string) => {
     setSelectedId(id);
@@ -830,11 +838,11 @@ export default function Dashboard({ initialSection = "pedidos" }: { initialSecti
     return true;
   };
 
-  const addClient = async (name: string) => {
-    const response = await fetch("/api/clients", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ name }) });
-    const payload = (await response.json()) as { client?: { name: string } };
+  const addClient = async (input: { name: string; address: string; department: string }) => {
+    const response = await fetch("/api/clients", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(input) });
+    const payload = (await response.json()) as { client?: { name: string; address?: string; department?: string } };
     if (!response.ok || !payload.client) return false;
-    setRegisteredClientNames((current) => [...new Set([...current, payload.client!.name])].sort((a, b) => a.localeCompare(b, "es")));
+    setRegisteredClients((current) => [...current.filter((client) => client.name !== payload.client!.name), payload.client!].sort((a, b) => a.name.localeCompare(b.name, "es")));
     return true;
   };
 
