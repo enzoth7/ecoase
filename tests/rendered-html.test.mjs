@@ -13,24 +13,24 @@ async function render() {
   );
 }
 
-test("renderiza el dashboard Ecoase sin contenido del starter", async () => {
+test("renderiza el piloto Ecoase como una sola pantalla", async () => {
   const response = await render();
   assert.equal(response.status, 200);
   assert.match(response.headers.get("content-type") ?? "", /^text\/html\b/i);
 
   const html = await response.text();
   assert.match(html, /<html lang="es">/i);
-  assert.match(html, /Ecoase/);
-  assert.match(html, /Lo que necesita atención/);
-  assert.match(html, /Demostración de solo lectura/);
-  assert.match(html, /Pedidos/);
-  assert.match(html, /Stock y preparación/);
-  assert.doesNotMatch(html, /codex-preview|SkeletonPreview|Building your site|react-loading-skeleton/i);
+  assert.match(html, /Cómo se transforma un pedido en una entrega/);
+  assert.match(html, /Del pedido al cierre/);
+  assert.match(html, /Casos para validar/);
+  assert.match(html, /Tres preguntas para Jony/);
+  assert.match(html, /Solo lectura/);
+  assert.doesNotMatch(html, /Próximos 14 días|Stock y preparación|Supuesto de demostración/i);
 });
 
-test("publica metadatos específicos de Ecoase", async () => {
+test("publica metadatos específicos del piloto", async () => {
   const response = await render();
   const html = await response.text();
-  assert.match(html, /<title>Ecoase — Control operativo<\/title>/i);
-  assert.match(html, /Una lectura simple de pedidos, stock, preparación y entregas de Ecoase\./i);
+  assert.match(html, /<title>Ecoase — Piloto operativo<\/title>/i);
+  assert.match(html, /Una pantalla simple para validar cómo un pedido de Ecoase se transforma en una entrega\./i);
 });

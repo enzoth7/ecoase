@@ -1,64 +1,77 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import {
-  alerts,
-  compatibilityRule,
-  deliveries,
-  orders,
-  stock,
-  stockTotals,
-  transformationChecks,
-} from "../app/data.ts";
+import { stages, validationCases, validationQuestions } from "../app/data.ts";
 
-test("cada pedido y cada línea conservan el saldo", () => {
-  for (const order of orders) {
-    assert.equal(order.requested, order.delivered + order.pending, order.id);
-    assert.equal(order.requested, order.lines.reduce((sum, line) => sum + line.requested, 0), `${order.id}: líneas solicitadas`);
-    assert.equal(order.delivered, order.lines.reduce((sum, line) => sum + line.delivered, 0), `${order.id}: líneas entregadas`);
-    for (const line of order.lines) assert.equal(line.requested, line.delivered + line.pending, line.id);
+test("el recorrido conserva exactamente cinco etapas en orden", () => {
+  assert.deepEqual(
+    stages.map((stage) => stage.id),
+    ["pedido", "plan", "disponibilidad", "preparacion", "entrega"],
+  );
+
+  for (const [index, stage] of stages.entries()) {
+    assert.equal(stage.number, index + 1);
+    assert.ok(stage.question.length > 0, `${stage.id}: pregunta`);
+    assert.ok(stage.decision.length > 0, `${stage.id}: decisión`);
+    assert.ok(stage.output.length > 0, `${stage.id}: salida`);
+    assert.ok(stage.known.length > 0, `${stage.id}: hechos`);
+    assert.ok(stage.unknown.length > 0, `${stage.id}: pendientes`);
   }
 });
 
-test("la orden Pamer 184833 reconcilia cinco líneas, 500 unidades, remito 603 y saldo cero", () => {
-  const order = orders.find((item) => item.orderNumber === "184833");
-  assert.ok(order);
-  assert.equal(order.lines.length, 5);
-  assert.equal(order.requested, 500);
-  assert.equal(order.delivered, 500);
-  assert.equal(order.pending, 0);
-  assert.equal(order.remittance, "603");
-  assert.equal(deliveries.find((item) => item.remittance === "603")?.quantity, 500);
+test("el modelo no contiene supuestos de demostración", () => {
+  const serialized = JSON.stringify({ stages, validationCases });
+  assert.doesNotMatch(serialized, /supuesto de demostración|escenario didáctico|"demo"/i);
+
+  const kinds = new Set([
+    ...stages.flatMap((stage) => stage.evidence.map((source) => source.kind)),
+    ...validationCases.flatMap((item) => item.evidence.map((source) => source.kind)),
+  ]);
+  assert.deepEqual([...kinds].sort(), ["excel", "no_confirmado", "regla_relevada"]);
 });
 
-test("marcado y HT transfieren stock con efecto físico neto cero", () => {
-  for (const movement of transformationChecks) assert.equal(movement.fromDelta + movement.toDelta, 0, movement.id);
+test("cada caso conserva evidencia Excel y marca los huecos como no confirmados", () => {
+  for (const item of validationCases) {
+    assert.ok(item.evidence.some((source) => source.kind === "excel"), `${item.id}: evidencia Excel`);
+  }
+
+  for (const item of validationCases.filter((candidate) => candidate.status !== "cerrado")) {
+    assert.ok(item.evidence.some((source) => source.kind === "no_confirmado"), `${item.id}: pendiente explícito`);
+  }
 });
 
-test("los totales físicos coinciden con pendiente más listo", () => {
-  assert.equal(stockTotals.palbin.total, stockTotals.palbin.pending + stockTotals.palbin.ready);
-  assert.equal(stockTotals.pamer.total, stockTotals.pamer.pending + stockTotals.pamer.ready);
-  for (const item of stock) assert.equal(item.total, item.pendingPreparation + item.ready, item.id);
+test("Pamer 184833 conserva la reconciliación verificable", () => {
+  const pamer = validationCases.find((item) => item.id === "pamer-184833");
+  assert.ok(pamer);
+  assert.equal(pamer.status, "cerrado");
+  assert.deepEqual(pamer.facts, ["5 líneas · 500 unidades", "Remito 603", "Entregado 500 · saldo 0"]);
+  assert.ok(pamer.evidence.some((source) => source.reference.includes("PAMER!A4:J8")));
+  assert.ok(pamer.evidence.some((source) => source.reference.includes("MOVIMIENTOS!A53:I57")));
 });
 
-test("la entrega parcial conserva saldo y próximo paso", () => {
-  const partial = orders.find((item) => item.status === "parcial");
-  assert.ok(partial);
-  assert.ok(partial.pending > 0);
-  assert.ok(partial.nextDecision.length > 0);
+test("Frutura expone el bloqueo sin inventar una nueva fecha", () => {
+  const frutura = validationCases.find((item) => item.id === "frutura-14");
+  assert.ok(frutura);
+  assert.equal(frutura.status, "bloqueado");
+  assert.deepEqual(frutura.facts, ["600 pallets 122 × 102", "El plan dice: no llegaron los pallets"]);
+  assert.ok(frutura.evidence.some((source) => source.reference.includes("A74:E74")));
+  assert.ok(frutura.evidence.some((source) => source.reference === "Nueva fecha de llegada y entrega"));
 });
 
-test("la cobertura sin consumo se muestra como no calculable", () => {
-  assert.ok(stock.some((item) => item.coverageDays === null));
+test("Proquimur separa HT, sin HT y confirmación pendiente", () => {
+  const proquimur = validationCases.find((item) => item.id === "proquimur-63");
+  assert.ok(proquimur);
+  assert.equal(proquimur.status, "por_confirmar");
+  assert.deepEqual(proquimur.facts, [
+    "300 pallets con HT",
+    "300 pallets sin HT",
+    "Estado: esperando confirmación",
+  ]);
+  assert.ok(proquimur.evidence.some((source) => source.reference.includes("A63:E63")));
 });
 
-test("la compatibilidad es explícitamente no simétrica", () => {
-  assert.match(compatibilityRule.allowed, /MSJ.*Cousa/);
-  assert.match(compatibilityRule.blocked, /Cousa.*no puede.*MSJ/);
-});
-
-test("la alerta HT registra el margen relevado de 3–4 horas", () => {
-  const ht = alerts.find((item) => item.id === "alert-samifruit-ht");
-  assert.ok(ht);
-  assert.equal(ht.level, "critico");
-  assert.ok(ht.evidence.some((source) => `${source.reference} ${source.note ?? ""}`.includes("3–4")));
+test("el cierre mantiene las tres preguntas para Jony", () => {
+  assert.equal(validationQuestions.length, 3);
+  assert.match(validationQuestions[0], /cinco etapas/i);
+  assert.match(validationQuestions[1], /decisión importante/i);
+  assert.match(validationQuestions[2], /variable/i);
 });

@@ -11,19 +11,19 @@ const siteUrl = process.env.SITE_URL ?? "http://localhost:3001";
 
 export const metadata: Metadata = {
   metadataBase: new URL(siteUrl),
-  title: "Ecoase — Control operativo",
+  title: "Ecoase — Piloto operativo",
   description:
-    "Una lectura simple de pedidos, stock, preparación y entregas de Ecoase.",
+    "Una pantalla simple para validar cómo un pedido de Ecoase se transforma en una entrega.",
   openGraph: {
-    title: "Ecoase — Control operativo",
-    description: "Pedidos, stock y entregas explicados en lenguaje operativo simple.",
+    title: "Ecoase — Piloto operativo",
+    description: "Cinco decisiones, tres casos verificables y las preguntas que todavía faltan responder.",
     type: "website",
-    images: [{ url: "/og.png", width: 1730, height: 909, alt: "Ecoase, control operativo" }],
+    images: [{ url: "/og.png", width: 1730, height: 909, alt: "Ecoase, piloto operativo" }],
   },
   twitter: {
     card: "summary_large_image",
-    title: "Ecoase — Control operativo",
-    description: "Pedidos, stock y entregas explicados en lenguaje operativo simple.",
+    title: "Ecoase — Piloto operativo",
+    description: "Cinco decisiones para validar el recorrido completo de un pedido.",
     images: ["/og.png"],
   },
   icons: {
