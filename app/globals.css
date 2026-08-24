@@ -1763,6 +1763,10 @@ h3 {
   margin: 0;
 }
 
+.logistics-surface .module-toolbar-actions {
+  flex-wrap: wrap;
+}
+
 .logistics-order {
   width: 100%;
   min-height: 82px;
@@ -2663,6 +2667,11 @@ h3 {
   }
 
   .calendar-week-controls {
+    width: 100%;
+    justify-content: space-between;
+  }
+
+  .logistics-surface .module-toolbar-actions {
     width: 100%;
     justify-content: space-between;
   }

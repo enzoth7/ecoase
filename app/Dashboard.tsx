@@ -355,19 +355,39 @@ function CalendarView({ orders, onOpen }: { orders: OperationOrder[]; onOpen: (i
 
 function LogisticsView({ orders, providers, onOpen }: { orders: OperationOrder[]; providers: Provider[]; onOpen: (id: string) => void }) {
   const transports = [...new Set(orders.map((order) => order.transport))];
-  const currentWeek = useMemo(() => startOfWeek(new Date()), []);
+  const [weekStart, setWeekStart] = useState(() => startOfWeek(new Date()));
+  const weekEnd = useMemo(() => {
+    const end = new Date(weekStart);
+    end.setDate(weekStart.getDate() + 6);
+    return end;
+  }, [weekStart]);
+  const weekOrders = useMemo(() => orders.filter((order) => {
+    const plannedDate = getOrderPlannedDate(order);
+    return plannedDate >= dateKey(weekStart) && plannedDate <= dateKey(weekEnd);
+  }), [orders, weekEnd, weekStart]);
   const [capacity, setCapacity] = useState<CapacitySnapshot | null>(null);
   const [capacityError, setCapacityError] = useState("");
   useEffect(() => {
-    const end = new Date(currentWeek); end.setDate(currentWeek.getDate() + 6);
-    fetch(`/api/capacity?from=${dateKey(currentWeek)}&to=${dateKey(end)}`).then((response) => response.json()).then((payload: { capacity?: CapacitySnapshot }) => setCapacity(payload.capacity ?? null)).catch(() => setCapacity(null));
-  }, [currentWeek]);
+    fetch(`/api/capacity?from=${dateKey(weekStart)}&to=${dateKey(weekEnd)}`).then((response) => response.json()).then((payload: { capacity?: CapacitySnapshot }) => setCapacity(payload.capacity ?? null)).catch(() => setCapacity(null));
+  }, [weekEnd, weekStart]);
+  const moveWeek = (direction: -1 | 1) => setWeekStart((current) => {
+    const next = new Date(current);
+    next.setDate(current.getDate() + direction * 7);
+    return next;
+  });
   return (
     <>
     <section className="module-surface logistics-surface" aria-labelledby="logistics-page-title">
-      <div className="module-toolbar">
+      <div className="module-toolbar calendar-toolbar">
         <div><h2 id="logistics-page-title">Cap. Logística</h2></div>
-        <small>{transports.length} transportes registrados</small>
+        <div className="module-toolbar-actions">
+          <small>{transports.length} transportes registrados</small>
+          <div className="calendar-week-controls">
+            <button type="button" onClick={() => moveWeek(-1)} aria-label="Semana anterior"><ChevronLeft size={18} aria-hidden="true" /></button>
+            <strong aria-live="polite">{formatCalendarRange(weekStart)}</strong>
+            <button type="button" onClick={() => moveWeek(1)} aria-label="Semana siguiente"><ChevronRight size={18} aria-hidden="true" /></button>
+          </div>
+        </div>
       </div>
       {capacity && <div className="logistics-capacity-strip" aria-label="Capacidad logística de la semana">
         {capacity.days.map((day) => <article key={day.date}><small>{new Intl.DateTimeFormat("es-UY", { weekday: "short", day: "numeric" }).format(new Date(`${day.date}T12:00:00`))}</small><strong>{number.format(day.transportTotals.committed)} a entregar</strong><p>{number.format(day.transportTotals.internal)} interna · {number.format(day.transportTotals.externalConfirmed)} externa</p>{day.transportTotals.missing > 0 && <b>{number.format(day.transportTotals.missing)} faltantes</b>}</article>)}
@@ -376,7 +396,7 @@ function LogisticsView({ orders, providers, onOpen }: { orders: OperationOrder[]
         <div className="data-heading logistics-heading" aria-hidden="true">
           <div /><div>Cliente y pedido</div><div>Fecha</div><div>Transporte</div><div>Estado</div><div />
         </div>
-        {orders.map((order) => (
+        {weekOrders.map((order) => (
           <button type="button" className="logistics-order" key={order.id} onClick={() => onOpen(order.id)}>
             <i className="logistics-icon"><Truck size={18} aria-hidden="true" /></i>
             <div><strong>{order.client}</strong><small>{[visibleReference(order), order.product].filter(Boolean).join(" · ")}</small></div>
@@ -394,8 +414,7 @@ function LogisticsView({ orders, providers, onOpen }: { orders: OperationOrder[]
         const response = await fetch(url, { method: "PUT", headers: { "content-type": "application/json" }, body: JSON.stringify(body) });
         const payload = await response.json() as { error?: string };
         if (!response.ok) { const message = payload.error ?? "No se pudo guardar la capacidad de transporte."; setCapacityError(message); throw new Error(message); }
-        const end = new Date(currentWeek); end.setDate(currentWeek.getDate() + 6);
-        const refreshed = await fetch(`/api/capacity?from=${dateKey(currentWeek)}&to=${dateKey(end)}`).then((item) => item.json()) as { capacity?: CapacitySnapshot };
+        const refreshed = await fetch(`/api/capacity?from=${dateKey(weekStart)}&to=${dateKey(weekEnd)}`).then((item) => item.json()) as { capacity?: CapacitySnapshot };
         setCapacity(refreshed.capacity ?? null);
       }} />}
       {capacityError && <p className="capacity-error" role="alert">{capacityError}</p>}
