@@ -8,6 +8,7 @@ import {
   type OperationOrder,
   type OperationStage,
   type OrderChange,
+  type OrderUpdateKind,
   type OrderStatus,
   type Provider,
 } from "../data";
@@ -24,6 +25,16 @@ export type CreateOrderInput = {
 
 export type UpdateOrderInput = Partial<Pick<OperationOrder, "status" | "transport" | "requested" | "stage">> & {
   plannedDate?: string;
+};
+
+export type RecordOrderUpdateInput = {
+  kind: Exclude<OrderUpdateKind, "cambio">;
+  deliveredQuantity?: number;
+  deliveryAddress?: string;
+  remittance?: string;
+  dispatchedAt?: string;
+  deliveredAt?: string;
+  note?: string;
 };
 
 type DbLine = { id: string; product: string; quantity: number; preparation: string | null; position: number };
@@ -47,12 +58,18 @@ type DbOrder = {
   delivery: string;
   action: string;
   remittance: string | null;
+  delivery_address: string | null;
+  delivery_status: OperationOrder["deliveryStatus"] | null;
+  dispatched_at: string | null;
+  delivered_at: string | null;
   source: string;
   order_lines: DbLine[];
 };
 type DbChange = {
   id: string;
   changed_at: string;
+  kind: OrderUpdateKind;
+  note: string | null;
   order_change_items: Array<{ field: string; from_value: string; to_value: string; position: number }>;
 };
 
@@ -87,6 +104,10 @@ function mapOrder(row: DbOrder): OperationOrder {
     delivery: row.delivery,
     action: row.action,
     remittance: row.remittance ?? undefined,
+    deliveryAddress: row.delivery_address ?? undefined,
+    deliveryStatus: row.delivery_status ?? undefined,
+    dispatchedAt: row.dispatched_at ?? undefined,
+    deliveredAt: row.delivered_at ?? undefined,
     source: row.source,
     lines: [...(row.order_lines ?? [])]
       .sort((a, b) => a.position - b.position)
@@ -161,7 +182,7 @@ export async function createOrder(input: CreateOrderInput) {
 export async function getOrderHistory(id: string) {
   if (useMemoryStore) return memoryHistory.get(id) ?? [];
   const query = new URLSearchParams({
-    select: "id,changed_at,order_change_items(field,from_value,to_value,position)",
+    select: "id,changed_at,kind,note,order_change_items(field,from_value,to_value,position)",
     order_id: `eq.${id}`,
     order: "changed_at.desc",
     "order_change_items.order": "position.asc",
@@ -170,6 +191,8 @@ export async function getOrderHistory(id: string) {
   return rows.map<OrderChange>((row) => ({
     id: row.id,
     changedAt: new Intl.DateTimeFormat("es-UY", { dateStyle: "short", timeStyle: "short" }).format(new Date(row.changed_at)),
+    kind: row.kind,
+    note: row.note ?? undefined,
     changes: [...row.order_change_items]
       .sort((a, b) => a.position - b.position)
       .map((item) => ({
@@ -178,6 +201,91 @@ export async function getOrderHistory(id: string) {
         to: item.field === "Fecha planificada" ? formatPlannedDate(item.to_value) : item.to_value,
       })),
   }));
+}
+
+export async function recordOrderUpdate(id: string, input: RecordOrderUpdateInput) {
+  if (!useMemoryStore) {
+    await supabaseRequest<string>("/rest/v1/rpc/record_operation_update", {
+      method: "POST",
+      body: JSON.stringify({
+        p_id: id,
+        p_kind: input.kind,
+        p_delivered_quantity: input.deliveredQuantity ?? null,
+        p_delivery_address: input.deliveryAddress?.trim() || null,
+        p_remittance: input.remittance?.trim() || null,
+        p_dispatched_at: input.dispatchedAt ?? null,
+        p_delivered_at: input.deliveredAt ?? null,
+        p_note: input.note?.trim() || null,
+      }),
+    });
+    const [order, history] = await Promise.all([getDatabaseOrder(id), getOrderHistory(id)]);
+    return order ? { order, change: history[0] } : null;
+  }
+
+  const order = memoryOrders.find((item) => item.id === id);
+  if (!order) return null;
+  const changes: OrderChange["changes"] = [];
+
+  if (input.kind === "entrega") {
+    const quantity = input.deliveredQuantity ?? 0;
+    if (!Number.isInteger(quantity) || quantity <= 0) throw new Error("Indique una cantidad entregada mayor a cero.");
+    if (order.delivered + quantity > order.requested) throw new Error("La entrega no puede superar la cantidad del pedido.");
+    const previousDelivered = order.delivered;
+    const previousPending = order.pending;
+    order.delivered += quantity;
+    order.pending = order.requested - order.delivered;
+    order.delivery = `${order.delivered} de ${order.requested} entregados`;
+    order.deliveryStatus = order.pending === 0 ? "completa" : "parcial";
+    order.deliveredAt = input.deliveredAt ?? new Date().toISOString();
+    changes.push(
+      { field: "Cantidad entregada", from: String(previousDelivered), to: String(order.delivered) },
+      { field: "Saldo", from: String(previousPending), to: String(order.pending) },
+    );
+    if (order.pending === 0 && getOrderStage(order) !== "completado") {
+      changes.push({ field: "Etapa", from: stageLabels[getOrderStage(order)], to: stageLabels.completado });
+      order.stage = "completado";
+      order.status = "completado";
+      order.statusLabel = "Completado";
+    }
+  }
+
+  if (input.kind === "direccion") {
+    const address = input.deliveryAddress?.trim();
+    if (!address) throw new Error("Indique la dirección de entrega.");
+    changes.push({ field: "Dirección de entrega", from: order.deliveryAddress ?? "—", to: address });
+    order.deliveryAddress = address;
+  }
+
+  if (input.kind === "despacho") {
+    if (input.remittance?.trim() && input.remittance.trim() !== order.remittance) {
+      changes.push({ field: "Remito", from: order.remittance ?? "—", to: input.remittance.trim() });
+      order.remittance = input.remittance.trim();
+    }
+    const dispatchedAt = input.dispatchedAt ?? new Date().toISOString();
+    changes.push({ field: "Despacho", from: order.dispatchedAt ?? "—", to: dispatchedAt });
+    order.dispatchedAt = dispatchedAt;
+    order.deliveryStatus = "en_transito";
+    if (getOrderStage(order) === "negociacion") {
+      changes.push({ field: "Etapa", from: stageLabels.negociacion, to: stageLabels.logistica });
+      order.stage = "logistica";
+    }
+  }
+
+  if (input.kind === "incidencia") {
+    const note = input.note?.trim();
+    if (!note) throw new Error("Describa la incidencia.");
+    changes.push({ field: "Incidencia", from: "—", to: note });
+  }
+
+  const change: OrderChange = {
+    id: `actualizacion-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+    changedAt: new Intl.DateTimeFormat("es-UY", { dateStyle: "short", timeStyle: "short" }).format(new Date()),
+    kind: input.kind,
+    note: input.note?.trim() || undefined,
+    changes,
+  };
+  memoryHistory.set(id, [change, ...(memoryHistory.get(id) ?? [])]);
+  return { order, change };
 }
 
 export async function updateOrder(id: string, changes: UpdateOrderInput) {

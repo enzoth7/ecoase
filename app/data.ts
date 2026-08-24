@@ -1,5 +1,7 @@
 export type OrderStatus = "bloqueado" | "coordinacion" | "completado";
 export type OperationStage = "negociacion" | "produccion" | "logistica" | "completado";
+export type DeliveryStatus = "programada" | "en_transito" | "parcial" | "completa" | "fallida" | "rechazada";
+export type OrderUpdateKind = "cambio" | "entrega" | "direccion" | "despacho" | "incidencia";
 
 export interface OrderLine {
   id: string;
@@ -29,6 +31,10 @@ export interface OperationOrder {
   delivery: string;
   action: string;
   remittance?: string;
+  deliveryAddress?: string;
+  deliveryStatus?: DeliveryStatus;
+  dispatchedAt?: string;
+  deliveredAt?: string;
   lines: OrderLine[];
   source: string;
 }
@@ -36,6 +42,8 @@ export interface OperationOrder {
 export interface OrderChange {
   id: string;
   changedAt: string;
+  kind?: OrderUpdateKind;
+  note?: string;
   changes: Array<{ field: string; from: string; to: string }>;
 }
 

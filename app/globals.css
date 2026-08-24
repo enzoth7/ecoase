@@ -637,8 +637,8 @@ h3 {
 
 .list-heading {
   display: grid;
-  grid-template-columns: minmax(0, 1.5fr) 140px 125px 20px;
-  gap: 14px;
+  grid-template-columns: minmax(160px, 1.35fr) 116px minmax(120px, 0.8fr) minmax(118px, 0.75fr) 78px 20px;
+  gap: 12px;
   padding: 10px 18px;
   border-bottom: 1px solid var(--line);
   background: #fafbf8;
@@ -661,7 +661,7 @@ h3 {
   width: 100%;
   min-height: 100px;
   display: grid;
-  grid-template-columns: minmax(0, 1.5fr) 140px 125px 20px;
+  grid-template-columns: minmax(160px, 1.35fr) 116px minmax(120px, 0.8fr) minmax(118px, 0.75fr) 78px 20px;
   align-items: center;
   gap: 14px;
   padding: 14px 18px;
@@ -689,7 +689,9 @@ h3 {
 }
 
 .order-main,
-.order-schedule,
+.order-stage,
+.order-date,
+.order-transport,
 .order-quantities {
   min-width: 0;
   display: grid;
@@ -743,15 +745,30 @@ h3 {
   color: var(--green);
 }
 
-.order-schedule {
+.order-stage,
+.order-date,
+.order-transport,
+.order-quantities {
+  align-content: center;
   gap: 5px;
 }
 
-.order-schedule strong {
+.order-stage > small,
+.order-date > small,
+.order-transport > small,
+.order-quantities > small {
+  color: var(--muted);
+  font-size: 9px;
+  font-weight: 700;
+  letter-spacing: .035em;
+  text-transform: uppercase;
+}
+
+.order-date strong {
   font-size: 12px;
 }
 
-.order-schedule > div {
+.order-transport > div {
   display: flex;
   align-items: center;
   gap: 5px;
@@ -760,42 +777,13 @@ h3 {
 }
 
 .order-quantities {
-  gap: 6px;
-  justify-items: stretch;
+  justify-items: start;
 }
 
-.order-quantities > div {
-  color: var(--muted);
-  font-size: 11px;
-  text-align: right;
-}
-
-.order-quantities > div b {
+.order-quantities strong {
   color: var(--ink);
-  font-size: 13px;
-}
-
-.order-quantities i,
-.detail-progress i {
-  display: block;
-  height: 6px;
-  overflow: hidden;
-  border-radius: 999px;
-  background: #e4e8e3;
-}
-
-.order-quantities i b,
-.detail-progress i b {
-  display: block;
-  height: 100%;
-  border-radius: inherit;
-  background: var(--green);
-}
-
-.order-quantities small {
-  color: var(--muted);
-  font-size: 10px;
-  text-align: right;
+  font-size: 17px;
+  font-variant-numeric: tabular-nums;
 }
 
 .row-chevron {
@@ -860,13 +848,179 @@ h3 {
   scroll-margin-top: 16px;
 }
 
-.order-detail-placeholder {
+.order-tracking-panel {
   min-height: 520px;
-  height: calc(100vh - 306px);
+  max-height: calc(100vh - 306px);
+  padding: 22px;
   border: 1px solid var(--line);
   border-radius: 18px;
-  background: rgba(255, 255, 255, 0.7);
+  background: #fff;
   box-shadow: var(--shadow-sm);
+  overflow-y: auto;
+  scrollbar-color: #cbd1cc transparent;
+  scrollbar-width: thin;
+}
+
+.tracking-heading {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 14px;
+  padding-bottom: 18px;
+  border-bottom: 1px solid var(--line);
+}
+
+.tracking-heading > div {
+  min-width: 0;
+}
+
+.tracking-heading > div > small {
+  display: block;
+  margin-bottom: 5px;
+  color: var(--muted);
+  font-size: 10px;
+  font-weight: 720;
+  letter-spacing: .04em;
+  text-transform: uppercase;
+}
+
+.tracking-heading h2 {
+  margin: 0;
+  font-size: 26px;
+  line-height: 1.12;
+}
+
+.tracking-heading p {
+  margin: 6px 0 0;
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.45;
+}
+
+.tracking-summary {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 8px;
+  margin: 18px 0;
+}
+
+.tracking-summary > div {
+  min-width: 0;
+  padding: 11px 9px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: var(--surface-soft);
+}
+
+.tracking-summary small {
+  display: block;
+  margin-bottom: 5px;
+  color: var(--muted);
+  font-size: 9px;
+  font-weight: 720;
+  letter-spacing: .035em;
+  text-transform: uppercase;
+}
+
+.tracking-summary strong {
+  display: block;
+  color: var(--ink);
+  font-size: 19px;
+  font-variant-numeric: tabular-nums;
+}
+
+.tracking-add-button {
+  width: 100%;
+  min-height: 44px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  border: 1px solid var(--forest);
+  border-radius: 9px;
+  background: var(--forest);
+  color: #fff;
+  cursor: pointer;
+  font-size: 12px;
+  font-weight: 720;
+}
+
+.tracking-add-button:hover {
+  background: var(--forest-2);
+}
+
+.tracking-timeline {
+  margin-top: 23px;
+}
+
+.tracking-timeline h3 {
+  margin: 0 0 13px;
+  font-size: 15px;
+}
+
+.tracking-empty {
+  margin: 0;
+  padding: 18px 0 4px;
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.5;
+}
+
+.tracking-event {
+  display: grid;
+  grid-template-columns: 30px minmax(0, 1fr);
+  gap: 10px;
+  padding: 0 0 17px;
+}
+
+.tracking-event > i {
+  width: 30px;
+  height: 30px;
+  display: grid;
+  place-items: center;
+  border-radius: 9px;
+  background: #edf4f0;
+  color: var(--forest-2);
+}
+
+.tracking-event > i.entrega { background: var(--green-soft); color: var(--green); }
+.tracking-event > i.direccion { background: var(--blue-soft); color: var(--blue); }
+.tracking-event > i.incidencia { background: var(--red-soft); color: var(--red); }
+
+.tracking-event header {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.tracking-event header strong {
+  color: var(--ink);
+  font-size: 12px;
+}
+
+.tracking-event header small {
+  flex: 0 0 auto;
+  color: var(--muted);
+  font-size: 10px;
+}
+
+.tracking-event p {
+  display: grid;
+  gap: 2px;
+  margin: 7px 0 0;
+}
+
+.tracking-event p b {
+  color: var(--muted);
+  font-size: 10px;
+  font-weight: 700;
+}
+
+.tracking-event p small {
+  color: var(--ink);
+  font-size: 11px;
+  line-height: 1.4;
 }
 
 .order-detail {
@@ -1156,7 +1310,8 @@ h3 {
 }
 
 .add-order-modal,
-.edit-plan-modal {
+.edit-plan-modal,
+.order-update-modal {
   width: min(560px, 100%);
   max-height: calc(100vh - 40px);
   overflow-y: auto;
@@ -1168,6 +1323,10 @@ h3 {
 
 .edit-plan-modal {
   width: min(780px, 100%);
+}
+
+.order-update-modal {
+  width: min(680px, 100%);
 }
 
 .modal-heading {
@@ -1194,14 +1353,16 @@ h3 {
 }
 
 .add-order-modal form,
-.edit-plan-modal form {
+.edit-plan-modal form,
+.order-update-modal form {
   display: grid;
   grid-template-columns: 1fr 1fr;
   gap: 14px;
 }
 
 .add-order-modal label,
-.edit-plan-modal label {
+.edit-plan-modal label,
+.order-update-modal label {
   display: grid;
   gap: 6px;
   color: #49554f;
@@ -1211,6 +1372,7 @@ h3 {
 
 .add-order-modal .field-wide,
 .edit-plan-modal .field-wide,
+.order-update-modal .field-wide,
 .change-history,
 .form-error,
 .modal-actions {
@@ -1220,7 +1382,10 @@ h3 {
 .add-order-modal input,
 .add-order-modal select,
 .edit-plan-modal input,
-.edit-plan-modal select {
+.edit-plan-modal select,
+.order-update-modal input,
+.order-update-modal select,
+.order-update-modal textarea {
   width: 100%;
   min-height: 44px;
   padding: 0 11px;
@@ -1234,8 +1399,17 @@ h3 {
 .add-order-modal input:focus,
 .add-order-modal select:focus,
 .edit-plan-modal input:focus,
-.edit-plan-modal select:focus {
+.edit-plan-modal select:focus,
+.order-update-modal input:focus,
+.order-update-modal select:focus,
+.order-update-modal textarea:focus {
   border-color: var(--forest-2);
+}
+
+.order-update-modal textarea {
+  min-height: 106px;
+  padding-top: 10px;
+  resize: vertical;
 }
 
 .change-history {
@@ -1748,7 +1922,7 @@ h3 {
 
   .list-heading,
   .order-row {
-    grid-template-columns: minmax(0, 1.3fr) 124px 110px 18px;
+    grid-template-columns: minmax(145px, 1.25fr) 104px minmax(108px, .75fr) minmax(105px, .7fr) 64px 18px;
     gap: 10px;
   }
 
@@ -1774,8 +1948,9 @@ h3 {
     grid-template-columns: 1fr;
   }
 
-  .order-detail-placeholder {
-    display: none;
+  .order-tracking-panel {
+    min-height: 0;
+    max-height: none;
   }
 
   .orders-surface {
@@ -1913,23 +2088,30 @@ h3 {
     white-space: normal;
   }
 
-  .order-schedule {
+  .order-stage,
+  .order-date,
+  .order-transport,
+  .order-quantities {
     grid-column: 1;
-    grid-row: 2;
+    display: grid;
+    grid-template-columns: 88px minmax(0, 1fr);
+    align-items: center;
   }
 
-  .order-quantities {
-    min-width: 112px;
-    grid-column: 2;
-    grid-row: 1 / 3;
-    align-self: center;
+  .order-stage { grid-row: 2; }
+  .order-date { grid-row: 3; }
+  .order-transport { grid-row: 4; }
+  .order-quantities { grid-row: 5; }
+
+  .order-quantities strong {
+    font-size: 15px;
   }
 
   .row-chevron {
     display: none;
   }
 
-  .order-detail {
+  .order-tracking-panel {
     padding: 18px 15px;
   }
 
@@ -2064,11 +2246,13 @@ h3 {
     padding: 12px;
   }
 
-  .add-order-modal form {
+  .add-order-modal form,
+  .order-update-modal form {
     grid-template-columns: 1fr;
   }
 
   .add-order-modal label,
+  .order-update-modal label,
   .form-error,
   .modal-actions {
     grid-column: 1;

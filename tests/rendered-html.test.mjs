@@ -63,7 +63,14 @@ test("renderiza pedidos activos e incluye acceso al historial", async () => {
   assert.match(html, /Nivel de cumplimiento/);
   assert.match(html, /Período de los indicadores/);
   assert.match(html, /Esta semana/);
-  assert.match(html, /order-detail-placeholder/);
+  assert.match(html, /Seguimiento del pedido/);
+  assert.match(html, /Agregar actualización/);
+  assert.match(html, /Cliente y pedido/);
+  assert.match(html, /Etapa/);
+  assert.match(html, /Transporte/);
+  assert.match(html, /Palets/);
+  assert.doesNotMatch(html, /order-detail-placeholder/);
+  assert.doesNotMatch(html, /Bloqueado|En coordinación/);
   assert.doesNotMatch(html, /Preparación y entrega|Abastecimiento/);
   assert.match(html, /Frutura/);
   assert.match(html, /Proquimur/);
@@ -183,6 +190,33 @@ test("al completar un pedido se mueve al historial", async () => {
   const history = (await historyResponse.json()).history;
   assert.equal(activeOrders.some((order) => order.id === "proquimur-63"), false);
   assert.equal(history.some((order) => order.id === "proquimur-63"), true);
+});
+
+test("registra entregas y cambios de dirección en el seguimiento del pedido", async () => {
+  const delivery = await request("/api/orders/frutura-74/updates", {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ kind: "entrega", deliveredQuantity: 200 }),
+  });
+  assert.equal(delivery.status, 200);
+  const deliveryPayload = await delivery.json();
+  assert.equal(deliveryPayload.order.delivered, 200);
+  assert.equal(deliveryPayload.order.pending, 450);
+
+  const address = await request("/api/orders/frutura-74/updates", {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ kind: "direccion", deliveryAddress: "Camino de los Aromos 120" }),
+  });
+  assert.equal(address.status, 200);
+  const addressPayload = await address.json();
+  assert.equal(addressPayload.order.deliveryAddress, "Camino de los Aromos 120");
+
+  const history = await (await request("/api/orders/frutura-74/history")).json();
+  assert.equal(history.history[0].kind, "direccion");
+  assert.equal(history.history[0].changes.some((change) => change.field === "Dirección de entrega"), true);
+  assert.equal(history.history[1].kind, "entrega");
+  assert.equal(history.history[1].changes.some((change) => change.field === "Cantidad entregada"), true);
 });
 
 test("muestra el plan simplificado con edición por lápiz", async () => {

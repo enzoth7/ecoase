@@ -10,6 +10,7 @@ import {
   ClipboardList,
   Factory,
   ListChecks,
+  MapPin,
   Pencil,
   Plus,
   Search,
@@ -27,6 +28,7 @@ import {
   stageLabels,
   type OperationOrder,
   type OrderChange,
+  type OrderUpdateKind,
   type OrderStatus,
   type OperationStage,
   type Provider,
@@ -209,6 +211,124 @@ function StageBadge({ stage }: { stage: OperationStage }) {
   return <small className={`stage-badge ${stage}`}>{stageLabels[stage]}</small>;
 }
 
+const updateLabels: Record<OrderUpdateKind, string> = {
+  cambio: "Cambio de planificación",
+  entrega: "Entrega registrada",
+  direccion: "Dirección de entrega",
+  despacho: "Despacho",
+  incidencia: "Incidencia",
+};
+
+function UpdateIcon({ kind }: { kind?: OrderUpdateKind }) {
+  const Icon = kind === "entrega" ? CheckCircle2 : kind === "direccion" ? MapPin : kind === "despacho" ? Truck : kind === "incidencia" ? AlertTriangle : Pencil;
+  return <Icon size={16} aria-hidden="true" />;
+}
+
+type TrackingUpdate = {
+  kind: Exclude<OrderUpdateKind, "cambio">;
+  deliveredQuantity?: number;
+  deliveryAddress?: string;
+  remittance?: string;
+  dispatchedAt?: string;
+  deliveredAt?: string;
+  note?: string;
+};
+
+function OrderTrackingPanel({ order, refreshKey, onAdd }: { order?: OperationOrder; refreshKey: number; onAdd: (order: OperationOrder) => void }) {
+  const [history, setHistory] = useState<OrderChange[]>([]);
+  const [loading, setLoading] = useState(true);
+  const orderId = order?.id;
+
+  useEffect(() => {
+    if (!orderId) return;
+    fetch(`/api/orders/${orderId}/history`)
+      .then((response) => response.ok ? response.json() : { history: [] })
+      .then((payload: { history?: OrderChange[] }) => setHistory(payload.history ?? []))
+      .catch(() => setHistory([]))
+      .finally(() => setLoading(false));
+  }, [orderId, refreshKey]);
+
+  if (!order) {
+    return <aside className="detail-column order-tracking-panel empty-order-detail" aria-label="Seguimiento del pedido"><strong>Seleccione un pedido</strong></aside>;
+  }
+
+  return (
+    <aside className="detail-column order-tracking-panel" aria-labelledby="tracking-title">
+      <div className="tracking-heading">
+        <div><small>Seguimiento del pedido</small><h2 id="tracking-title">{order.client}</h2><p>{order.product}</p></div>
+        <StageBadge stage={getOrderStage(order)} />
+      </div>
+      <div className="tracking-summary" aria-label="Resumen de cantidades">
+        <div><small>Pedido</small><strong>{number.format(order.requested)}</strong></div>
+        <div><small>Entregado</small><strong>{number.format(order.delivered)}</strong></div>
+        <div><small>Saldo</small><strong>{number.format(order.pending)}</strong></div>
+      </div>
+      <button type="button" className="tracking-add-button" onClick={() => onAdd(order)}><Plus size={17} aria-hidden="true" />Agregar actualización</button>
+      <section className="tracking-timeline" aria-labelledby="timeline-title">
+        <h3 id="timeline-title">Actualizaciones</h3>
+        {loading ? <p className="tracking-empty">Cargando actualizaciones…</p> : history.length > 0 ? history.map((entry) => (
+          <article className="tracking-event" key={entry.id}>
+            <i className={entry.kind ?? "cambio"}><UpdateIcon kind={entry.kind} /></i>
+            <div>
+              <header><strong>{updateLabels[entry.kind ?? "cambio"]}</strong><small>{entry.changedAt}</small></header>
+              {entry.changes.map((change) => <p key={`${entry.id}-${change.field}`}><b>{change.field}</b><small>{change.from} → {change.to}</small></p>)}
+              {entry.note && entry.kind !== "incidencia" && <p><small>{entry.note}</small></p>}
+            </div>
+          </article>
+        )) : <p className="tracking-empty">Todavía no hay actualizaciones registradas.</p>}
+      </section>
+    </aside>
+  );
+}
+
+function OrderUpdateModal({ order, onClose, onSave }: { order: OperationOrder; onClose: () => void; onSave: (input: TrackingUpdate) => Promise<boolean> }) {
+  const [kind, setKind] = useState<TrackingUpdate["kind"]>("entrega");
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState("");
+
+  useEffect(() => {
+    const closeOnEscape = (event: KeyboardEvent) => { if (event.key === "Escape") onClose(); };
+    window.addEventListener("keydown", closeOnEscape);
+    return () => window.removeEventListener("keydown", closeOnEscape);
+  }, [onClose]);
+
+  const submit = async (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    setSaving(true);
+    setError("");
+    const form = new FormData(event.currentTarget);
+    const saved = await onSave({
+      kind,
+      deliveredQuantity: kind === "entrega" ? Number(form.get("deliveredQuantity")) : undefined,
+      deliveryAddress: kind === "direccion" ? String(form.get("deliveryAddress") ?? "") : undefined,
+      remittance: kind === "despacho" ? String(form.get("remittance") ?? "") : undefined,
+      dispatchedAt: kind === "despacho" ? String(form.get("dispatchedAt") ?? "") : undefined,
+      deliveredAt: kind === "entrega" ? String(form.get("deliveredAt") ?? "") : undefined,
+      note: kind === "incidencia" ? String(form.get("note") ?? "") : undefined,
+    });
+    setSaving(false);
+    if (saved) onClose();
+    else setError("No se pudo guardar la actualización.");
+  };
+
+  return (
+    <div className="modal-backdrop" role="presentation" onMouseDown={(event) => { if (event.target === event.currentTarget) onClose(); }}>
+      <section className="order-update-modal" role="dialog" aria-modal="true" aria-labelledby="order-update-title">
+        <div className="modal-heading"><div><h2 id="order-update-title">Actualizar pedido</h2><small>{order.client} · {number.format(order.requested)} palets</small></div><button type="button" onClick={onClose} aria-label="Cerrar"><X size={18} aria-hidden="true" /></button></div>
+        <form onSubmit={submit}>
+          <label className="field-wide">Tipo de actualización<select value={kind} onChange={(event) => setKind(event.target.value as TrackingUpdate["kind"])}><option value="entrega">Entrega</option><option value="despacho">Despacho</option><option value="direccion">Dirección de entrega</option><option value="incidencia">Incidencia</option></select></label>
+          {kind === "entrega" && <><label>Cantidad entregada<input name="deliveredQuantity" type="number" min="1" max={order.pending} step="1" required /></label><label>Fecha de entrega<input name="deliveredAt" type="datetime-local" /></label></>}
+          {kind === "despacho" && <><label>Fecha y hora de salida<input name="dispatchedAt" type="datetime-local" /></label><label>Remito<input name="remittance" defaultValue={order.remittance ?? ""} placeholder="Ej. 603" /></label></>}
+          {kind === "direccion" && <label className="field-wide">Dirección de entrega<input name="deliveryAddress" defaultValue={order.deliveryAddress ?? ""} required /></label>}
+          {kind === "incidencia" && <label className="field-wide">Detalle de la incidencia<textarea name="note" rows={4} required /></label>}
+          {error && <p className="form-error" role="alert">{error}</p>}
+          <div className="modal-actions"><button type="button" className="secondary-button" onClick={onClose}>Cancelar</button><button type="submit" className="primary-button" disabled={saving}>{saving ? "Guardando…" : "Guardar actualización"}</button></div>
+        </form>
+      </section>
+    </div>
+  );
+}
+
 type PlanChanges = {
   plannedDate?: string;
   requested?: number;
@@ -376,6 +496,8 @@ export default function Dashboard({ initialSection = "pedidos" }: { initialSecti
   const [selectedId, setSelectedId] = useState(initialOrders[0].id);
   const [showAddOrder, setShowAddOrder] = useState(false);
   const [editingPlanOrder, setEditingPlanOrder] = useState<OperationOrder | null>(null);
+  const [updatingOrder, setUpdatingOrder] = useState<OperationOrder | null>(null);
+  const [trackingRevision, setTrackingRevision] = useState(0);
   const [updateError, setUpdateError] = useState("");
   const today = useMemo(() => new Date(), []);
 
@@ -485,6 +607,23 @@ export default function Dashboard({ initialSection = "pedidos" }: { initialSecti
     return true;
   };
 
+  const recordUpdate = async (id: string, update: TrackingUpdate) => {
+    setUpdateError("");
+    const response = await fetch(`/api/orders/${id}/updates`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify(update),
+    });
+    const payload = (await response.json()) as { order?: OperationOrder; error?: string };
+    if (!response.ok || !payload.order) {
+      setUpdateError(payload.error ?? "No se pudo guardar la actualización.");
+      return false;
+    }
+    setOrderRows((current) => current.map((order) => order.id === id ? payload.order! : order));
+    setTrackingRevision((current) => current + 1);
+    return true;
+  };
+
   const sectionCopy: Record<DashboardSection, string> = {
     pedidos: "Control operativo",
     plan: "Plan",
@@ -583,13 +722,12 @@ export default function Dashboard({ initialSection = "pedidos" }: { initialSecti
             </div>
 
             <div className="list-heading" aria-hidden="true">
-              <div>Cliente y pedido</div><div>Fecha / transporte</div><div>Cantidades</div><div />
+              <div>Cliente y pedido</div><div>Etapa</div><div>Fecha</div><div>Transporte</div><div>Palets</div><div />
             </div>
 
             <div className="order-list" aria-label={`${visibleOrders.length} pedidos`}>
               {visibleOrders.length > 0 ? visibleOrders.map((order) => {
                 const active = order.id === selectedOrder?.id;
-                const progress = Math.round((order.delivered / order.requested) * 100);
                 return (
                   <button
                     type="button"
@@ -599,18 +737,21 @@ export default function Dashboard({ initialSection = "pedidos" }: { initialSecti
                     aria-pressed={active}
                   >
                     <div className="order-main">
-                      <StatusBadge order={order} />
                       <strong>{order.client}</strong>
                       <small>{[visibleReference(order), order.product].filter(Boolean).join(" · ")}</small>
                     </div>
-                    <div className="order-schedule">
-                      <strong>{order.dateLabel}</strong>
-                      <div><Truck size={14} aria-hidden="true" />{order.transport}</div>
+                    <div className="order-stage">
+                      <small>Etapa</small>
+                      <StageBadge stage={getOrderStage(order)} />
                     </div>
+                    <div className="order-date">
+                      <small>Fecha</small>
+                      <strong>{order.dateLabel}</strong>
+                    </div>
+                    <div className="order-transport"><small>Transporte</small><div><Truck size={14} aria-hidden="true" />{order.transport}</div></div>
                     <div className="order-quantities">
-                      <div><b>{number.format(order.delivered)}</b> / {number.format(order.requested)}</div>
-                      <i><b style={{ width: `${progress}%` }} /></i>
-                      <small>{order.pending > 0 ? `${number.format(order.pending)} pendientes` : "Completo"}</small>
+                      <small>Palets</small>
+                      <strong>{number.format(order.requested)}</strong>
                     </div>
                     <ChevronRight className="row-chevron" size={19} aria-hidden="true" />
                   </button>
@@ -625,13 +766,14 @@ export default function Dashboard({ initialSection = "pedidos" }: { initialSecti
             </div>
           </section>
 
-          <aside className="detail-column order-detail-placeholder" aria-label="Panel lateral disponible" />
+          <OrderTrackingPanel key={selectedOrder?.id ?? "empty"} order={selectedOrder} refreshKey={trackingRevision} onAdd={setUpdatingOrder} />
         </div> : section === "plan" ? <><PlanView orders={activeOrders} onEdit={setEditingPlanOrder} />{updateError && <p className="plan-error" role="alert">{updateError}</p>}</> : section === "calendario" ? <CalendarView orders={activeOrders} onOpen={openOrder} /> : section === "logistica" ? <LogisticsView orders={activeOrders} onOpen={openOrder} /> : section === "proveedores" ? <ProvidersView providers={providerRows} /> : <ClientsView clients={clients} onOpen={openClientOrders} />}
         </main>
 
       </div>
       {showAddOrder && <AddOrderModal transportOptions={providerRows.filter((provider) => provider.type === "Transporte").map((provider) => provider.name)} onClose={() => setShowAddOrder(false)} onCreated={addCreatedOrder} />}
       {editingPlanOrder && <EditPlanModal order={editingPlanOrder} transportOptions={providerRows.filter((provider) => provider.type === "Transporte").map((provider) => provider.name)} onClose={() => setEditingPlanOrder(null)} onSave={(changes) => updateOrder(editingPlanOrder.id, changes)} />}
+      {updatingOrder && <OrderUpdateModal order={updatingOrder} onClose={() => setUpdatingOrder(null)} onSave={(update) => recordUpdate(updatingOrder.id, update)} />}
     </div>
   );
 }
