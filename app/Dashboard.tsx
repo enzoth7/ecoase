@@ -639,7 +639,7 @@ function AddOrderModal({ clientOptions, products, transportOptions, onClose, onC
 export default function Dashboard({ initialSection = "pedidos" }: { initialSection?: DashboardSection }) {
   const [section, setSection] = useState<DashboardSection>(initialSection);
   const [query, setQuery] = useState("");
-  const [kpiPeriod, setKpiPeriod] = useState<KpiPeriod>("today");
+  const [kpiPeriod, setKpiPeriod] = useState<KpiPeriod>("week");
   const [orderRows, setOrderRows] = useState<OperationOrder[]>(initialOrders);
   const [providerRows, setProviderRows] = useState<Provider[]>(initialProviders);
   const [productRows, setProductRows] = useState<Product[]>(initialProducts);
