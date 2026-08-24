@@ -20,9 +20,8 @@ test("distingue proveedores de aserradero y transporte", () => {
 });
 
 test("conserva una sola fila por medida y tipo", () => {
-  const productsWithMeasure = products.filter((product) => product.measure);
-  const productKeys = productsWithMeasure.map((product) => `${product.kind}|${product.measure}`);
-  assert.equal(new Set(productKeys).size, productsWithMeasure.length);
+  const productKeys = products.map((product) => `${product.kind}|${product.measure ?? "sin medida"}`);
+  assert.equal(new Set(productKeys).size, products.length);
   assert.ok(products.some((product) => product.measure === "120 × 100" && product.treatment === "Marcado y HT"));
   assert.ok(products.every((product) => Object.keys(product).every((field) => ["id", "kind", "measure", "treatment"].includes(field))));
 });

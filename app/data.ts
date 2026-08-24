@@ -180,11 +180,6 @@ function combineTreatment(current?: ProductTreatment, next?: ProductTreatment) {
 }
 
 export const products: Product[] = productSeeds.reduce<Product[]>((unique, product) => {
-  if (!product.measure) {
-    unique.push({ id: product.id, kind: product.kind, treatment: product.treatment });
-    return unique;
-  }
-
   const existing = unique.find((item) => item.kind === product.kind && item.measure === product.measure);
   if (existing) {
     existing.treatment = combineTreatment(existing.treatment, product.treatment);

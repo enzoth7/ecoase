@@ -122,7 +122,7 @@ test("muestra el catálogo de productos sin clientes ni catálogos", async () =>
   assert.match(html, /216 × 110/);
   assert.doesNotMatch(html, /abiertas|cerradas|reforzadas|Mercosur liviano/i);
   const apiProducts = (await productsResponse.json()).products;
-  const measureKeys = apiProducts.filter((product) => product.measure).map((product) => `${product.kind}|${product.measure}`);
+  const measureKeys = apiProducts.map((product) => `${product.kind}|${product.measure ?? "sin medida"}`);
   assert.equal(new Set(measureKeys).size, measureKeys.length);
   assert.ok(apiProducts.every((product) => Object.keys(product).every((field) => ["id", "kind", "measure", "treatment"].includes(field))));
 });
