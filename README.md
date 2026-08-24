@@ -24,9 +24,13 @@ La aplicación queda disponible en `http://localhost:3000`.
 
 - `GET /api/orders`: lista pedidos.
 - `POST /api/orders`: agrega un pedido.
+- `PATCH /api/orders/:id`: actualiza fecha, cantidad, etapa o transportista.
+- `GET /api/orders/:id/history`: historial de cambios del pedido.
+- `GET /api/history`: pedidos completados.
 - `GET /api/clients`: resumen por cliente.
 - `GET /api/calendar`: agenda operativa.
 - `GET /api/logistics`: entregas y transportes.
+- `GET /api/providers`: proveedores y tipo de abastecimiento.
 
 Por ahora las altas se guardan en memoria y se reinician con el servidor. La estructura de Drizzle queda disponible para incorporar una base persistente en la siguiente etapa.
 

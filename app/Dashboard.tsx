@@ -11,6 +11,7 @@ import {
   Factory,
   ListChecks,
   PackageCheck,
+  Pencil,
   Plus,
   Search,
   Truck,
@@ -21,7 +22,18 @@ import {
   type LucideIcon,
 } from "lucide-react";
 import { useEffect, useMemo, useRef, useState, type FormEvent } from "react";
-import { orders as initialOrders, providers, type OperationOrder, type OrderStatus, type Provider } from "./data";
+import {
+  getOrderStage,
+  orders as initialOrders,
+  providers,
+  stageLabels,
+  type DateDirection,
+  type OperationOrder,
+  type OrderChange,
+  type OrderStatus,
+  type OperationStage,
+  type Provider,
+} from "./data";
 
 const number = new Intl.NumberFormat("es-UY");
 export type DashboardSection = "pedidos" | "plan" | "calendario" | "logistica" | "clientes" | "historial" | "proveedores";
@@ -285,32 +297,103 @@ function LogisticsView({ orders, onOpen }: { orders: OperationOrder[]; onOpen: (
   );
 }
 
-function PlanView({ orders, onOpen, onUpdate }: { orders: OperationOrder[]; onOpen: (id: string) => void; onUpdate: (id: string, changes: { status?: OrderStatus; transport?: string }) => void }) {
-  const statusPriority: Record<OrderStatus, number> = { bloqueado: 0, coordinacion: 1, completado: 2 };
-  const planOrders = [...orders].sort((a, b) => statusPriority[a.status] - statusPriority[b.status] || a.client.localeCompare(b.client, "es"));
-  const transportOptions = [...new Set(orders.map((order) => order.transport))].sort((a, b) => a.localeCompare(b, "es"));
+function StageBadge({ stage }: { stage: OperationStage }) {
+  return <small className={`stage-badge ${stage}`}>{stageLabels[stage]}</small>;
+}
+
+type PlanChanges = {
+  dateLabel?: string;
+  dateDirection?: DateDirection;
+  requested?: number;
+  stage?: OperationStage;
+  transport?: string;
+};
+
+function EditPlanModal({ order, transportOptions, onClose, onSave }: {
+  order: OperationOrder;
+  transportOptions: string[];
+  onClose: () => void;
+  onSave: (changes: PlanChanges) => Promise<boolean>;
+}) {
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState("");
+  const [history, setHistory] = useState<OrderChange[]>([]);
+
+  useEffect(() => {
+    fetch(`/api/orders/${order.id}/history`)
+      .then((response) => response.json())
+      .then((payload: { history?: OrderChange[] }) => setHistory(payload.history ?? []))
+      .catch(() => undefined);
+  }, [order.id]);
+
+  useEffect(() => {
+    const closeOnEscape = (event: KeyboardEvent) => { if (event.key === "Escape") onClose(); };
+    window.addEventListener("keydown", closeOnEscape);
+    return () => window.removeEventListener("keydown", closeOnEscape);
+  }, [onClose]);
+
+  const submit = async (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    setSaving(true);
+    setError("");
+    const form = new FormData(event.currentTarget);
+    const saved = await onSave({
+      dateLabel: String(form.get("dateLabel") ?? "").trim(),
+      dateDirection: form.get("dateDirection") as DateDirection,
+      requested: Number(form.get("requested")),
+      stage: form.get("stage") as OperationStage,
+      transport: String(form.get("transport") ?? "").trim(),
+    });
+    setSaving(false);
+    if (saved) onClose();
+    else setError("No se pudieron guardar los cambios.");
+  };
+
+  return (
+    <div className="modal-backdrop" role="presentation" onMouseDown={(event) => { if (event.target === event.currentTarget) onClose(); }}>
+      <section className="edit-plan-modal" role="dialog" aria-modal="true" aria-labelledby="edit-plan-title">
+        <div className="modal-heading">
+          <div><h2 id="edit-plan-title">Editar pedido</h2><small>{order.client} · {order.reference}</small></div>
+          <button type="button" onClick={onClose} aria-label="Cerrar"><X size={18} aria-hidden="true" /></button>
+        </div>
+        <form onSubmit={submit}>
+          <label>Fecha planificada<input name="dateLabel" defaultValue={order.dateLabel} required /></label>
+          <label>Ajuste de fecha<select name="dateDirection" defaultValue="sin_cambio"><option value="sin_cambio">Sin cambio</option><option value="adelanta">Se adelanta</option><option value="atrasa">Se atrasa</option></select></label>
+          <label>Cantidad de pallets<input name="requested" type="number" min={order.delivered} step="1" defaultValue={order.requested} required /></label>
+          <label>Etapa<select name="stage" defaultValue={getOrderStage(order)}><option value="negociacion">Negociación</option><option value="produccion">Producción</option><option value="logistica">Logística</option><option value="completado">Completado</option></select></label>
+          <label className="field-wide">Transportista<select name="transport" defaultValue={order.transport}>{transportOptions.map((transport) => <option key={transport} value={transport}>{transport}</option>)}</select></label>
+          {error && <p className="form-error" role="alert">{error}</p>}
+          <section className="change-history" aria-labelledby="change-history-title">
+            <h3 id="change-history-title">Cambios del pedido</h3>
+            {history.length > 0 ? <div>{history.map((entry) => <article key={entry.id}><small>{entry.changedAt}{entry.dateDirection ? ` · Fecha ${entry.dateDirection === "adelanta" ? "adelantada" : "atrasada"}` : ""}</small>{entry.changes.map((change) => <p key={`${entry.id}-${change.field}`}><strong>{change.field}:</strong> {change.from} → {change.to}</p>)}</article>)}</div> : <p>No hay cambios registrados.</p>}
+          </section>
+          <div className="modal-actions"><button type="button" className="secondary-button" onClick={onClose}>Cancelar</button><button type="submit" className="primary-button" disabled={saving}>{saving ? "Guardando…" : "Guardar cambios"}</button></div>
+        </form>
+      </section>
+    </div>
+  );
+}
+
+function PlanView({ orders, onEdit }: { orders: OperationOrder[]; onEdit: (order: OperationOrder) => void }) {
+  const stagePriority: Record<OperationStage, number> = { negociacion: 0, produccion: 1, logistica: 2, completado: 3 };
+  const planOrders = [...orders].sort((a, b) => stagePriority[getOrderStage(a)] - stagePriority[getOrderStage(b)] || a.client.localeCompare(b.client, "es"));
 
   return (
     <section className="module-surface plan-surface" aria-labelledby="plan-title">
-      <div className="module-toolbar">
-        <div><h2 id="plan-title">Plan</h2></div>
-      </div>
+      <div className="module-toolbar"><div><h2 id="plan-title">Plan</h2></div></div>
       <div className="plan-board" aria-label="Plan operativo">
-        <div className="data-heading plan-heading" aria-hidden="true">
-          <div>Pedido</div><div>Estado</div><div>Fecha planificada</div><div>Disponibilidad</div><div>Preparación</div><div>Transporte</div><div>Próxima acción</div><div />
-        </div>
-        {planOrders.map((order) => (
-          <article className={`plan-row ${order.status}`} key={order.id}>
-            <div className="plan-order"><StatusBadge order={order} /><strong>{order.client}</strong><small>{order.reference} · {order.product}</small></div>
-            <label className="plan-select"><small>Estado</small><select value={order.status} onChange={(event) => onUpdate(order.id, { status: event.target.value as OrderStatus })} aria-label={`Estado de ${order.client}`}><option value="bloqueado">Bloqueado</option><option value="coordinacion">En coordinación</option><option value="completado">Completado</option></select></label>
-            <div><small>Fecha planificada</small><strong>{order.dateLabel}</strong></div>
-            <div><small>Disponibilidad</small><strong>{order.supply}</strong></div>
-            <div><small>Preparación</small><strong>{order.preparation}</strong></div>
-            <label className="plan-select"><small>Transporte</small><select value={order.transport} onChange={(event) => onUpdate(order.id, { transport: event.target.value })} aria-label={`Transporte de ${order.client}`}>{transportOptions.map((transport) => <option key={transport} value={transport}>{transport}</option>)}</select><small>{order.logistics}</small></label>
-            <div><small>Próxima acción</small><strong>{order.action}</strong></div>
-            <button type="button" className="plan-open" onClick={() => onOpen(order.id)} aria-label={`Abrir pedido de ${order.client}`}><ChevronRight size={19} aria-hidden="true" /></button>
-          </article>
-        ))}
+        <div className="data-heading plan-heading" aria-hidden="true"><div>Cliente</div><div>Cantidad de pallets</div><div>Fecha planificada</div><div>Etapa</div><div>Transportista</div><div /></div>
+        {planOrders.map((order) => {
+          const dateChanged = Boolean(order.originalDateLabel && order.originalDateLabel !== order.dateLabel);
+          return <article className="plan-row" key={order.id}>
+            <div className="plan-client"><strong>{order.client}</strong><small>{order.reference}</small></div>
+            <div><small>Cantidad de pallets</small><strong>{number.format(order.requested)}</strong></div>
+            <div className={dateChanged ? "plan-date changed" : "plan-date"}><small>Fecha planificada</small><strong>{order.dateLabel}</strong></div>
+            <div><small>Etapa</small><StageBadge stage={getOrderStage(order)} /></div>
+            <div><small>Transportista</small><strong>{order.transport}</strong></div>
+            <button type="button" className="plan-edit" onClick={() => onEdit(order)} aria-label={`Editar pedido de ${order.client}`}><Pencil size={17} aria-hidden="true" /></button>
+          </article>;
+        })}
       </div>
     </section>
   );
@@ -385,6 +468,7 @@ export default function Dashboard({ initialSection = "pedidos" }: { initialSecti
   const [orderRows, setOrderRows] = useState<OperationOrder[]>(initialOrders);
   const [selectedId, setSelectedId] = useState(initialOrders[0].id);
   const [showAddOrder, setShowAddOrder] = useState(false);
+  const [editingPlanOrder, setEditingPlanOrder] = useState<OperationOrder | null>(null);
   const [updateError, setUpdateError] = useState("");
   const detailRef = useRef<HTMLDivElement>(null);
 
@@ -474,7 +558,7 @@ export default function Dashboard({ initialSection = "pedidos" }: { initialSecti
     setShowAddOrder(false);
   };
 
-  const updateOrder = async (id: string, changes: { status?: OrderStatus; transport?: string }) => {
+  const updateOrder = async (id: string, changes: PlanChanges) => {
     setUpdateError("");
     const response = await fetch(`/api/orders/${id}`, {
       method: "PATCH",
@@ -484,9 +568,10 @@ export default function Dashboard({ initialSection = "pedidos" }: { initialSecti
     const payload = (await response.json()) as { order?: OperationOrder; error?: string };
     if (!response.ok || !payload.order) {
       setUpdateError(payload.error ?? "No se pudo actualizar el pedido.");
-      return;
+      return false;
     }
     setOrderRows((current) => current.map((order) => order.id === id ? payload.order! : order));
+    return true;
   };
 
   const sectionCopy: Record<DashboardSection, string> = {
@@ -632,11 +717,12 @@ export default function Dashboard({ initialSection = "pedidos" }: { initialSecti
           <div ref={detailRef} className="detail-column">
             {selectedOrder ? <OrderDetail order={selectedOrder} /> : <EmptyOrderDetail history={isHistory} />}
           </div>
-        </div> : section === "plan" ? <><PlanView orders={activeOrders} onOpen={openOrder} onUpdate={updateOrder} />{updateError && <p className="plan-error" role="alert">{updateError}</p>}</> : section === "calendario" ? <CalendarView orders={activeOrders} onOpen={openOrder} /> : section === "logistica" ? <LogisticsView orders={activeOrders} onOpen={openOrder} /> : section === "proveedores" ? <ProvidersView providers={providers} /> : <ClientsView clients={clients} onOpen={openClientOrders} />}
+        </div> : section === "plan" ? <><PlanView orders={activeOrders} onEdit={setEditingPlanOrder} />{updateError && <p className="plan-error" role="alert">{updateError}</p>}</> : section === "calendario" ? <CalendarView orders={activeOrders} onOpen={openOrder} /> : section === "logistica" ? <LogisticsView orders={activeOrders} onOpen={openOrder} /> : section === "proveedores" ? <ProvidersView providers={providers} /> : <ClientsView clients={clients} onOpen={openClientOrders} />}
         </main>
 
       </div>
       {showAddOrder && <AddOrderModal onClose={() => setShowAddOrder(false)} onCreated={addCreatedOrder} />}
+      {editingPlanOrder && <EditPlanModal order={editingPlanOrder} transportOptions={[...new Set(orderRows.map((order) => order.transport))].sort((a, b) => a.localeCompare(b, "es"))} onClose={() => setEditingPlanOrder(null)} onSave={(changes) => updateOrder(editingPlanOrder.id, changes)} />}
     </div>
   );
 }

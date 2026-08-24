@@ -1084,7 +1084,8 @@ h3 {
   backdrop-filter: blur(3px);
 }
 
-.add-order-modal {
+.add-order-modal,
+.edit-plan-modal {
   width: min(560px, 100%);
   max-height: calc(100vh - 40px);
   overflow-y: auto;
@@ -1117,13 +1118,15 @@ h3 {
   cursor: pointer;
 }
 
-.add-order-modal form {
+.add-order-modal form,
+.edit-plan-modal form {
   display: grid;
   grid-template-columns: 1fr 1fr;
   gap: 14px;
 }
 
-.add-order-modal label {
+.add-order-modal label,
+.edit-plan-modal label {
   display: grid;
   gap: 6px;
   color: #49554f;
@@ -1132,12 +1135,16 @@ h3 {
 }
 
 .add-order-modal .field-wide,
+.edit-plan-modal .field-wide,
+.change-history,
 .form-error,
 .modal-actions {
   grid-column: 1 / -1;
 }
 
-.add-order-modal input {
+.add-order-modal input,
+.edit-plan-modal input,
+.edit-plan-modal select {
   width: 100%;
   min-height: 44px;
   padding: 0 11px;
@@ -1148,8 +1155,53 @@ h3 {
   font-size: 13px;
 }
 
-.add-order-modal input:focus {
+.add-order-modal input:focus,
+.edit-plan-modal input:focus,
+.edit-plan-modal select:focus {
   border-color: var(--forest-2);
+}
+
+.change-history {
+  display: grid;
+  gap: 9px;
+  padding-top: 4px;
+}
+
+.change-history h3 {
+  font-size: 13px;
+}
+
+.change-history > p {
+  margin: 0;
+  color: var(--muted);
+  font-size: 11px;
+}
+
+.change-history > div {
+  display: grid;
+  gap: 8px;
+  max-height: 190px;
+  overflow-y: auto;
+}
+
+.change-history article {
+  padding: 9px 10px;
+  border: 1px solid var(--line);
+  border-radius: 9px;
+  background: var(--surface-soft);
+}
+
+.change-history article > small {
+  color: var(--muted);
+  font-size: 10px;
+  font-weight: 700;
+}
+
+.change-history article p {
+  margin: 5px 0 0;
+  color: #4d5852;
+  font-size: 11px;
+  line-height: 1.4;
 }
 
 .form-error {
@@ -1486,12 +1538,12 @@ h3 {
 
 .plan-heading,
 .plan-row {
-  grid-template-columns: minmax(170px, 1.05fr) 130px 120px minmax(145px, 0.95fr) minmax(130px, 0.85fr) minmax(145px, 0.95fr) minmax(170px, 1.1fr) 44px;
+  grid-template-columns: minmax(150px, 1.1fr) 135px 150px 140px minmax(140px, 1fr) 44px;
 }
 
 .plan-row {
   width: 100%;
-  min-height: 108px;
+  min-height: 82px;
   display: grid;
   align-items: center;
   gap: 14px;
@@ -1505,14 +1557,6 @@ h3 {
 
 .plan-row:hover {
   background: #f7faf8;
-}
-
-.plan-row.bloqueado {
-  box-shadow: inset 3px 0 0 var(--red);
-}
-
-.plan-row.coordinacion {
-  box-shadow: inset 3px 0 0 var(--amber);
 }
 
 .plan-row > div {
@@ -1531,7 +1575,7 @@ h3 {
   text-overflow: ellipsis;
 }
 
-.plan-row > div:not(.plan-order) > small:first-child {
+.plan-row > div > small:first-child {
   text-transform: uppercase;
 }
 
@@ -1540,47 +1584,47 @@ h3 {
   line-height: 1.4;
 }
 
-.plan-order {
-  justify-items: start;
-}
-
-.plan-order > strong {
-  margin-top: 2px;
+.plan-client > strong {
   font-size: 13px;
 }
 
-.plan-row > svg {
-  color: #8e9692;
+.plan-date.changed strong {
+  color: var(--red);
 }
 
-.plan-select {
-  min-width: 0;
-  display: grid;
-  gap: 4px;
+.stage-badge {
+  width: fit-content;
+  min-height: 25px;
+  display: inline-flex;
+  align-items: center;
+  padding: 0 8px;
+  border-radius: 999px;
+  font-size: 10px !important;
+  font-weight: 740 !important;
+  text-transform: none !important;
 }
 
-.plan-select > small {
-  text-transform: uppercase;
+.stage-badge.negociacion {
+  background: var(--amber-soft);
+  color: var(--amber);
 }
 
-.plan-select select {
-  width: 100%;
-  min-height: 38px;
-  padding: 0 28px 0 8px;
-  border: 1px solid var(--line-strong);
-  border-radius: 8px;
-  background: var(--surface-soft);
-  color: var(--ink);
-  cursor: pointer;
-  font-size: 11px;
-  font-weight: 700;
+.stage-badge.produccion {
+  background: var(--blue-soft);
+  color: var(--blue);
 }
 
-.plan-select select:focus {
-  border-color: var(--forest-2);
+.stage-badge.logistica {
+  background: #e7f1ed;
+  color: var(--forest-2);
 }
 
-.plan-open {
+.stage-badge.completado {
+  background: var(--green-soft);
+  color: var(--green);
+}
+
+.plan-edit {
   width: 44px;
   height: 44px;
   display: grid;
@@ -1592,7 +1636,7 @@ h3 {
   cursor: pointer;
 }
 
-.plan-open:hover {
+.plan-edit:hover {
   border-color: #bad0c6;
   background: #edf5f1;
 }
@@ -1861,17 +1905,16 @@ h3 {
   }
 
   .plan-row {
-    grid-template-columns: minmax(0, 1fr) 20px;
+    grid-template-columns: minmax(0, 1fr) 44px;
     gap: 9px 12px;
     padding: 14px;
   }
 
-  .plan-row > div:not(.plan-order),
-  .plan-row > label {
+  .plan-row > div:not(.plan-client) {
     grid-column: 1;
   }
 
-  .plan-open {
+  .plan-edit {
     grid-column: 2;
     grid-row: 1;
   }

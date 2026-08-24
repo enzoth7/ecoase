@@ -1,4 +1,6 @@
 export type OrderStatus = "bloqueado" | "coordinacion" | "completado";
+export type OperationStage = "negociacion" | "produccion" | "logistica" | "completado";
+export type DateDirection = "sin_cambio" | "adelanta" | "atrasa";
 
 export interface OrderLine {
   id: string;
@@ -17,7 +19,9 @@ export interface OperationOrder {
   pending: number;
   status: OrderStatus;
   statusLabel: "Bloqueado" | "En coordinación" | "Completado";
+  stage?: OperationStage;
   dateLabel: string;
+  originalDateLabel?: string;
   transport: string;
   supply: string;
   preparation: string;
@@ -27,6 +31,25 @@ export interface OperationOrder {
   remittance?: string;
   lines: OrderLine[];
   source: string;
+}
+
+export interface OrderChange {
+  id: string;
+  changedAt: string;
+  dateDirection?: Exclude<DateDirection, "sin_cambio">;
+  changes: Array<{ field: string; from: string; to: string }>;
+}
+
+export const stageLabels: Record<OperationStage, string> = {
+  negociacion: "Negociación",
+  produccion: "Producción",
+  logistica: "Logística",
+  completado: "Completado",
+};
+
+export function getOrderStage(order: OperationOrder): OperationStage {
+  if (order.stage) return order.stage;
+  return order.status === "completado" ? "completado" : "negociacion";
 }
 
 export type ProviderType = "Aserradero" | "Transporte";
