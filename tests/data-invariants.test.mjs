@@ -139,6 +139,8 @@ test("la capacidad general se repite y los ajustes afectan solo un día", () => 
   assert.equal(snapshot.days[1].productionTotals.capacity, 250);
   assert.equal(snapshot.days[0].productionTotals.available, 300);
   assert.equal(snapshot.days[1].productionTotals.available, 250);
+  assert.equal(snapshot.days[0].internalTeam.assignedPeople, 5);
+  assert.equal(snapshot.days[1].internalTeam.assignedPeople, 5);
 });
 
 test("marca en rojo lógico los días sin definir o con faltantes", () => {
