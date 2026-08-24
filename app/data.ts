@@ -108,7 +108,7 @@ export const providers: Provider[] = [
   { id: "matias", name: "Matías", type: "Transporte", supplies: "Traslado y entrega de pedidos" },
 ];
 
-export const products: Product[] = [
+export const products: Product[] = ([
   { id: "palbin-p01", code: "P01", name: "Cristal PET", kind: "Pallet", measure: "106 × 119", assignment: "Cristal PET", treatment: "Marcado", catalog: "Palbin" },
   { id: "palbin-p02", code: "P02", name: "Palets Citrus", kind: "Pallet", measure: "120 × 100", assignment: "Citrus", treatment: "Marcado", catalog: "Palbin" },
   { id: "palbin-p03", code: "P03", name: "Molinos San José", kind: "Pallet", measure: "120 × 100", assignment: "Molinos San José", treatment: "Marcado", catalog: "Palbin" },
@@ -167,7 +167,11 @@ export const products: Product[] = [
   { id: "pamer-p20", code: "P20", name: "160 × 110 simples reforzadas", kind: "Pallet", measure: "160 × 110", assignment: "Pamer", specification: "Simples reforzadas", treatment: "HT", catalog: "Pamer" },
   { id: "pamer-p21", code: "P21", name: "216 × 110 simples reforzadas", kind: "Pallet", measure: "216 × 110", assignment: "Pamer", specification: "Simples reforzadas", treatment: "HT", catalog: "Pamer" },
   { id: "pamer-p22", code: "P22", name: "130 × 120", kind: "Pallet", measure: "130 × 120", assignment: "Pamer", catalog: "Pamer" },
-];
+] satisfies Product[]).map((product) => {
+  const cleanProduct = { ...product };
+  delete cleanProduct.assignment;
+  return cleanProduct;
+});
 
 export const orders: OperationOrder[] = [
   {
