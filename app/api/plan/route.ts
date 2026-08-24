@@ -1,7 +1,7 @@
 import { getOrders } from "../store";
 import { getOrderStage } from "../../data";
 
-const stagePriority = { negociacion: 0, produccion: 1, logistica: 2, completado: 3 } as const;
+const stagePriority = { negociacion: 0, produccion: 1, logistica: 2, reorganizando: 3, atrasado: 4, pospuesto: 5, cancelado: 6, completado: 7 } as const;
 
 export async function GET() {
   const plan = (await getOrders())

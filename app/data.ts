@@ -1,4 +1,4 @@
-export type OperationStage = "negociacion" | "produccion" | "logistica" | "completado";
+export type OperationStage = "negociacion" | "produccion" | "logistica" | "atrasado" | "pospuesto" | "cancelado" | "reorganizando" | "completado";
 export type DeliveryStatus = "programada" | "en_transito" | "parcial" | "completa" | "fallida" | "rechazada";
 export type OrderUpdateKind = "cambio" | "entrega" | "direccion" | "despacho" | "incidencia";
 
@@ -52,6 +52,10 @@ export const stageLabels: Record<OperationStage, string> = {
   negociacion: "Negociación",
   produccion: "Producción",
   logistica: "Logística",
+  atrasado: "Atrasado",
+  pospuesto: "Pospuesto",
+  cancelado: "Cancelado",
+  reorganizando: "Reorganizando",
   completado: "Completado",
 };
 

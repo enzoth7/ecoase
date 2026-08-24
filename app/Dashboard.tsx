@@ -336,6 +336,8 @@ function StageBadge({ stage }: { stage: OperationStage }) {
   return <small className={`stage-badge ${stage}`}>{stageLabels[stage]}</small>;
 }
 
+const editableStages: OperationStage[] = ["negociacion", "produccion", "logistica", "atrasado", "pospuesto", "cancelado", "reorganizando", "completado"];
+
 const updateLabels: Record<OrderUpdateKind, string> = {
   cambio: "Cambio de planificación",
   entrega: "Entrega registrada",
@@ -520,7 +522,7 @@ function EditPlanModal({ order, transportOptions, onClose, onSave }: {
         <form onSubmit={submit}>
           <label>Fecha planificada<input name="plannedDate" type="date" defaultValue={getOrderPlannedDate(order)} required /></label>
           <label>Cantidad de pallets<input name="requested" type="number" min={order.delivered} step="1" defaultValue={order.requested} required /></label>
-          <label>Etapa<select name="stage" defaultValue={getOrderStage(order)}><option value="negociacion">Negociación</option><option value="produccion">Producción</option><option value="logistica">Logística</option><option value="completado">Completado</option></select></label>
+          <label>Etapa<select name="stage" defaultValue={getOrderStage(order)}>{editableStages.map((stage) => <option key={stage} value={stage}>{stageLabels[stage]}</option>)}</select></label>
           <label className="field-wide">Transportista<select name="transport" defaultValue={order.transport}>{transportOptions.map((transport) => <option key={transport} value={transport}>{transport}</option>)}</select></label>
           {error && <p className="form-error" role="alert">{error}</p>}
           <section className="change-history" aria-labelledby="change-history-title">
@@ -535,7 +537,7 @@ function EditPlanModal({ order, transportOptions, onClose, onSave }: {
 }
 
 function PlanView({ orders, onEdit }: { orders: OperationOrder[]; onEdit: (order: OperationOrder) => void }) {
-  const stagePriority: Record<OperationStage, number> = { negociacion: 0, produccion: 1, logistica: 2, completado: 3 };
+  const stagePriority: Record<OperationStage, number> = { negociacion: 0, produccion: 1, logistica: 2, reorganizando: 3, atrasado: 4, pospuesto: 5, cancelado: 6, completado: 7 };
   const planOrders = [...orders].sort((a, b) => stagePriority[getOrderStage(a)] - stagePriority[getOrderStage(b)] || a.client.localeCompare(b.client, "es"));
 
   return (
@@ -619,7 +621,7 @@ function AddOrderModal({ clientOptions, products, transportOptions, onClose, onC
           <label>Cantidad<input name="requested" type="number" min="1" step="1" required /></label>
           <label>Fecha solicitada<input name="requestedDeliveryDate" type="date" required /></label>
           <label>Fecha planificada<input name="plannedDate" type="date" required /></label>
-          <label>Etapa<select name="stage" required defaultValue="negociacion"><option value="negociacion">Negociación</option><option value="produccion">Producción</option><option value="logistica">Logística</option></select></label>
+          <label>Etapa<select name="stage" required defaultValue="negociacion">{editableStages.filter((stage) => stage !== "completado").map((stage) => <option key={stage} value={stage}>{stageLabels[stage]}</option>)}</select></label>
           <label className="field-wide">Transportista<select name="transport" required defaultValue=""><option value="" disabled>Seleccionar transportista</option>{transportOptions.map((transport) => <option key={transport} value={transport}>{transport}</option>)}</select></label>
           <label className="field-wide">Dirección de entrega<input name="deliveryAddress" autoComplete="street-address" /></label>
           <label className="field-wide">Observaciones<textarea name="notes" rows={3} /></label>
@@ -903,7 +905,7 @@ export default function Dashboard({ initialSection = "pedidos" }: { initialSecti
             <article className="kpi-card kpi-yellow"><strong>{number.format(palletsInProgress)}</strong><small>Palets en marcha</small></article>
             <article className="kpi-card kpi-red"><strong>{number.format(palletsWaiting)}</strong><small>Palets en espera</small></article>
             <article className="kpi-card kpi-blue"><strong>{number.format(totalPallets)}</strong><small>Palets totales</small></article>
-            <article className="kpi-card kpi-green kpi-progress"><strong>{deliveryRate}%</strong><small>Nivel de cumplimiento</small><i aria-hidden="true"><b style={{ width: `${deliveryRate}%` }} /></i></article>
+            <article className="kpi-card kpi-green"><strong>{deliveryRate}%</strong><small>Nivel de cumplimiento</small></article>
           </section>
         )}
 
@@ -934,7 +936,7 @@ export default function Dashboard({ initialSection = "pedidos" }: { initialSecti
             </div>
 
             <div className="list-heading" aria-hidden="true">
-              <div>Cliente y pedido</div><div>Etapa</div><div>Fecha</div><div>Transporte</div><div>Palets</div><div />
+              <div>Cliente</div><div>Pedido</div><div>Palets</div><div>Fecha de entrega</div><div>Etapa</div><div />
             </div>
 
             <div className="order-list" aria-label={`${visibleOrders.length} pedidos`}>
@@ -950,21 +952,13 @@ export default function Dashboard({ initialSection = "pedidos" }: { initialSecti
                   >
                     <div className="order-main">
                       <strong>{order.client}</strong>
-                      <small>{[visibleReference(order), order.product].filter(Boolean).join(" · ")}</small>
                     </div>
-                    <div className="order-stage">
-                      <small className="column-label">Etapa</small>
-                      <StageBadge stage={getOrderStage(order)} />
-                    </div>
+                    <div className="order-product"><strong>{order.product}</strong></div>
+                    <div className="order-quantities"><strong>{number.format(order.requested)}</strong></div>
                     <div className="order-date">
-                      <small className="column-label">Fecha</small>
-                      <strong>{order.dateLabel}</strong>
+                      <strong>{formatOrderDate(order.requestedDeliveryDate ?? getOrderPlannedDate(order))}</strong>
                     </div>
-                    <div className="order-transport"><small className="column-label">Transporte</small><div><Truck size={14} aria-hidden="true" />{order.transport}</div></div>
-                    <div className="order-quantities">
-                      <small className="column-label">Palets</small>
-                      <strong>{number.format(order.requested)}</strong>
-                    </div>
+                    <div className="order-stage"><StageBadge stage={getOrderStage(order)} /></div>
                     <ChevronRight className="row-chevron" size={19} aria-hidden="true" />
                   </button>
                 );

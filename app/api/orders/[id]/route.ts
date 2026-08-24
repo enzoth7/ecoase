@@ -1,7 +1,7 @@
 import { getProviders, updateOrder } from "../../store";
 import type { OperationStage } from "../../../data";
 
-const validStages = new Set<OperationStage>(["negociacion", "produccion", "logistica", "completado"]);
+const validStages = new Set<OperationStage>(["negociacion", "produccion", "logistica", "atrasado", "pospuesto", "cancelado", "reorganizando", "completado"]);
 
 export async function PATCH(request: Request, context: { params: Promise<{ id: string }> }) {
   const { id } = await context.params;

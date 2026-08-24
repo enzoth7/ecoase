@@ -65,9 +65,10 @@ test("renderiza pedidos activos e incluye acceso al historial", async () => {
   assert.match(html, /Esta semana/);
   assert.match(html, /Seguimiento del pedido/);
   assert.match(html, /Agregar actualización/);
-  assert.match(html, /Cliente y pedido/);
+  assert.match(html, /Cliente/);
+  assert.match(html, /Pedido/);
+  assert.match(html, /Fecha de entrega/);
   assert.match(html, /Etapa/);
-  assert.match(html, /Transporte/);
   assert.match(html, /Palets/);
   assert.doesNotMatch(html, /order-detail-placeholder/);
   assert.doesNotMatch(html, /Bloqueado|En coordinación/);
