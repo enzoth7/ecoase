@@ -174,7 +174,6 @@ function ClientsView({ clients, onOpen }: { clients: ClientSummary[]; onOpen: (c
     <section className="clients-surface" aria-labelledby="clients-title">
       <div className="clients-toolbar">
         <div>
-          <p className="eyebrow">Cartera operativa</p>
           <h2 id="clients-title">Clientes</h2>
         </div>
         <small>{clients.length} clientes activos</small>
@@ -202,7 +201,7 @@ function CalendarView({ orders, onOpen }: { orders: OperationOrder[]; onOpen: (i
   return (
     <section className="module-surface" aria-labelledby="calendar-page-title">
       <div className="module-toolbar">
-        <div><p className="eyebrow">Semana 33</p><h2 id="calendar-page-title">Calendario</h2></div>
+        <div><h2 id="calendar-page-title">Calendario</h2></div>
         <small>10–15 agosto 2026</small>
       </div>
       <div className="calendar-board">
@@ -232,7 +231,7 @@ function LogisticsView({ orders, onOpen }: { orders: OperationOrder[]; onOpen: (
   return (
     <section className="module-surface" aria-labelledby="logistics-page-title">
       <div className="module-toolbar">
-        <div><p className="eyebrow">Distribución</p><h2 id="logistics-page-title">Logística</h2></div>
+        <div><h2 id="logistics-page-title">Logística</h2></div>
         <small>{transports.length} transportes registrados</small>
       </div>
       <div className="logistics-board">
@@ -296,7 +295,7 @@ function AddOrderModal({ onClose, onCreated }: { onClose: () => void; onCreated:
     <div className="modal-backdrop" role="presentation" onMouseDown={(event) => { if (event.target === event.currentTarget) onClose(); }}>
       <section className="add-order-modal" role="dialog" aria-modal="true" aria-labelledby="add-order-title">
         <div className="modal-heading">
-          <div><p className="eyebrow">Nuevo registro</p><h2 id="add-order-title">Agregar pedido</h2></div>
+          <div><h2 id="add-order-title">Agregar pedido</h2></div>
           <button type="button" onClick={onClose} aria-label="Cerrar"><X size={18} aria-hidden="true" /></button>
         </div>
         <form onSubmit={submit}>
@@ -408,11 +407,11 @@ export default function Dashboard({ initialSection = "pedidos" }: { initialSecti
     setShowAddOrder(false);
   };
 
-  const sectionCopy: Record<DashboardSection, { eyebrow: string; title: string }> = {
-    pedidos: { eyebrow: "Pedidos y logística", title: "Control operativo" },
-    calendario: { eyebrow: "Plan semanal", title: "Calendario" },
-    logistica: { eyebrow: "Entregas y transporte", title: "Logística" },
-    clientes: { eyebrow: "Relación comercial", title: "Clientes" },
+  const sectionCopy: Record<DashboardSection, string> = {
+    pedidos: "Control operativo",
+    calendario: "Calendario",
+    logistica: "Logística",
+    clientes: "Clientes",
   };
 
   return (
@@ -453,8 +452,7 @@ export default function Dashboard({ initialSection = "pedidos" }: { initialSecti
         <main id="main-content" className="dashboard-main" tabIndex={-1}>
         <section className="dashboard-heading" aria-labelledby="page-title">
           <div>
-            <p className="eyebrow">{sectionCopy[section].eyebrow}</p>
-            <h1 id="page-title">{sectionCopy[section].title}</h1>
+            <h1 id="page-title">{sectionCopy[section]}</h1>
           </div>
         </section>
 
@@ -471,7 +469,6 @@ export default function Dashboard({ initialSection = "pedidos" }: { initialSecti
           <section className="orders-surface" aria-labelledby="orders-title">
             <div className="orders-toolbar">
               <div>
-                <p className="eyebrow">Semana 33</p>
                 <h2 id="orders-title">Pedidos</h2>
               </div>
               <div className="orders-actions">

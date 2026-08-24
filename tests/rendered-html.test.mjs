@@ -23,7 +23,8 @@ test("renderiza un dashboard operativo de pedidos", async () => {
   const html = await response.text();
   assert.match(html, /<html lang="es">/i);
   assert.match(html, /Control operativo/);
-  assert.match(html, /Pedidos y logística/);
+  assert.match(html, /Control operativo/);
+  assert.doesNotMatch(html, /Pedidos y logística|Cartera operativa|Entregas y transporte|Relación comercial/i);
   assert.match(html, /app-sidebar/);
   assert.match(html, /En gestión/);
   assert.match(html, /Completados/);
