@@ -701,9 +701,13 @@ export default function Dashboard({ initialSection = "pedidos" }: { initialSecti
   const completed = historyOrders.length;
   const kpiOrders = useMemo(() => orderRows.filter((order) => isOrderInPeriod(order, kpiPeriod, today)), [kpiPeriod, orderRows, today]);
   const kpiActiveOrders = kpiOrders.filter((order) => getOrderStage(order) !== "completado");
-  const productionCount = kpiActiveOrders.filter((order) => getOrderStage(order) === "produccion").length;
-  const waitingCount = kpiActiveOrders.filter((order) => getOrderStage(order) === "negociacion").length;
-  const palletsToProduce = kpiActiveOrders.reduce((sum, order) => sum + order.pending, 0);
+  const palletsInProgress = kpiActiveOrders
+    .filter((order) => ["produccion", "logistica"].includes(getOrderStage(order)))
+    .reduce((sum, order) => sum + order.pending, 0);
+  const palletsWaiting = kpiActiveOrders
+    .filter((order) => getOrderStage(order) === "negociacion")
+    .reduce((sum, order) => sum + order.pending, 0);
+  const totalPallets = kpiActiveOrders.reduce((sum, order) => sum + order.requested, 0);
   const periodRequested = kpiOrders.reduce((sum, order) => sum + order.requested, 0);
   const periodDelivered = kpiOrders.reduce((sum, order) => sum + order.delivered, 0);
   const deliveryRate = periodRequested ? Math.round(periodDelivered / periodRequested * 100) : 0;
@@ -896,9 +900,9 @@ export default function Dashboard({ initialSection = "pedidos" }: { initialSecti
 
         {section === "pedidos" && (
           <section className="dashboard-kpis" aria-label="Indicadores de pedidos">
-            <article className="kpi-card kpi-blue"><strong>{productionCount}</strong><small>Pedidos en marcha</small></article>
-            <article className="kpi-card kpi-yellow"><strong>{waitingCount}</strong><small>Pedidos en espera</small></article>
-            <article className="kpi-card kpi-red"><strong>{number.format(palletsToProduce)}</strong><small>Pallets por hacer</small></article>
+            <article className="kpi-card kpi-yellow"><strong>{number.format(palletsInProgress)}</strong><small>Palets en marcha</small></article>
+            <article className="kpi-card kpi-red"><strong>{number.format(palletsWaiting)}</strong><small>Palets en espera</small></article>
+            <article className="kpi-card kpi-blue"><strong>{number.format(totalPallets)}</strong><small>Palets totales</small></article>
             <article className="kpi-card kpi-green kpi-progress"><strong>{deliveryRate}%</strong><small>Nivel de cumplimiento</small><i aria-hidden="true"><b style={{ width: `${deliveryRate}%` }} /></i></article>
           </section>
         )}
