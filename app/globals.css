@@ -371,9 +371,9 @@ h3 {
 .dashboard-kpis > article {
   aspect-ratio: 1;
   display: grid;
-  align-content: space-between;
-  gap: 8px;
-  padding: 14px 16px;
+  align-content: center;
+  gap: 20px;
+  padding: 28px 16px 16px;
   border: 1px solid var(--line);
   border-radius: 12px;
   background: var(--surface);
