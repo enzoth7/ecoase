@@ -544,7 +544,7 @@ function PlanView({ orders, onEdit }: { orders: OperationOrder[]; onEdit: (order
 function AddOrderModal({ clientOptions, products, transportOptions, onClose, onCreated }: { clientOptions: string[]; products: Product[]; transportOptions: string[]; onClose: () => void; onCreated: (order: OperationOrder) => void }) {
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
-  const clientInputRef = useRef<HTMLInputElement>(null);
+  const clientInputRef = useRef<HTMLSelectElement>(null);
 
   useEffect(() => {
     clientInputRef.current?.focus();
@@ -593,7 +593,7 @@ function AddOrderModal({ clientOptions, products, transportOptions, onClose, onC
           <button type="button" onClick={onClose} aria-label="Cerrar"><X size={18} aria-hidden="true" /></button>
         </div>
         <form onSubmit={submit}>
-          <label>Cliente<input ref={clientInputRef} name="client" list="clientes-registrados" required /><datalist id="clientes-registrados">{clientOptions.map((client) => <option key={client} value={client} />)}</datalist></label>
+          <label>Cliente<select ref={clientInputRef} name="client" required defaultValue=""><option value="" disabled>Seleccionar cliente</option>{clientOptions.map((client) => <option key={client} value={client}>{client}</option>)}</select></label>
           <label>Orden o referencia<input name="reference" placeholder="Ej. Orden 184834" /></label>
           <label>Código Zeta<input name="zetaCode" placeholder="Ej. 184833" /></label>
           <label>Fecha del pedido<input name="orderDate" type="date" required /></label>
