@@ -55,6 +55,15 @@ function visibleReference(order: OperationOrder) {
   return order.reference.startsWith("Plan ") ? "" : order.reference;
 }
 
+function productOptionLabel(product: Product) {
+  return [product.kind, product.measure ?? "Sin medida", product.treatment ?? "Sin tratamiento"].join(" · ");
+}
+
+function formatOrderDate(date?: string) {
+  if (!date) return "—";
+  return new Intl.DateTimeFormat("es-UY", { day: "numeric", month: "short", year: "numeric" }).format(new Date(`${date}T12:00:00`));
+}
+
 type KpiPeriod = "today" | "week";
 
 function isOrderInPeriod(order: OperationOrder, period: KpiPeriod, today: Date) {
@@ -361,6 +370,16 @@ function OrderTrackingPanel({ order, refreshKey, onAdd }: { order?: OperationOrd
         <div><small>Entregado</small><strong>{number.format(order.delivered)}</strong></div>
         <div><small>Saldo</small><strong>{number.format(order.pending)}</strong></div>
       </div>
+      <section className="tracking-order-data" aria-label="Datos del pedido">
+        <div><small>Referencia</small><strong>{visibleReference(order) || "—"}</strong></div>
+        <div><small>Código Zeta</small><strong>{order.zetaCode ?? "—"}</strong></div>
+        <div><small>Fecha del pedido</small><strong>{formatOrderDate(order.orderDate)}</strong></div>
+        <div><small>Entrega solicitada</small><strong>{formatOrderDate(order.requestedDeliveryDate)}</strong></div>
+        <div><small>Fecha planificada</small><strong>{order.dateLabel}</strong></div>
+        <div><small>Transportista</small><strong>{order.transport}</strong></div>
+        {order.deliveryAddress && <div className="tracking-data-wide"><small>Dirección de entrega</small><strong>{order.deliveryAddress}</strong></div>}
+        {order.notes && <div className="tracking-data-wide"><small>Observaciones</small><strong>{order.notes}</strong></div>}
+      </section>
       <button type="button" className="tracking-add-button" onClick={() => onAdd(order)}><Plus size={17} aria-hidden="true" />Agregar actualización</button>
       <section className="tracking-timeline" aria-labelledby="timeline-title">
         <h3 id="timeline-title">Actualizaciones</h3>
@@ -522,7 +541,7 @@ function PlanView({ orders, onEdit }: { orders: OperationOrder[]; onEdit: (order
   );
 }
 
-function AddOrderModal({ transportOptions, onClose, onCreated }: { transportOptions: string[]; onClose: () => void; onCreated: (order: OperationOrder) => void }) {
+function AddOrderModal({ clientOptions, products, transportOptions, onClose, onCreated }: { clientOptions: string[]; products: Product[]; transportOptions: string[]; onClose: () => void; onCreated: (order: OperationOrder) => void }) {
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
   const clientInputRef = useRef<HTMLInputElement>(null);
@@ -545,10 +564,16 @@ function AddOrderModal({ transportOptions, onClose, onCreated }: { transportOpti
       body: JSON.stringify({
         client: form.get("client"),
         reference: form.get("reference"),
+        zetaCode: form.get("zetaCode"),
         product: form.get("product"),
         requested: Number(form.get("requested")),
+        orderDate: form.get("orderDate"),
+        requestedDeliveryDate: form.get("requestedDeliveryDate"),
         plannedDate: form.get("plannedDate"),
+        stage: form.get("stage"),
         transport: form.get("transport"),
+        deliveryAddress: form.get("deliveryAddress"),
+        notes: form.get("notes"),
       }),
     });
     const payload = (await response.json()) as { order?: OperationOrder; error?: string };
@@ -568,12 +593,18 @@ function AddOrderModal({ transportOptions, onClose, onCreated }: { transportOpti
           <button type="button" onClick={onClose} aria-label="Cerrar"><X size={18} aria-hidden="true" /></button>
         </div>
         <form onSubmit={submit}>
-          <label>Cliente<input ref={clientInputRef} name="client" required /></label>
-          <label>Referencia<input name="reference" placeholder="Ej. Orden 184834" /></label>
-          <label className="field-wide">Producto<input name="product" required /></label>
+          <label>Cliente<input ref={clientInputRef} name="client" list="clientes-registrados" required /><datalist id="clientes-registrados">{clientOptions.map((client) => <option key={client} value={client} />)}</datalist></label>
+          <label>Orden o referencia<input name="reference" placeholder="Ej. Orden 184834" /></label>
+          <label>Código Zeta<input name="zetaCode" placeholder="Ej. 184833" /></label>
+          <label>Fecha del pedido<input name="orderDate" type="date" required /></label>
+          <label className="field-wide">Producto<select name="product" required defaultValue=""><option value="" disabled>Seleccionar producto</option>{products.map((product) => <option key={product.id} value={productOptionLabel(product)}>{productOptionLabel(product)}</option>)}</select></label>
           <label>Cantidad<input name="requested" type="number" min="1" step="1" required /></label>
+          <label>Fecha solicitada<input name="requestedDeliveryDate" type="date" required /></label>
           <label>Fecha planificada<input name="plannedDate" type="date" required /></label>
+          <label>Etapa<select name="stage" required defaultValue="negociacion"><option value="negociacion">Negociación</option><option value="produccion">Producción</option><option value="logistica">Logística</option></select></label>
           <label className="field-wide">Transportista<select name="transport" required defaultValue=""><option value="" disabled>Seleccionar transportista</option>{transportOptions.map((transport) => <option key={transport} value={transport}>{transport}</option>)}</select></label>
+          <label className="field-wide">Dirección de entrega<input name="deliveryAddress" autoComplete="street-address" /></label>
+          <label className="field-wide">Observaciones<textarea name="notes" rows={3} /></label>
           {error && <p className="form-error" role="alert">{error}</p>}
           <div className="modal-actions">
             <button type="button" className="secondary-button" onClick={onClose}>Cancelar</button>
@@ -902,7 +933,7 @@ export default function Dashboard({ initialSection = "pedidos" }: { initialSecti
         </main>
 
       </div>
-      {showAddOrder && <AddOrderModal transportOptions={providerRows.filter((provider) => provider.type === "Transporte").map((provider) => provider.name)} onClose={() => setShowAddOrder(false)} onCreated={addCreatedOrder} />}
+      {showAddOrder && <AddOrderModal clientOptions={clients.map((client) => client.name)} products={productRows} transportOptions={providerRows.filter((provider) => provider.type === "Transporte").map((provider) => provider.name)} onClose={() => setShowAddOrder(false)} onCreated={addCreatedOrder} />}
       {editingPlanOrder && <EditPlanModal order={editingPlanOrder} transportOptions={providerRows.filter((provider) => provider.type === "Transporte").map((provider) => provider.name)} onClose={() => setEditingPlanOrder(null)} onSave={(changes) => updateOrder(editingPlanOrder.id, changes)} />}
       {editingProduct && <EditProductModal product={editingProduct} onClose={() => setEditingProduct(null)} onSave={updateProduct} onDelete={removeProduct} />}
       {updatingOrder && <OrderUpdateModal order={updatingOrder} onClose={() => setUpdatingOrder(null)} onSave={(update) => recordUpdate(updatingOrder.id, update)} />}

@@ -929,6 +929,41 @@ h3 {
   font-variant-numeric: tabular-nums;
 }
 
+.tracking-order-data {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+  margin: 0 0 18px;
+}
+
+.tracking-order-data > div {
+  min-width: 0;
+  display: grid;
+  gap: 4px;
+  padding: 9px 10px;
+  border: 1px solid var(--line);
+  border-radius: 9px;
+  background: #fff;
+}
+
+.tracking-order-data small {
+  color: var(--muted);
+  font-size: 9px;
+  font-weight: 720;
+  letter-spacing: .035em;
+  text-transform: uppercase;
+}
+
+.tracking-order-data strong {
+  overflow-wrap: anywhere;
+  font-size: 11px;
+  line-height: 1.35;
+}
+
+.tracking-order-data .tracking-data-wide {
+  grid-column: 1 / -1;
+}
+
 .tracking-add-button {
   width: 100%;
   min-height: 44px;
@@ -1322,6 +1357,10 @@ h3 {
   box-shadow: 0 24px 70px rgba(7, 23, 17, 0.28);
 }
 
+.add-order-modal {
+  width: min(760px, 100%);
+}
+
 .edit-plan-modal {
   width: min(780px, 100%);
 }
@@ -1389,6 +1428,7 @@ h3 {
 
 .add-order-modal input,
 .add-order-modal select,
+.add-order-modal textarea,
 .edit-plan-modal input,
 .edit-plan-modal select,
 .order-update-modal input,
@@ -1408,6 +1448,7 @@ h3 {
 
 .add-order-modal input:focus,
 .add-order-modal select:focus,
+.add-order-modal textarea:focus,
 .edit-plan-modal input:focus,
 .edit-plan-modal select:focus,
 .order-update-modal input:focus,
@@ -1423,6 +1464,12 @@ h3 {
 
 .order-update-modal textarea {
   min-height: 106px;
+  padding-top: 10px;
+  resize: vertical;
+}
+
+.add-order-modal textarea {
+  min-height: 86px;
   padding-top: 10px;
   resize: vertical;
 }

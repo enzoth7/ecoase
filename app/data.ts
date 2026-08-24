@@ -24,6 +24,9 @@ export interface OperationOrder {
   dateLabel: string;
   plannedDate?: string;
   originalPlannedDate?: string;
+  orderDate?: string;
+  requestedDeliveryDate?: string;
+  zetaCode?: string;
   transport: string;
   supply: string;
   preparation: string;
@@ -32,6 +35,7 @@ export interface OperationOrder {
   action: string;
   remittance?: string;
   deliveryAddress?: string;
+  notes?: string;
   deliveryStatus?: DeliveryStatus;
   dispatchedAt?: string;
   deliveredAt?: string;

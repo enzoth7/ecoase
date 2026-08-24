@@ -254,7 +254,7 @@ test("crea pedidos mediante POST /api/orders", async () => {
   const invalidTransport = await request("/api/orders", {
     method: "POST",
     headers: { "content-type": "application/json" },
-    body: JSON.stringify({ client: "Cliente prueba", product: "Pallet prueba", requested: 50, plannedDate: "2026-08-10", transport: "Remito 603" }),
+    body: JSON.stringify({ client: "Cliente prueba", product: "Pallet prueba", requested: 50, orderDate: "2026-08-01", requestedDeliveryDate: "2026-08-10", plannedDate: "2026-08-10", stage: "negociacion", transport: "Remito 603" }),
   });
   assert.equal(invalidTransport.status, 400);
 
@@ -265,8 +265,15 @@ test("crea pedidos mediante POST /api/orders", async () => {
       client: "Cliente prueba",
       product: "Pallet prueba",
       requested: 50,
+      orderDate: "2026-08-01",
+      requestedDeliveryDate: "2026-08-10",
       plannedDate: "2026-08-10",
+      stage: "produccion",
       transport: "Matías",
+      reference: "OC-4321",
+      zetaCode: "Z-08",
+      deliveryAddress: "Ruta 5 km 18",
+      notes: "Descargar por el acceso norte.",
     }),
   });
 
@@ -274,6 +281,12 @@ test("crea pedidos mediante POST /api/orders", async () => {
   const payload = await response.json();
   assert.equal(payload.order.client, "Cliente prueba");
   assert.equal(payload.order.pending, 50);
+  assert.equal(payload.order.orderDate, "2026-08-01");
+  assert.equal(payload.order.requestedDeliveryDate, "2026-08-10");
+  assert.equal(payload.order.stage, "produccion");
+  assert.equal(payload.order.zetaCode, "Z-08");
+  assert.equal(payload.order.deliveryAddress, "Ruta 5 km 18");
+  assert.equal(payload.order.notes, "Descargar por el acceso norte.");
 });
 
 test("edita y elimina productos mediante endpoints separados", async () => {

@@ -21,9 +21,15 @@ export type CreateOrderInput = {
   client: string;
   product: string;
   requested: number;
+  orderDate: string;
+  requestedDeliveryDate: string;
   plannedDate: string;
   transport: string;
   reference?: string;
+  zetaCode?: string;
+  deliveryAddress?: string;
+  notes?: string;
+  stage?: Exclude<OperationStage, "completado">;
 };
 
 export type UpdateOrderInput = Partial<Pick<OperationOrder, "status" | "transport" | "requested" | "stage">> & {
@@ -58,6 +64,9 @@ type DbOrder = {
   status: OrderStatus;
   status_label: OperationOrder["statusLabel"];
   stage: OperationStage;
+  order_date: string | null;
+  requested_delivery_date: string | null;
+  zeta_code: string | null;
   planned_date: string;
   original_planned_date: string | null;
   transport: string;
@@ -68,6 +77,7 @@ type DbOrder = {
   action: string;
   remittance: string | null;
   delivery_address: string | null;
+  notes: string | null;
   delivery_status: OperationOrder["deliveryStatus"] | null;
   dispatched_at: string | null;
   delivered_at: string | null;
@@ -104,6 +114,9 @@ function mapOrder(row: DbOrder): OperationOrder {
     status: row.status,
     statusLabel: row.status_label,
     stage: row.stage,
+    orderDate: row.order_date ?? undefined,
+    requestedDeliveryDate: row.requested_delivery_date ?? undefined,
+    zetaCode: row.zeta_code ?? undefined,
     plannedDate: row.planned_date,
     originalPlannedDate: row.original_planned_date ?? undefined,
     dateLabel: formatPlannedDate(row.planned_date),
@@ -115,6 +128,7 @@ function mapOrder(row: DbOrder): OperationOrder {
     action: row.action,
     remittance: row.remittance ?? undefined,
     deliveryAddress: row.delivery_address ?? undefined,
+    notes: row.notes ?? undefined,
     deliveryStatus: row.delivery_status ?? undefined,
     dispatchedAt: row.dispatched_at ?? undefined,
     deliveredAt: row.delivered_at ?? undefined,
@@ -200,9 +214,15 @@ export async function createOrder(input: CreateOrderInput) {
         p_client: input.client.trim(),
         p_product: input.product.trim(),
         p_requested: input.requested,
+        p_order_date: input.orderDate,
+        p_requested_delivery_date: input.requestedDeliveryDate,
         p_planned_date: input.plannedDate,
         p_transport: input.transport.trim(),
         p_reference: input.reference?.trim() || null,
+        p_zeta_code: input.zetaCode?.trim() || null,
+        p_delivery_address: input.deliveryAddress?.trim() || null,
+        p_notes: input.notes?.trim() || null,
+        p_stage: input.stage ?? "negociacion",
       }),
     });
     const order = await getDatabaseOrder(id);
@@ -221,15 +241,20 @@ export async function createOrder(input: CreateOrderInput) {
     pending: input.requested,
     status: "coordinacion",
     statusLabel: "En coordinación",
-    stage: "negociacion",
+    stage: input.stage ?? "negociacion",
+    orderDate: input.orderDate,
+    requestedDeliveryDate: input.requestedDeliveryDate,
+    zetaCode: input.zetaCode?.trim() || undefined,
     plannedDate: input.plannedDate,
     dateLabel: formatPlannedDate(input.plannedDate),
     transport: input.transport.trim(),
-    supply: "Pendiente de asignación",
+    supply: input.stage === "produccion" ? "Producción planificada" : "Pendiente de asignación",
     preparation: "Pendiente de preparación",
     logistics: `${input.transport.trim()} · entrega planificada`,
     delivery: `0 de ${input.requested} entregados`,
-    action: "Preparar y coordinar la entrega.",
+    action: input.stage === "logistica" ? "Coordinar la entrega." : "Preparar y coordinar la entrega.",
+    deliveryAddress: input.deliveryAddress?.trim() || undefined,
+    notes: input.notes?.trim() || undefined,
     lines: [{ id: `${id}-1`, product: input.product.trim(), quantity: input.requested }],
     source: "Alta desde dashboard",
   };
