@@ -397,7 +397,7 @@ function OrderTrackingPanel({ order, refreshKey, onAdd }: { order?: OperationOrd
         <div><small>Entrega solicitada</small><strong>{formatOrderDate(order.requestedDeliveryDate)}</strong></div>
         <div><small>Fecha planificada</small><strong>{order.dateLabel}</strong></div>
         <div><small>Transportista</small><strong>{order.transport}</strong></div>
-        {order.deliveryAddress && <div className="tracking-data-wide"><small>Dirección de entrega</small><strong>{order.deliveryAddress}</strong></div>}
+        <div className="tracking-data-wide"><small>Dirección de entrega</small><strong>{order.deliveryAddress ?? "—"}</strong></div>
         {order.notes && <div className="tracking-data-wide"><small>Observaciones</small><strong>{order.notes}</strong></div>}
       </section>
       <button type="button" className="tracking-add-button" onClick={() => onAdd(order)}><Plus size={17} aria-hidden="true" />Agregar actualización</button>
