@@ -110,19 +110,23 @@ test("usa rutas reales sin navegación por hash", async () => {
   assert.match(html, /href="\/capacidad"/i);
 });
 
-test("administra capacidad por día y permite sobrecarga", async () => {
+test("administra capacidad general, ajustes diarios y permite sobrecarga", async () => {
   const capacityPage = await request("/capacidad");
   assert.equal(capacityPage.status, 200);
   const html = await capacityPage.text();
   assert.match(html, /Capacidad semanal/);
-  assert.match(html, /Producción y transporte en palets/);
+  assert.match(html, /capacidad general se aplica todos los días/i);
 
   const rule = await request("/api/capacity/rules", { method: "PUT", headers: { "content-type": "application/json" }, body: JSON.stringify({ operation: "assembly", peopleCount: 5, palletCapacity: 30 }) });
-  const internal = await request("/api/capacity/internal-production", { method: "PUT", headers: { "content-type": "application/json" }, body: JSON.stringify({ date: "2026-09-07", operation: "assembly", peopleCount: 5 }) });
-  const transport = await request("/api/capacity/transport", { method: "PUT", headers: { "content-type": "application/json" }, body: JSON.stringify({ date: "2026-09-08", source: "internal", palletCapacity: 25, status: "confirmed" }) });
+  const internal = await request("/api/capacity/internal-production", { method: "PUT", headers: { "content-type": "application/json" }, body: JSON.stringify({ operation: "assembly", peopleCount: 5 }) });
+  const transport = await request("/api/capacity/transport", { method: "PUT", headers: { "content-type": "application/json" }, body: JSON.stringify({ source: "internal", palletCapacity: 25, status: "confirmed" }) });
+  const productionAdjustment = await request("/api/capacity/adjustments", { method: "PUT", headers: { "content-type": "application/json" }, body: JSON.stringify({ date: "2026-09-07", resourceType: "internal_production", operation: "assembly", palletAdjustment: 5 }) });
+  const transportAdjustment = await request("/api/capacity/adjustments", { method: "PUT", headers: { "content-type": "application/json" }, body: JSON.stringify({ date: "2026-09-08", resourceType: "transport", source: "internal", palletAdjustment: 10 }) });
   assert.equal(rule.status, 200);
   assert.equal(internal.status, 200);
   assert.equal(transport.status, 200);
+  assert.equal(productionAdjustment.status, 200);
+  assert.equal(transportAdjustment.status, 200);
 
   const created = await request("/api/orders", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({
     client: "Capacidad prueba", product: "Pallet 120 × 100", requested: 40, orderDate: "2026-09-01", requestedDeliveryDate: "2026-09-08", plannedDate: "2026-09-08", stage: "produccion",
@@ -136,11 +140,11 @@ test("administra capacidad por día y permite sobrecarga", async () => {
   const snapshot = (await snapshotResponse.json()).capacity;
   const productionDay = snapshot.days.find((day) => day.date === "2026-09-07");
   const deliveryDay = snapshot.days.find((day) => day.date === "2026-09-08");
-  assert.equal(productionDay.internalProduction.find((item) => item.operation === "assembly").capacity, 30);
+  assert.equal(productionDay.internalProduction.find((item) => item.operation === "assembly").capacity, 35);
   assert.equal(productionDay.internalProduction.find((item) => item.operation === "assembly").committed, 40);
-  assert.equal(productionDay.internalProduction.find((item) => item.operation === "assembly").overload, 10);
+  assert.equal(productionDay.internalProduction.find((item) => item.operation === "assembly").overload, 5);
   assert.equal(deliveryDay.transportTotals.committed, 40);
-  assert.equal(deliveryDay.transportTotals.missing, 15);
+  assert.equal(deliveryDay.transportTotals.missing, 5);
 
   const completed = await request(`/api/orders/${createdOrder.id}`, { method: "PATCH", headers: { "content-type": "application/json" }, body: JSON.stringify({ stage: "completado" }) });
   assert.equal(completed.status, 200);

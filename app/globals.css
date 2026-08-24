@@ -2232,12 +2232,19 @@ h3 {
 
 .capacity-days button:last-child { border-right: 0; }
 .capacity-days button:hover { background: #f5f8f6; }
-.capacity-days button.selected { background: #e8f1ed; box-shadow: inset 0 -3px 0 var(--forest-2); }
 .capacity-days button.today { background: #eff6ff; }
-.capacity-days button.today.selected { background: #e6f0f7; box-shadow: inset 0 -3px 0 #3b82f6; }
+.capacity-days button.today { box-shadow: inset 0 -3px 0 #3b82f6; }
+.capacity-days button.issue { background: #fff2f0; color: #9f2920; box-shadow: inset 0 -3px 0 var(--red); }
+.capacity-days button.today.issue { background: linear-gradient(135deg, #eff6ff 0 48%, #fff2f0 48%); box-shadow: inset 0 -3px 0 var(--red), inset 3px 0 0 #3b82f6; }
 .capacity-days small { color: var(--muted); font-size: 9px; font-weight: 800; text-transform: uppercase; }
 .capacity-days strong { font-size: 23px; }
 .capacity-days em { color: var(--muted); font-size: 10px; font-style: normal; }
+.capacity-days b { display: flex; align-items: center; gap: 4px; margin-top: 3px; color: var(--red); font-size: 9px; }
+.capacity-days b.ready { color: var(--green); }
+
+.capacity-general-heading { display: flex; align-items: end; justify-content: space-between; gap: 20px; padding: 4px 2px 0; }
+.capacity-general-heading h2 { font-size: 22px; }
+.capacity-general-heading p { max-width: 620px; margin: 4px 0 0; color: var(--muted); font-size: 12px; }
 
 .capacity-section-heading {
   min-height: 78px;
@@ -2281,6 +2288,8 @@ h3 {
 .capacity-table-row { display: grid; grid-template-columns: 1.2fr 1fr .8fr .8fr .9fr .7fr; align-items: center; gap: 12px; padding: 12px 20px; }
 .capacity-table-heading { background: #fafbf8; color: var(--muted); font-size: 9px; font-weight: 800; text-transform: uppercase; }
 .capacity-table-row { min-height: 56px; border-top: 1px solid var(--line); font-size: 11px; }
+.capacity-table-heading.general,
+.capacity-table-row.general { grid-template-columns: 1.4fr 1fr 1fr 1fr; }
 .overload { color: var(--red) !important; font-weight: 800; }
 .capacity-empty { margin: 0; padding: 18px 20px 0; color: var(--muted); font-size: 11px; }
 .capacity-imports { display: grid; gap: 8px; padding: 16px 20px 0; border-top: 1px solid var(--line); }
@@ -2302,6 +2311,33 @@ h3 {
 .transport-cards b { color: var(--green); font-size: 10px; }
 .capacity-error { margin: 0; padding: 12px 14px; border: 1px solid #e6bbb5; border-radius: 9px; background: var(--red-soft); color: var(--red); font-size: 12px; font-weight: 700; }
 .capacity-loading { min-height: 180px; display: grid; place-items: center; color: var(--muted); font-size: 12px; }
+.capacity-modal-backdrop { z-index: 80; align-items: flex-start; overflow-y: auto; padding: 4vh 20px; }
+.capacity-day-modal { width: min(1040px, 100%); max-height: 92vh; overflow-y: auto; border-radius: 18px; background: #fff; box-shadow: 0 24px 70px rgba(15, 35, 28, .25); }
+.capacity-day-modal > header { position: sticky; top: 0; z-index: 2; display: flex; align-items: flex-start; justify-content: space-between; gap: 24px; padding: 24px 26px; border-bottom: 1px solid var(--line); background: #fff; }
+.capacity-day-modal > header > div { display: grid; gap: 4px; }
+.capacity-day-modal > header small { color: var(--forest-2); font-size: 10px; font-weight: 800; text-transform: uppercase; }
+.capacity-day-modal > header h2 { font-size: 24px; text-transform: capitalize; }
+.capacity-day-modal > header p { margin: 0; color: var(--muted); font-size: 12px; }
+.capacity-day-modal > header button { min-width: 44px; min-height: 44px; display: grid; place-items: center; border: 1px solid var(--line); border-radius: 10px; background: var(--surface-soft); color: var(--ink); cursor: pointer; }
+.capacity-day-alert { display: flex; align-items: flex-start; gap: 10px; margin: 18px 22px 0; padding: 13px 14px; border: 1px solid #efc1bc; border-radius: 10px; background: #fff2f0; color: var(--red); }
+.capacity-day-alert div { display: grid; gap: 3px; }
+.capacity-day-alert strong { font-size: 12px; }
+.capacity-day-alert p { margin: 0; font-size: 10px; }
+.day-adjustment-section { display: grid; gap: 0; margin: 20px 22px; overflow: hidden; border: 1px solid var(--line); border-radius: 12px; }
+.day-adjustment-section > h3 { display: flex; align-items: center; gap: 8px; padding: 14px 16px; border-bottom: 1px solid var(--line); background: var(--surface-soft); font-size: 14px; }
+.day-adjustment-row { display: grid; grid-template-columns: minmax(180px, 1.3fr) 130px 150px minmax(250px, 1.4fr); align-items: end; gap: 10px; padding: 14px 16px; border-bottom: 1px solid var(--line); }
+.day-adjustment-row:last-child { border-bottom: 0; }
+.day-adjustment-row.danger { background: #fffafa; }
+.day-adjustment-name { align-self: center; display: grid; gap: 4px; }
+.day-adjustment-name strong { font-size: 12px; }
+.day-adjustment-name small { color: var(--muted); font-size: 9px; }
+.day-adjustment-row form { display: grid; grid-template-columns: 1fr auto; align-items: end; gap: 8px; }
+.day-adjustment-row form label { display: grid; gap: 5px; color: var(--muted); font-size: 9px; font-weight: 750; }
+.day-adjustment-row form input { width: 100%; min-height: 42px; padding: 0 10px; border: 1px solid var(--line-strong); border-radius: 8px; background: #fff; }
+.day-adjustment-row form button { min-height: 42px; display: flex; align-items: center; gap: 6px; padding: 0 13px; border: 0; border-radius: 8px; background: var(--forest-2); color: #fff; font-size: 10px; font-weight: 750; cursor: pointer; }
+.day-adjustment-row form button:disabled { opacity: .65; cursor: wait; }
+.day-adjustment-section.imports { padding-bottom: 10px; }
+.day-adjustment-section.imports p { margin: 8px 16px 0; font-size: 11px; }
 .logistics-capacity-strip { display: grid; grid-template-columns: repeat(7, 1fr); border-bottom: 1px solid var(--line); }
 .logistics-capacity-strip article { min-width: 0; display: grid; gap: 3px; padding: 11px; border-right: 1px solid var(--line); }
 .logistics-capacity-strip article:last-child { border-right: 0; }
@@ -2657,6 +2693,16 @@ h3 {
   .capacity-table-heading { display: none; }
   .capacity-table-row { grid-template-columns: 1fr 1fr; gap: 7px 12px; padding: 14px; }
   .capacity-add-form { grid-template-columns: 1fr; }
+  .capacity-general-heading { padding-inline: 2px; }
+  .capacity-modal-backdrop { padding: 0; }
+  .capacity-day-modal { width: 100%; min-height: 100%; max-height: 100vh; border-radius: 0; }
+  .capacity-day-modal > header { padding: 18px 16px; }
+  .capacity-day-modal > header h2 { font-size: 19px; }
+  .capacity-day-alert { margin: 14px 12px 0; }
+  .day-adjustment-section { margin: 14px 12px; }
+  .day-adjustment-row { grid-template-columns: 1fr 1fr; gap: 9px; padding: 13px; }
+  .day-adjustment-name { grid-column: 1 / -1; }
+  .day-adjustment-row form { grid-column: 1 / -1; }
   .assignment-fieldset { grid-template-columns: 1fr; }
   .assignment-fieldset > label,
   .assignment-fieldset .capacity-hint,

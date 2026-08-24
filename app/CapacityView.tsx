@@ -1,7 +1,7 @@
 "use client";
 
-import { AlertTriangle, ChevronLeft, ChevronRight, Factory, Save, Truck, Users } from "lucide-react";
-import { useEffect, useMemo, useState, type FormEvent } from "react";
+import { AlertTriangle, ChevronLeft, ChevronRight, Factory, Save, Truck, Users, X } from "lucide-react";
+import { useEffect, useMemo, useRef, useState, type FormEvent } from "react";
 import { capacityOperationLabels, type CapacityDay, type CapacitySnapshot } from "./capacity";
 import type { CapacityOperation, CapacityStatus, Provider, TransportSource } from "./data";
 
@@ -33,13 +33,17 @@ function formatRange(week: Date) {
   return `${format.format(week)} – ${format.format(end)} de ${end.getFullYear()}`;
 }
 
+function formatDay(date: string) {
+  return new Intl.DateTimeFormat("es-UY", { weekday: "long", day: "numeric", month: "long", year: "numeric" }).format(new Date(`${date}T12:00:00`));
+}
+
 async function put(url: string, body: unknown) {
   const response = await fetch(url, { method: "PUT", headers: { "content-type": "application/json" }, body: JSON.stringify(body) });
   const payload = await response.json() as { error?: string };
   if (!response.ok) throw new Error(payload.error ?? "No se pudo guardar la capacidad.");
 }
 
-function Metric({ label, value, tone }: { label: string; value: string; tone?: "warning" | "danger" }) {
+function Metric({ label, value, tone }: { label: string; value: string; tone?: "danger" }) {
   return <div className={`capacity-metric ${tone ?? ""}`}><small>{label}</small><strong>{value}</strong></div>;
 }
 
@@ -47,21 +51,19 @@ export default function CapacityView({ providers }: { providers: Provider[] }) {
   const today = useMemo(() => new Date(), []);
   const [week, setWeek] = useState(() => startOfWeek(today));
   const days = useMemo(() => weekDays(week), [week]);
-  const [selectedDate, setSelectedDate] = useState(() => dateKey(today));
   const [capacity, setCapacity] = useState<CapacitySnapshot | null>(null);
+  const [openDate, setOpenDate] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
 
   const load = async () => {
     setLoading(true);
-    setError("");
     try {
-      const from = dateKey(days[0]);
-      const to = dateKey(days[6]);
-      const response = await fetch(`/api/capacity?from=${from}&to=${to}`);
+      const response = await fetch(`/api/capacity?from=${dateKey(days[0])}&to=${dateKey(days[6])}`);
       const payload = await response.json() as { capacity?: CapacitySnapshot; error?: string };
       if (!response.ok || !payload.capacity) throw new Error(payload.error ?? "No se pudo cargar la capacidad.");
       setCapacity(payload.capacity);
+      setError("");
     } catch (reason) {
       setError(reason instanceof Error ? reason.message : "No se pudo cargar la capacidad.");
     } finally {
@@ -69,101 +71,92 @@ export default function CapacityView({ providers }: { providers: Provider[] }) {
     }
   };
 
-  useEffect(() => {
-    const from = dateKey(days[0]);
-    const to = dateKey(days[6]);
-    let active = true;
-    fetch(`/api/capacity?from=${from}&to=${to}`).then((response) => response.json()).then((payload: { capacity?: CapacitySnapshot; error?: string }) => {
-      if (!active) return;
-      if (!payload.capacity) throw new Error(payload.error ?? "No se pudo cargar la capacidad.");
-      setCapacity(payload.capacity);
-      setError("");
-    }).catch((reason) => { if (active) setError(reason instanceof Error ? reason.message : "No se pudo cargar la capacidad."); }).finally(() => { if (active) setLoading(false); });
-    return () => { active = false; };
-  }, [days]);
-
-  const selected = capacity?.days.find((day) => day.date === selectedDate);
-  const sawmills = providers.filter((provider) => provider.type === "Aserradero");
-  const transporters = providers.filter((provider) => provider.type === "Transporte");
+  useEffect(() => { void load(); }, [days]);
 
   const save = async (url: string, body: unknown) => {
     setError("");
     try { await put(url, body); await load(); }
-    catch (reason) { setError(reason instanceof Error ? reason.message : "No se pudo guardar."); }
+    catch (reason) { setError(reason instanceof Error ? reason.message : "No se pudo guardar."); throw reason; }
   };
 
   const moveWeek = (offset: number) => {
     const next = new Date(week);
     next.setDate(week.getDate() + offset * 7);
-    setLoading(true);
+    setOpenDate(null);
     setWeek(next);
-    setSelectedDate(dateKey(next));
   };
+
+  const selected = capacity?.days.find((day) => day.date === openDate);
+  const sawmills = providers.filter((provider) => provider.type === "Aserradero");
+  const transporters = providers.filter((provider) => provider.type === "Transporte");
 
   return <section className="capacity-page" aria-labelledby="capacity-title">
     <div className="module-surface capacity-week">
       <div className="module-toolbar capacity-toolbar">
-        <div><h2 id="capacity-title">Capacidad semanal</h2><small>Producción y transporte en palets</small></div>
+        <div><h2 id="capacity-title">Capacidad semanal</h2><small>La capacidad general se aplica todos los días</small></div>
         <div className="calendar-week-controls">
           <button type="button" onClick={() => moveWeek(-1)} aria-label="Semana anterior"><ChevronLeft size={18} /></button>
           <strong>{formatRange(week)}</strong>
           <button type="button" onClick={() => moveWeek(1)} aria-label="Semana siguiente"><ChevronRight size={18} /></button>
         </div>
       </div>
-      <div className="capacity-days" role="tablist" aria-label="Seleccionar día">
+      <div className="capacity-days" aria-label="Capacidad por día">
         {days.map((day) => {
           const key = dateKey(day);
           const summary = capacity?.days.find((item) => item.date === key);
-          const committed = summary?.transportTotals.committed ?? 0;
-          return <button key={key} type="button" role="tab" aria-selected={selectedDate === key} className={`${selectedDate === key ? "selected" : ""} ${key === dateKey(today) ? "today" : ""}`} onClick={() => setSelectedDate(key)}>
+          const hasIssue = Boolean(summary?.issues.length);
+          return <button key={key} type="button" className={`${key === dateKey(today) ? "today" : ""} ${hasIssue ? "issue" : ""}`} onClick={() => setOpenDate(key)} aria-label={`Ajustar ${formatDay(key)}${hasIssue ? `: ${summary?.issues.join(", ")}` : ""}`}>
             <small>{new Intl.DateTimeFormat("es-UY", { weekday: "short" }).format(day)}</small>
             <strong>{day.getDate()}</strong>
-            <em>{number.format(committed)} palets</em>
+            <em>{number.format(summary?.transportTotals.committed ?? 0)} palets</em>
+            {hasIssue ? <b><AlertTriangle size={12} />Revisar</b> : <b className="ready">Capacidad definida</b>}
           </button>;
         })}
       </div>
     </div>
 
     {error && <p className="capacity-error" role="alert">{error}</p>}
-    {loading && !capacity ? <div className="module-surface capacity-loading">Cargando capacidad…</div> : selected && <>
-      <InternalProduction day={selected} rules={capacity?.rules ?? []} onSave={save} />
-      <ExternalProduction day={selected} providers={sawmills} onSave={save} />
-      <TransportCapacity day={selected} providers={transporters} onSave={save} />
+    {loading && !capacity ? <div className="module-surface capacity-loading">Cargando capacidad…</div> : capacity && <>
+      <div className="capacity-general-heading"><div><h2>Capacidad general</h2><p>Estos valores se repiten de lunes a domingo. Los cambios excepcionales se cargan desde cada día.</p></div></div>
+      <GeneralInternalProduction capacity={capacity} onSave={save} />
+      <GeneralExternalProduction capacity={capacity} providers={sawmills} onSave={save} />
+      <GeneralTransport capacity={capacity} providers={transporters} onSave={save} />
     </>}
+
+    {selected && capacity && <DayAdjustmentModal day={selected} onClose={() => setOpenDate(null)} onSave={save} />}
   </section>;
 }
 
-function InternalProduction({ day, rules, onSave }: { day: CapacityDay; rules: CapacitySnapshot["rules"]; onSave: (url: string, body: unknown) => Promise<void> }) {
+function GeneralInternalProduction({ capacity, onSave }: { capacity: CapacitySnapshot; onSave: (url: string, body: unknown) => Promise<void> }) {
   return <section className="module-surface capacity-section" aria-labelledby="internal-title">
-    <div className="capacity-section-heading"><div className="capacity-icon"><Factory size={20} /></div><div><h2 id="internal-title">Producción interna</h2><small>Dotación, reglas y carga comprometida</small></div></div>
+    <div className="capacity-section-heading"><div className="capacity-icon"><Factory size={20} /></div><div><h2 id="internal-title">Producción interna</h2><small>Dotación y capacidad diaria habitual</small></div></div>
     <div className="capacity-operation-grid">
-      {day.internalProduction.map((summary) => <InternalOperation key={`${day.date}-${summary.operation}`} date={day.date} summary={summary} rules={rules.filter((rule) => rule.operation === summary.operation)} onSave={onSave} />)}
+      {operations.map((operation) => <GeneralInternalOperation key={operation} operation={operation} capacity={capacity} onSave={onSave} />)}
     </div>
   </section>;
 }
 
-function InternalOperation({ date, summary, rules, onSave }: { date: string; summary: CapacityDay["internalProduction"][number]; rules: CapacitySnapshot["rules"]; onSave: (url: string, body: unknown) => Promise<void> }) {
-  const [people, setPeople] = useState(String(summary.peopleCount));
-  const [manual, setManual] = useState("");
+function GeneralInternalOperation({ operation, capacity, onSave }: { operation: CapacityOperation; capacity: CapacitySnapshot; onSave: (url: string, body: unknown) => Promise<void> }) {
+  const defaults = capacity.internalDefaults.find((item) => item.operation === operation);
+  const [people, setPeople] = useState(String(defaults?.peopleCount ?? 0));
+  const [manual, setManual] = useState(defaults?.manualCapacity === undefined ? "" : String(defaults.manualCapacity));
   const [rulePeople, setRulePeople] = useState("");
   const [ruleCapacity, setRuleCapacity] = useState("");
-  const hasCapacity = summary.capacity !== undefined;
+  const rules = capacity.rules.filter((rule) => rule.operation === operation);
+  const exactRule = rules.find((rule) => rule.peopleCount === Number(people));
+  const calculated = manual === "" ? exactRule?.palletCapacity : Number(manual);
+
   return <article className="capacity-operation-card">
-    <header><Users size={18} /><h3>{capacityOperationLabels[summary.operation]}</h3></header>
-    <div className="capacity-metrics">
-      <Metric label="Capacidad" value={hasCapacity ? number.format(summary.capacity!) : "Sin calcular"} />
-      <Metric label="Comprometidos" value={number.format(summary.committed)} />
-      <Metric label={summary.overload > 0 ? "Sobrecarga" : "Disponibles"} value={number.format(summary.overload > 0 ? summary.overload : summary.available ?? 0)} tone={summary.overload > 0 ? "danger" : undefined} />
-    </div>
-    {!hasCapacity && summary.committed > 0 && <p className="capacity-warning"><AlertTriangle size={16} />Hay pedidos asignados y la capacidad aún no está calculada.</p>}
-    <form className="capacity-inline-form" onSubmit={(event) => { event.preventDefault(); void onSave("/api/capacity/internal-production", { date, operation: summary.operation, peopleCount: Number(people), manualCapacity: manual === "" ? null : Number(manual) }); }}>
+    <header><Users size={18} /><h3>{capacityOperationLabels[operation]}</h3></header>
+    <Metric label="Capacidad general por día" value={calculated === undefined ? "Sin calcular" : `${number.format(calculated)} palets`} />
+    <form className="capacity-inline-form" onSubmit={(event) => { event.preventDefault(); void onSave("/api/capacity/internal-production", { operation, peopleCount: Number(people), manualCapacity: manual === "" ? null : Number(manual) }); }}>
       <label>Personas<input type="number" min="0" step="1" value={people} onChange={(event) => setPeople(event.target.value)} required /></label>
-      <label>Ajuste del día<input type="number" min="0" step="1" value={manual} onChange={(event) => setManual(event.target.value)} placeholder="Opcional" /></label>
-      <button type="submit" aria-label={`Guardar ${capacityOperationLabels[summary.operation]}`}><Save size={17} /></button>
+      <label>Capacidad manual<input type="number" min="0" step="1" value={manual} onChange={(event) => setManual(event.target.value)} placeholder="Usar regla" /></label>
+      <button type="submit" aria-label={`Guardar capacidad general de ${capacityOperationLabels[operation]}`}><Save size={17} /></button>
     </form>
     <details className="capacity-rules"><summary>Reglas por personas ({rules.length})</summary>
       {rules.length > 0 && <ul>{rules.map((rule) => <li key={rule.peopleCount}>{rule.peopleCount} personas → {number.format(rule.palletCapacity)} palets</li>)}</ul>}
-      <form onSubmit={(event) => { event.preventDefault(); void onSave("/api/capacity/rules", { operation: summary.operation, peopleCount: Number(rulePeople), palletCapacity: Number(ruleCapacity) }); setRulePeople(""); setRuleCapacity(""); }}>
+      <form onSubmit={(event) => { event.preventDefault(); void onSave("/api/capacity/rules", { operation, peopleCount: Number(rulePeople), palletCapacity: Number(ruleCapacity) }); setRulePeople(""); setRuleCapacity(""); }}>
         <label>Personas<input type="number" min="0" step="1" value={rulePeople} onChange={(event) => setRulePeople(event.target.value)} required /></label>
         <label>Palets/día<input type="number" min="0" step="1" value={ruleCapacity} onChange={(event) => setRuleCapacity(event.target.value)} required /></label>
         <button type="submit">Guardar regla</button>
@@ -172,47 +165,86 @@ function InternalOperation({ date, summary, rules, onSave }: { date: string; sum
   </article>;
 }
 
-function ExternalProduction({ day, providers, onSave }: { day: CapacityDay; providers: Provider[]; onSave: (url: string, body: unknown) => Promise<void> }) {
+function GeneralExternalProduction({ capacity, providers, onSave }: { capacity: CapacitySnapshot; providers: Provider[]; onSave: (url: string, body: unknown) => Promise<void> }) {
   const submit = (event: FormEvent<HTMLFormElement>) => {
-    event.preventDefault(); const form = new FormData(event.currentTarget);
-    void onSave("/api/capacity/external-production", { date: day.date, providerId: form.get("providerId"), operation: form.get("operation"), palletCapacity: Number(form.get("palletCapacity")), status: form.get("status") });
+    event.preventDefault();
+    const form = new FormData(event.currentTarget);
+    void onSave("/api/capacity/external-production", { providerId: form.get("providerId"), operation: form.get("operation"), palletCapacity: Number(form.get("palletCapacity")), status: form.get("status") });
   };
   return <section className="module-surface capacity-section" aria-labelledby="external-title">
-    <div className="capacity-section-heading"><div className="capacity-icon"><Factory size={20} /></div><div><h2 id="external-title">Producción externa</h2><small>Capacidad por aserradero y operación</small></div></div>
-    {day.externalProduction.length > 0 ? <div className="capacity-table"><div className="capacity-table-heading"><div>Aserradero</div><div>Operación</div><div>Estado</div><div>Capacidad</div><div>Comprometidos</div><div>Saldo</div></div>{day.externalProduction.map((entry) => <div className="capacity-table-row" key={`${entry.providerId}-${entry.operation}`}><strong>{entry.providerName}</strong><div>{capacityOperationLabels[entry.operation]}</div><div>{entry.palletCapacity === undefined ? "Sin cargar" : entry.status === "confirmed" ? "Confirmada" : "Estimada"}</div><div>{entry.palletCapacity === undefined ? "Sin cargar" : number.format(entry.palletCapacity)}</div><div>{number.format(entry.committed)}</div><div className={entry.overload > 0 ? "overload" : ""}>{entry.palletCapacity === undefined ? "Sin calcular" : entry.overload > 0 ? `-${number.format(entry.overload)}` : number.format(entry.available ?? 0)}</div></div>)}</div> : <p className="capacity-empty">No hay capacidad externa cargada para este día.</p>}
-    {day.imports.length > 0 && <div className="capacity-imports"><strong>Ingresos previstos por importación</strong>{day.imports.map((entry) => <article key={entry.orderId}><div><small>Cliente</small><b>{entry.client}</b></div><div><small>Palets</small><b>{number.format(entry.pallets)}</b></div></article>)}</div>}
+    <div className="capacity-section-heading"><div className="capacity-icon"><Factory size={20} /></div><div><h2 id="external-title">Producción externa</h2><small>Capacidad diaria habitual por aserradero</small></div></div>
+    {capacity.externalDefaults.length > 0 ? <div className="capacity-table"><div className="capacity-table-heading general"><div>Aserradero</div><div>Operación</div><div>Estado</div><div>Capacidad diaria</div></div>{capacity.externalDefaults.map((entry) => <div className="capacity-table-row general" key={`${entry.providerId}-${entry.operation}`}><strong>{providers.find((provider) => provider.id === entry.providerId)?.name ?? "Proveedor"}</strong><div>{capacityOperationLabels[entry.operation]}</div><div>{entry.status === "confirmed" ? "Confirmada" : "Estimada"}</div><div>{number.format(entry.palletCapacity)} palets</div></div>)}</div> : <p className="capacity-empty">Todavía no hay capacidad general de aserraderos.</p>}
     <form className="capacity-add-form" onSubmit={submit}>
       <label>Aserradero<select name="providerId" required defaultValue=""><option value="" disabled>Seleccionar</option>{providers.map((provider) => <option key={provider.id} value={provider.id}>{provider.name}</option>)}</select></label>
       <label>Operación<select name="operation" defaultValue="assembly">{operations.map((operation) => <option key={operation} value={operation}>{capacityOperationLabels[operation]}</option>)}</select></label>
-      <label>Capacidad<input name="palletCapacity" type="number" min="0" step="1" required /></label>
+      <label>Palets por día<input name="palletCapacity" type="number" min="0" step="1" required /></label>
       <label>Estado<select name="status" defaultValue="estimated"><option value="estimated">Estimada</option><option value="confirmed">Confirmada</option></select></label>
       <button type="submit" className="primary-button">Guardar capacidad</button>
     </form>
   </section>;
 }
 
-function TransportCapacity({ day, providers, onSave }: { day: CapacityDay; providers: Provider[]; onSave: (url: string, body: unknown) => Promise<void> }) {
+function GeneralTransport({ capacity, providers, onSave }: { capacity: CapacitySnapshot; providers: Provider[]; onSave: (url: string, body: unknown) => Promise<void> }) {
   const [source, setSource] = useState<TransportSource>("internal");
   const submit = (event: FormEvent<HTMLFormElement>) => {
-    event.preventDefault(); const form = new FormData(event.currentTarget);
-    void onSave("/api/capacity/transport", { date: day.date, source, providerId: source === "external" ? form.get("providerId") : undefined, palletCapacity: Number(form.get("palletCapacity")), status: source === "internal" ? "confirmed" : form.get("status") as CapacityStatus });
+    event.preventDefault();
+    const form = new FormData(event.currentTarget);
+    void onSave("/api/capacity/transport", { source, providerId: source === "external" ? form.get("providerId") : undefined, palletCapacity: Number(form.get("palletCapacity")), status: source === "internal" ? "confirmed" : form.get("status") as CapacityStatus });
   };
   return <section className="module-surface capacity-section" aria-labelledby="transport-title">
-    <div className="capacity-section-heading"><div className="capacity-icon"><Truck size={20} /></div><div><h2 id="transport-title">Transporte</h2><small>Capacidad disponible para las entregas del día</small></div></div>
-    <div className="capacity-summary-strip">
-      <Metric label="Palets a entregar" value={number.format(day.transportTotals.committed)} />
-      <Metric label="Capacidad interna" value={number.format(day.transportTotals.internal)} />
-      <Metric label="Externa confirmada" value={number.format(day.transportTotals.externalConfirmed)} />
-      <Metric label="Externa estimada" value={number.format(day.transportTotals.externalEstimated)} />
-      <Metric label="Faltante" value={number.format(day.transportTotals.missing)} tone={day.transportTotals.missing > 0 ? "danger" : undefined} />
-    </div>
-    {day.transport.length > 0 && <div className="transport-cards">{day.transport.map((entry) => <article key={`${entry.source}-${entry.providerId ?? "internal"}`}><Truck size={18} /><div><small>{entry.status === "confirmed" ? "Confirmada" : "Estimada"}</small><strong>{entry.providerName}</strong><p>{number.format(entry.committed)} asignados de {number.format(entry.palletCapacity)}</p></div><b className={entry.overload > 0 ? "overload" : ""}>{entry.overload > 0 ? `${number.format(entry.overload)} sobre` : `${number.format(entry.available)} libres`}</b></article>)}</div>}
+    <div className="capacity-section-heading"><div className="capacity-icon"><Truck size={20} /></div><div><h2 id="transport-title">Transporte</h2><small>Capacidad diaria habitual en palets</small></div></div>
+    {capacity.transportDefaults.length > 0 ? <div className="capacity-table"><div className="capacity-table-heading general"><div>Origen</div><div>Estado</div><div>Capacidad diaria</div><div>Tipo</div></div>{capacity.transportDefaults.map((entry) => <div className="capacity-table-row general" key={`${entry.source}-${entry.providerId ?? "internal"}`}><strong>{entry.source === "internal" ? "Transporte interno" : providers.find((provider) => provider.id === entry.providerId)?.name ?? "Transportista"}</strong><div>{entry.status === "confirmed" ? "Confirmada" : "Estimada"}</div><div>{number.format(entry.palletCapacity)} palets</div><div>{entry.source === "internal" ? "Propio" : "Externo"}</div></div>)}</div> : <p className="capacity-empty">Todavía no hay capacidad general de transporte.</p>}
     <form className="capacity-add-form" onSubmit={submit}>
       <label>Origen<select value={source} onChange={(event) => setSource(event.target.value as TransportSource)}><option value="internal">Transporte interno</option><option value="external">Transportista externo</option></select></label>
       {source === "external" && <label>Transportista<select name="providerId" required defaultValue=""><option value="" disabled>Seleccionar</option>{providers.map((provider) => <option key={provider.id} value={provider.id}>{provider.name}</option>)}</select></label>}
-      <label>Capacidad<input name="palletCapacity" type="number" min="0" step="1" required /></label>
+      <label>Palets por día<input name="palletCapacity" type="number" min="0" step="1" required /></label>
       {source === "external" && <label>Estado<select name="status" defaultValue="estimated"><option value="estimated">Estimada</option><option value="confirmed">Confirmada</option></select></label>}
       <button type="submit" className="primary-button">Guardar capacidad</button>
     </form>
   </section>;
+}
+
+function DayAdjustmentModal({ day, onClose, onSave }: { day: CapacityDay; onClose: () => void; onSave: (url: string, body: unknown) => Promise<void> }) {
+  const closeRef = useRef<HTMLButtonElement>(null);
+  useEffect(() => {
+    closeRef.current?.focus();
+    const closeWithEscape = (event: KeyboardEvent) => { if (event.key === "Escape") onClose(); };
+    window.addEventListener("keydown", closeWithEscape);
+    return () => window.removeEventListener("keydown", closeWithEscape);
+  }, [onClose]);
+
+  return <div className="modal-backdrop capacity-modal-backdrop" role="presentation" onMouseDown={(event) => { if (event.target === event.currentTarget) onClose(); }}>
+    <section className="capacity-day-modal" role="dialog" aria-modal="true" aria-labelledby="day-capacity-title">
+      <header><div><small>Ajuste excepcional</small><h2 id="day-capacity-title">{formatDay(day.date)}</h2><p>Sumá o restá palets únicamente para este día.</p></div><button ref={closeRef} type="button" onClick={onClose} aria-label="Cerrar ajustes"><X size={21} /></button></header>
+      {day.issues.length > 0 && <div className="capacity-day-alert"><AlertTriangle size={19} /><div><strong>Este día necesita revisión</strong><p>{day.issues.join(" · ")}</p></div></div>}
+
+      <section className="day-adjustment-section" aria-labelledby="day-internal-title"><h3 id="day-internal-title"><Factory size={18} />Producción interna</h3>
+        {day.internalProduction.map((entry) => <AdjustmentRow key={entry.operation} name={capacityOperationLabels[entry.operation]} baseCapacity={entry.baseCapacity} adjustment={entry.adjustment} committed={entry.committed} capacity={entry.capacity} overload={entry.overload} onSave={(palletAdjustment) => onSave("/api/capacity/adjustments", { date: day.date, resourceType: "internal_production", operation: entry.operation, palletAdjustment })} />)}
+      </section>
+
+      {day.externalProduction.length > 0 && <section className="day-adjustment-section" aria-labelledby="day-external-title"><h3 id="day-external-title"><Factory size={18} />Producción externa</h3>
+        {day.externalProduction.map((entry) => <AdjustmentRow key={`${entry.providerId}-${entry.operation}`} name={`${entry.providerName} · ${capacityOperationLabels[entry.operation]}`} baseCapacity={entry.baseCapacity} adjustment={entry.adjustment} committed={entry.committed} capacity={entry.capacity} overload={entry.overload} onSave={(palletAdjustment) => onSave("/api/capacity/adjustments", { date: day.date, resourceType: "external_production", providerId: entry.providerId, operation: entry.operation, palletAdjustment })} />)}
+      </section>}
+
+      <section className="day-adjustment-section" aria-labelledby="day-transport-title"><h3 id="day-transport-title"><Truck size={18} />Transporte</h3>
+        {day.transport.map((entry) => <AdjustmentRow key={`${entry.source}-${entry.providerId ?? "internal"}`} name={entry.providerName} baseCapacity={entry.baseCapacity} adjustment={entry.adjustment} committed={entry.committed} capacity={entry.capacity} overload={entry.overload} onSave={(palletAdjustment) => onSave("/api/capacity/adjustments", { date: day.date, resourceType: "transport", source: entry.source, providerId: entry.providerId, palletAdjustment })} />)}
+      </section>
+
+      {day.imports.length > 0 && <section className="day-adjustment-section imports" aria-labelledby="day-imports-title"><h3 id="day-imports-title">Ingresos por importación</h3>{day.imports.map((entry) => <p key={entry.orderId}><strong>{entry.client}</strong> · {number.format(entry.pallets)} palets</p>)}</section>}
+    </section>
+  </div>;
+}
+
+function AdjustmentRow({ name, baseCapacity, adjustment, committed, capacity, overload, onSave }: { name: string; baseCapacity?: number; adjustment: number; committed: number; capacity?: number; overload: number; onSave: (adjustment: number) => Promise<void> }) {
+  const [value, setValue] = useState(String(adjustment));
+  const [saving, setSaving] = useState(false);
+  return <article className={`day-adjustment-row ${capacity === undefined || overload > 0 ? "danger" : ""}`}>
+    <div className="day-adjustment-name"><strong>{name}</strong><small>Base: {baseCapacity === undefined ? "sin definir" : `${number.format(baseCapacity)} palets`}</small></div>
+    <Metric label="Comprometidos" value={number.format(committed)} />
+    <Metric label={overload > 0 ? "Sobrecarga" : "Capacidad del día"} value={capacity === undefined ? "Sin calcular" : overload > 0 ? number.format(overload) : number.format(capacity)} tone={overload > 0 ? "danger" : undefined} />
+    <form onSubmit={async (event) => { event.preventDefault(); setSaving(true); try { await onSave(Number(value)); } finally { setSaving(false); } }}>
+      <label>Ajuste en palets<input type="number" step="1" value={value} onChange={(event) => setValue(event.target.value)} aria-label={`Ajuste para ${name}`} /></label>
+      <button type="submit" disabled={saving}><Save size={16} />{saving ? "Guardando" : "Guardar"}</button>
+    </form>
+  </article>;
 }

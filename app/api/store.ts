@@ -20,10 +20,11 @@ import {
 } from "../data";
 import {
   buildCapacitySnapshot,
+  type CapacityAdjustment,
   type CapacityRule,
-  type ExternalProductionEntry,
-  type InternalProductionEntry,
-  type TransportCapacityEntry,
+  type ExternalProductionDefault,
+  type InternalProductionDefault,
+  type TransportCapacityDefault,
 } from "../capacity";
 import { supabaseRequest } from "../lib/supabase";
 
@@ -123,9 +124,10 @@ const memoryHistory = new Map<string, OrderChange[]>();
 const memoryProducts: Product[] = structuredClone(seededProducts);
 const memoryClients: Client[] = [...new Set(seededOrders.map((order) => order.client))].map((name, index) => ({ id: `cliente-${index + 1}`, name }));
 const memoryCapacityRules: CapacityRule[] = [];
-const memoryInternalCapacity: InternalProductionEntry[] = [];
-const memoryExternalCapacity: ExternalProductionEntry[] = [];
-const memoryTransportCapacity: TransportCapacityEntry[] = [];
+const memoryInternalDefaults: InternalProductionDefault[] = [];
+const memoryExternalDefaults: ExternalProductionDefault[] = [];
+const memoryTransportDefaults: TransportCapacityDefault[] = [];
+const memoryCapacityAdjustments: CapacityAdjustment[] = [];
 function mapOrder(row: DbOrder): OperationOrder {
   return {
     id: row.id,
@@ -543,26 +545,29 @@ export async function updateOrder(id: string, changes: UpdateOrderInput) {
 }
 
 type DbCapacityRule = { operation: CapacityOperation; people_count: number; pallet_capacity: number };
-type DbInternalCapacity = { capacity_date: string; operation: CapacityOperation; people_count: number; manual_capacity: number | null };
-type DbExternalCapacity = { id: string; capacity_date: string; provider_id: string; operation: CapacityOperation; pallet_capacity: number; status: ExternalProductionEntry["status"] };
-type DbTransportCapacity = { id: string; capacity_date: string; source: TransportSource; provider_id: string | null; pallet_capacity: number; status: TransportCapacityEntry["status"] };
+type DbInternalDefault = { operation: CapacityOperation; people_count: number; manual_capacity: number | null };
+type DbExternalDefault = { id: string; provider_id: string; operation: CapacityOperation; pallet_capacity: number; status: ExternalProductionDefault["status"] };
+type DbTransportDefault = { id: string; source: TransportSource; provider_id: string | null; pallet_capacity: number; status: TransportCapacityDefault["status"] };
+type DbCapacityAdjustment = { adjustment_date: string; resource_type: CapacityAdjustment["resourceType"]; operation: CapacityOperation | null; source: TransportSource | null; provider_id: string | null; pallet_adjustment: number };
 
 export async function getCapacity(from: string, to: string) {
-  if (useMemoryStore) return buildCapacitySnapshot({ from, to, rules: memoryCapacityRules, internalEntries: memoryInternalCapacity, externalEntries: memoryExternalCapacity, transportEntries: memoryTransportCapacity, orders: memoryOrders, providers: seededProviders });
-  const range = `capacity_date=gte.${from}&capacity_date=lte.${to}`;
-  const [rules, internal, external, transport, orders, providers] = await Promise.all([
+  if (useMemoryStore) return buildCapacitySnapshot({ from, to, rules: memoryCapacityRules, internalDefaults: memoryInternalDefaults, externalDefaults: memoryExternalDefaults, transportDefaults: memoryTransportDefaults, adjustments: memoryCapacityAdjustments, orders: memoryOrders, providers: seededProviders });
+  const range = `adjustment_date=gte.${from}&adjustment_date=lte.${to}`;
+  const [rules, internal, external, transport, adjustments, orders, providers] = await Promise.all([
     supabaseRequest<DbCapacityRule[]>("/rest/v1/capacity_rules?select=operation,people_count,pallet_capacity&order=operation.asc,people_count.asc"),
-    supabaseRequest<DbInternalCapacity[]>(`/rest/v1/internal_production_capacity?select=capacity_date,operation,people_count,manual_capacity&${range}`),
-    supabaseRequest<DbExternalCapacity[]>(`/rest/v1/external_production_capacity?select=id,capacity_date,provider_id,operation,pallet_capacity,status&${range}`),
-    supabaseRequest<DbTransportCapacity[]>(`/rest/v1/transport_capacity?select=id,capacity_date,source,provider_id,pallet_capacity,status&${range}`),
+    supabaseRequest<DbInternalDefault[]>("/rest/v1/internal_production_defaults?select=operation,people_count,manual_capacity"),
+    supabaseRequest<DbExternalDefault[]>("/rest/v1/external_production_defaults?select=id,provider_id,operation,pallet_capacity,status"),
+    supabaseRequest<DbTransportDefault[]>("/rest/v1/transport_capacity_defaults?select=id,source,provider_id,pallet_capacity,status"),
+    supabaseRequest<DbCapacityAdjustment[]>(`/rest/v1/capacity_daily_adjustments?select=adjustment_date,resource_type,operation,source,provider_id,pallet_adjustment&${range}`),
     getOrders(), getProviders(),
   ]);
   return buildCapacitySnapshot({
     from, to, orders, providers,
     rules: rules.map((item) => ({ operation: item.operation, peopleCount: item.people_count, palletCapacity: item.pallet_capacity })),
-    internalEntries: internal.map((item) => ({ date: item.capacity_date, operation: item.operation, peopleCount: item.people_count, manualCapacity: item.manual_capacity ?? undefined })),
-    externalEntries: external.map((item) => ({ id: item.id, date: item.capacity_date, providerId: item.provider_id, operation: item.operation, palletCapacity: item.pallet_capacity, status: item.status })),
-    transportEntries: transport.map((item) => ({ id: item.id, date: item.capacity_date, source: item.source, providerId: item.provider_id ?? undefined, palletCapacity: item.pallet_capacity, status: item.status })),
+    internalDefaults: internal.map((item) => ({ operation: item.operation, peopleCount: item.people_count, manualCapacity: item.manual_capacity ?? undefined })),
+    externalDefaults: external.map((item) => ({ id: item.id, providerId: item.provider_id, operation: item.operation, palletCapacity: item.pallet_capacity, status: item.status })),
+    transportDefaults: transport.map((item) => ({ id: item.id, source: item.source, providerId: item.provider_id ?? undefined, palletCapacity: item.pallet_capacity, status: item.status })),
+    adjustments: adjustments.map((item) => ({ date: item.adjustment_date, resourceType: item.resource_type, operation: item.operation ?? undefined, source: item.source ?? undefined, providerId: item.provider_id ?? undefined, palletAdjustment: item.pallet_adjustment })),
   });
 }
 
@@ -577,20 +582,26 @@ export async function saveCapacityRule(value: CapacityRule) {
   return value;
 }
 
-export async function saveInternalProduction(value: InternalProductionEntry) {
-  if (!useMemoryStore) await supabaseRequest("/rest/v1/rpc/upsert_internal_production_capacity", { method: "POST", body: JSON.stringify({ p_date: value.date, p_operation: value.operation, p_people_count: value.peopleCount, p_manual_capacity: value.manualCapacity ?? null }) });
-  else upsertMemory(memoryInternalCapacity, (item) => item.date === value.date && item.operation === value.operation, value);
+export async function saveInternalProduction(value: InternalProductionDefault) {
+  if (!useMemoryStore) await supabaseRequest("/rest/v1/rpc/upsert_internal_production_default", { method: "POST", body: JSON.stringify({ p_operation: value.operation, p_people_count: value.peopleCount, p_manual_capacity: value.manualCapacity ?? null }) });
+  else upsertMemory(memoryInternalDefaults, (item) => item.operation === value.operation, value);
   return value;
 }
 
-export async function saveExternalProduction(value: ExternalProductionEntry) {
-  if (!useMemoryStore) await supabaseRequest("/rest/v1/rpc/upsert_external_production_capacity", { method: "POST", body: JSON.stringify({ p_date: value.date, p_provider_id: value.providerId, p_operation: value.operation, p_pallet_capacity: value.palletCapacity, p_status: value.status }) });
-  else upsertMemory(memoryExternalCapacity, (item) => item.date === value.date && item.providerId === value.providerId && item.operation === value.operation, { ...value, id: value.id ?? `external-${Date.now()}` });
+export async function saveExternalProduction(value: ExternalProductionDefault) {
+  if (!useMemoryStore) await supabaseRequest("/rest/v1/rpc/upsert_external_production_default", { method: "POST", body: JSON.stringify({ p_provider_id: value.providerId, p_operation: value.operation, p_pallet_capacity: value.palletCapacity, p_status: value.status }) });
+  else upsertMemory(memoryExternalDefaults, (item) => item.providerId === value.providerId && item.operation === value.operation, { ...value, id: value.id ?? `external-${Date.now()}` });
   return value;
 }
 
-export async function saveTransportCapacity(value: TransportCapacityEntry) {
-  if (!useMemoryStore) await supabaseRequest("/rest/v1/rpc/upsert_transport_capacity", { method: "POST", body: JSON.stringify({ p_date: value.date, p_source: value.source, p_provider_id: value.providerId ?? null, p_pallet_capacity: value.palletCapacity, p_status: value.status }) });
-  else upsertMemory(memoryTransportCapacity, (item) => item.date === value.date && item.source === value.source && (item.providerId ?? "") === (value.providerId ?? ""), { ...value, id: value.id ?? `transport-${Date.now()}` });
+export async function saveTransportCapacity(value: TransportCapacityDefault) {
+  if (!useMemoryStore) await supabaseRequest("/rest/v1/rpc/upsert_transport_capacity_default", { method: "POST", body: JSON.stringify({ p_source: value.source, p_provider_id: value.providerId ?? null, p_pallet_capacity: value.palletCapacity, p_status: value.status }) });
+  else upsertMemory(memoryTransportDefaults, (item) => item.source === value.source && (item.providerId ?? "") === (value.providerId ?? ""), { ...value, id: value.id ?? `transport-${Date.now()}` });
+  return value;
+}
+
+export async function saveCapacityAdjustment(value: CapacityAdjustment) {
+  if (!useMemoryStore) await supabaseRequest("/rest/v1/rpc/upsert_capacity_daily_adjustment", { method: "POST", body: JSON.stringify({ p_date: value.date, p_resource_type: value.resourceType, p_operation: value.operation ?? null, p_source: value.source ?? null, p_provider_id: value.providerId ?? null, p_pallet_adjustment: value.palletAdjustment }) });
+  else upsertMemory(memoryCapacityAdjustments, (item) => item.date === value.date && item.resourceType === value.resourceType && (item.operation ?? "") === (value.operation ?? "") && (item.source ?? "") === (value.source ?? "") && (item.providerId ?? "") === (value.providerId ?? ""), value);
   return value;
 }

@@ -81,11 +81,11 @@ test("la capacidad usa reglas exactas y respeta ajustes manuales", () => {
   const snapshot = buildCapacitySnapshot({
     from: "2026-08-24", to: "2026-08-24", providers, orders: [],
     rules: [{ operation: "assembly", peopleCount: 5, palletCapacity: 300 }],
-    internalEntries: [
-      { date: "2026-08-24", operation: "assembly", peopleCount: 6 },
-      { date: "2026-08-24", operation: "marking", peopleCount: 6, manualCapacity: 240 },
+    internalDefaults: [
+      { operation: "assembly", peopleCount: 6 },
+      { operation: "marking", peopleCount: 6, manualCapacity: 240 },
     ],
-    externalEntries: [], transportEntries: [],
+    externalDefaults: [], transportDefaults: [], adjustments: [],
   });
   assert.equal(snapshot.days[0].internalProduction.find((item) => item.operation === "assembly").capacity, undefined);
   assert.equal(snapshot.days[0].internalProduction.find((item) => item.operation === "marking").capacity, 240);
@@ -102,9 +102,10 @@ test("pedidos internos, externos e importados reservan donde corresponde", () =>
   const snapshot = buildCapacitySnapshot({
     from: "2026-08-24", to: "2026-08-25", providers, orders: capacityOrders,
     rules: [{ operation: "assembly", peopleCount: 5, palletCapacity: 120 }, { operation: "ht", peopleCount: 2, palletCapacity: 90 }],
-    internalEntries: [{ date: "2026-08-24", operation: "assembly", peopleCount: 5 }, { date: "2026-08-24", operation: "ht", peopleCount: 2 }],
-    externalEntries: [{ date: "2026-08-24", providerId: "blanc", operation: "assembly", palletCapacity: 60, status: "confirmed" }],
-    transportEntries: [{ date: "2026-08-25", source: "internal", palletCapacity: 120, status: "confirmed" }, { date: "2026-08-25", source: "external", providerId: "linares", palletCapacity: 60, status: "confirmed" }],
+    internalDefaults: [{ operation: "assembly", peopleCount: 5 }, { operation: "ht", peopleCount: 2 }],
+    externalDefaults: [{ providerId: "blanc", operation: "assembly", palletCapacity: 60, status: "confirmed" }],
+    transportDefaults: [{ source: "internal", palletCapacity: 120, status: "confirmed" }, { source: "external", providerId: "linares", palletCapacity: 60, status: "confirmed" }],
+    adjustments: [],
   });
   assert.equal(snapshot.days[0].internalProduction.find((item) => item.operation === "assembly").committed, 100);
   assert.equal(snapshot.days[0].internalProduction.find((item) => item.operation === "ht").overload, 10);
@@ -112,4 +113,31 @@ test("pedidos internos, externos e importados reservan donde corresponde", () =>
   assert.equal(snapshot.days[0].imports[0].pallets, 70);
   assert.equal(snapshot.days[1].transportTotals.committed, 250);
   assert.equal(snapshot.days[1].transportTotals.missing, 70);
+});
+
+test("la capacidad general se repite y los ajustes afectan solo un día", () => {
+  const snapshot = buildCapacitySnapshot({
+    from: "2026-08-24", to: "2026-08-25", providers, orders: [],
+    rules: [{ operation: "assembly", peopleCount: 5, palletCapacity: 300 }],
+    internalDefaults: [{ operation: "assembly", peopleCount: 5 }, { operation: "marking", peopleCount: 0, manualCapacity: 0 }, { operation: "ht", peopleCount: 0, manualCapacity: 0 }],
+    externalDefaults: [],
+    transportDefaults: [{ source: "internal", palletCapacity: 200, status: "confirmed" }],
+    adjustments: [
+      { date: "2026-08-25", resourceType: "internal_production", operation: "assembly", palletAdjustment: -50 },
+      { date: "2026-08-25", resourceType: "transport", source: "internal", palletAdjustment: 40 },
+    ],
+  });
+  assert.equal(snapshot.days[0].internalProduction.find((item) => item.operation === "assembly").capacity, 300);
+  assert.equal(snapshot.days[1].internalProduction.find((item) => item.operation === "assembly").capacity, 250);
+  assert.equal(snapshot.days[0].transportTotals.internal, 200);
+  assert.equal(snapshot.days[1].transportTotals.internal, 240);
+});
+
+test("marca en rojo lógico los días sin definir o con faltantes", () => {
+  const base = { id: "overload", reference: "", client: "Uno", product: "Pallet", requested: 100, delivered: 0, pending: 100, stage: "produccion", dateLabel: "", plannedDate: "2026-08-24", transport: "Interno", transportSource: "internal", productionSource: "internal", productionDate: "2026-08-24", requiredOperations: ["assembly"], supply: "", preparation: "", logistics: "", delivery: "", action: "", lines: [], source: "" };
+  const snapshot = buildCapacitySnapshot({
+    from: "2026-08-24", to: "2026-08-24", providers, orders: [base], rules: [],
+    internalDefaults: [], externalDefaults: [], transportDefaults: [], adjustments: [],
+  });
+  assert.deepEqual(snapshot.days[0].issues, ["Producción sin definir", "Falta producción", "Transporte sin definir", "Faltan camiones"]);
 });

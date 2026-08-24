@@ -676,7 +676,8 @@ function CapacityHint({ date, source, providerId, operations, quantity, transpor
   let used = 0;
   if (transport) {
     const entries = day.transport.filter((entry) => entry.source === source && (source === "internal" || entry.providerId === providerId));
-    capacity = entries.reduce((sum, entry) => sum + entry.palletCapacity, 0);
+    const capacities = entries.map((entry) => entry.capacity).filter((value): value is number => value !== undefined);
+    capacity = entries.length > 0 && capacities.length === entries.length ? capacities.reduce((sum, value) => sum + value, 0) : undefined;
     used = entries.reduce((sum, entry) => sum + entry.committed, 0);
   } else if (source === "internal") {
     const selected = day.internalProduction.filter((entry) => (operations ?? []).includes(entry.operation));
@@ -685,7 +686,7 @@ function CapacityHint({ date, source, providerId, operations, quantity, transpor
     used = selected.reduce((maximum, entry) => Math.max(maximum, entry.committed), 0);
   } else if (source === "sawmill") {
     const entries = day.externalProduction.filter((entry) => entry.providerId === providerId && (operations ?? []).includes(entry.operation));
-    const capacities = entries.map((entry) => entry.palletCapacity).filter((value): value is number => value !== undefined);
+    const capacities = entries.map((entry) => entry.capacity).filter((value): value is number => value !== undefined);
     capacity = entries.length > 0 && capacities.length === entries.length ? Math.min(...capacities) : undefined;
     used = entries.reduce((maximum, entry) => Math.max(maximum, entry.committed), 0);
   } else return <div className="capacity-hint neutral">La importación se registra como ingreso previsto y no consume producción.</div>;
