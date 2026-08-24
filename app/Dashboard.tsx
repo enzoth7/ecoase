@@ -38,7 +38,7 @@ import {
 import type { CapacityOperation, ProductionSource, TransportSource } from "./data";
 import type { CapacitySnapshot } from "./capacity";
 import { capacityOperationLabels } from "./capacity";
-import CapacityView, { GeneralTransport } from "./CapacityView";
+import CapacityView, { DayLogisticsAdjustmentModal, GeneralTransport } from "./CapacityView";
 
 const number = new Intl.NumberFormat("es-UY");
 export type DashboardSection = "pedidos" | "plan" | "calendario" | "logistica" | "capacidad" | "clientes" | "historial" | "proveedores" | "productos";
@@ -368,14 +368,25 @@ function LogisticsView({ orders, providers, onOpen }: { orders: OperationOrder[]
   const todayKey = dateKey(new Date());
   const [capacity, setCapacity] = useState<CapacitySnapshot | null>(null);
   const [capacityError, setCapacityError] = useState("");
+  const [openDate, setOpenDate] = useState<string | null>(null);
   useEffect(() => {
     fetch(`/api/capacity?from=${dateKey(weekStart)}&to=${dateKey(weekEnd)}`).then((response) => response.json()).then((payload: { capacity?: CapacitySnapshot }) => setCapacity(payload.capacity ?? null)).catch(() => setCapacity(null));
   }, [weekEnd, weekStart]);
   const moveWeek = (direction: -1 | 1) => setWeekStart((current) => {
     const next = new Date(current);
     next.setDate(current.getDate() + direction * 7);
+    setOpenDate(null);
     return next;
   });
+  const saveTransportCapacity = async (url: string, body: unknown) => {
+    setCapacityError("");
+    const response = await fetch(url, { method: "PUT", headers: { "content-type": "application/json" }, body: JSON.stringify(body) });
+    const payload = await response.json() as { error?: string };
+    if (!response.ok) { const message = payload.error ?? "No se pudo guardar la capacidad de transporte."; setCapacityError(message); throw new Error(message); }
+    const refreshed = await fetch(`/api/capacity?from=${dateKey(weekStart)}&to=${dateKey(weekEnd)}`).then((item) => item.json()) as { capacity?: CapacitySnapshot };
+    setCapacity(refreshed.capacity ?? null);
+  };
+  const selectedDay = capacity?.days.find((day) => day.date === openDate);
   return (
     <>
     <section className="module-surface logistics-surface" aria-labelledby="logistics-page-title">
@@ -395,7 +406,7 @@ function LogisticsView({ orders, providers, onOpen }: { orders: OperationOrder[]
           const deliveryCapacity = day.transportTotals.internal + day.transportTotals.externalConfirmed;
           const hasIssue = day.transportTotals.missing > 0;
           const dayDate = new Date(`${day.date}T12:00:00`);
-          return <article key={day.date} className={`${day.date === todayKey ? "today" : ""} ${hasIssue ? "issue" : ""}`}>
+          return <button key={day.date} type="button" className={`${day.date === todayKey ? "today" : ""} ${hasIssue ? "issue" : ""}`} onClick={() => setOpenDate(day.date)} aria-label={`Ajustar transporte del ${formatOrderDate(day.date)}${hasIssue ? `: faltan ${number.format(day.transportTotals.missing)} palets` : ""}`}>
             <small>{new Intl.DateTimeFormat("es-UY", { weekday: "short" }).format(dayDate)}</small>
             <strong>{dayDate.getDate()}</strong>
             <div>
@@ -403,7 +414,7 @@ function LogisticsView({ orders, providers, onOpen }: { orders: OperationOrder[]
               {hasIssue ? <em className="missing"><b>{number.format(day.transportTotals.missing)}</b> faltan</em> : <em><b>{number.format(Math.max(deliveryCapacity - day.transportTotals.committed, 0))}</b> libres</em>}
             </div>
             {hasIssue && <mark><AlertTriangle size={12} aria-hidden="true" /> Revisar</mark>}
-          </article>;
+          </button>;
         })}
       </div>}
       <div className="logistics-board">
@@ -423,16 +434,10 @@ function LogisticsView({ orders, providers, onOpen }: { orders: OperationOrder[]
       </div>
     </section>
     <div className="logistics-transport-container">
-      {capacity && <GeneralTransport capacity={capacity} providers={providers.filter((provider) => provider.type === "Transporte")} onSave={async (url, body) => {
-        setCapacityError("");
-        const response = await fetch(url, { method: "PUT", headers: { "content-type": "application/json" }, body: JSON.stringify(body) });
-        const payload = await response.json() as { error?: string };
-        if (!response.ok) { const message = payload.error ?? "No se pudo guardar la capacidad de transporte."; setCapacityError(message); throw new Error(message); }
-        const refreshed = await fetch(`/api/capacity?from=${dateKey(weekStart)}&to=${dateKey(weekEnd)}`).then((item) => item.json()) as { capacity?: CapacitySnapshot };
-        setCapacity(refreshed.capacity ?? null);
-      }} />}
+      {capacity && <GeneralTransport capacity={capacity} providers={providers.filter((provider) => provider.type === "Transporte")} onSave={saveTransportCapacity} />}
       {capacityError && <p className="capacity-error" role="alert">{capacityError}</p>}
     </div>
+    {selectedDay && <DayLogisticsAdjustmentModal day={selectedDay} transporters={providers.filter((provider) => provider.type === "Transporte")} onClose={() => setOpenDate(null)} onSave={saveTransportCapacity} />}
     </>
   );
 }

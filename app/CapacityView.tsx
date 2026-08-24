@@ -99,7 +99,6 @@ export default function CapacityView({ providers }: { providers: Provider[] }) {
   const selected = capacity?.days.find((day) => day.date === openDate);
   const todayTeam = capacity?.days.find((day) => day.date === dateKey(today))?.internalTeam;
   const sawmills = providers.filter((provider) => provider.type === "Aserradero");
-  const transporters = providers.filter((provider) => provider.type === "Transporte");
 
   return <section className="capacity-page" aria-labelledby="capacity-title">
     <div className="module-surface capacity-week">
@@ -137,7 +136,7 @@ export default function CapacityView({ providers }: { providers: Provider[] }) {
       <GeneralExternalProduction capacity={capacity} providers={sawmills} onSave={save} />
     </>}
 
-    {selected && capacity && <DayAdjustmentModal day={selected} sawmills={sawmills} transporters={transporters} onClose={() => setOpenDate(null)} onSave={save} />}
+    {selected && capacity && <DayAdjustmentModal day={selected} sawmills={sawmills} onClose={() => setOpenDate(null)} onSave={save} />}
   </section>;
 }
 
@@ -236,7 +235,7 @@ export function GeneralTransport({ capacity, providers, onSave }: { capacity: Ca
   </section>;
 }
 
-function DayAdjustmentModal({ day, sawmills, transporters, onClose, onSave }: { day: CapacityDay; sawmills: Provider[]; transporters: Provider[]; onClose: () => void; onSave: (url: string, body: unknown) => Promise<void> }) {
+function DayAdjustmentModal({ day, sawmills, onClose, onSave }: { day: CapacityDay; sawmills: Provider[]; onClose: () => void; onSave: (url: string, body: unknown) => Promise<void> }) {
   const closeRef = useRef<HTMLButtonElement>(null);
   useEffect(() => {
     closeRef.current?.focus();
@@ -265,12 +264,35 @@ function DayAdjustmentModal({ day, sawmills, transporters, onClose, onSave }: { 
         <DailyProviderAssignment date={day.date} kind="production" providers={sawmills} onSave={onSave} />
       </section>
 
+      {day.imports.length > 0 && <section className="day-adjustment-section imports" aria-labelledby="day-imports-title"><h3 id="day-imports-title">Ingresos por importación</h3>{day.imports.map((entry) => <p key={entry.orderId}><strong>{entry.client}</strong> · {number.format(entry.pallets)} palets</p>)}</section>}
+    </section>
+  </div>;
+}
+
+export function DayLogisticsAdjustmentModal({ day, transporters, onClose, onSave }: { day: CapacityDay; transporters: Provider[]; onClose: () => void; onSave: (url: string, body: unknown) => Promise<void> }) {
+  const closeRef = useRef<HTMLButtonElement>(null);
+  const transportCapacity = day.transportTotals.internal + day.transportTotals.externalConfirmed;
+  const missing = day.transportTotals.missing;
+  useEffect(() => {
+    closeRef.current?.focus();
+    const closeWithEscape = (event: KeyboardEvent) => { if (event.key === "Escape") onClose(); };
+    window.addEventListener("keydown", closeWithEscape);
+    return () => window.removeEventListener("keydown", closeWithEscape);
+  }, [onClose]);
+
+  return <div className="modal-backdrop capacity-modal-backdrop" role="presentation" onMouseDown={(event) => { if (event.target === event.currentTarget) onClose(); }}>
+    <section className="capacity-day-modal" role="dialog" aria-modal="true" aria-labelledby="day-logistics-title">
+      <header><div><small>Capacidad logística del día</small><h2 id="day-logistics-title">{formatDay(day.date)}</h2><p>Asigná capacidad de transporte solo para este día. No se modifica la capacidad general.</p></div><button ref={closeRef} type="button" onClick={onClose} aria-label="Cerrar ajustes"><X size={21} /></button></header>
+      {missing > 0 && <div className="capacity-day-alert"><AlertTriangle size={19} /><div><strong>Este día necesita revisión</strong><p>Faltan {number.format(missing)} palets de transporte confirmados.</p></div></div>}
+      <div className="capacity-day-summary" aria-label="Resumen logístico del día">
+        <Metric label="Palets a entregar" value={`${number.format(day.transportTotals.committed)} palets`} />
+        <Metric label="Capacidad confirmada" value={`${number.format(transportCapacity)} palets`} />
+        <Metric label={missing > 0 ? "Faltan camiones" : "Capacidad libre"} value={`${number.format(missing > 0 ? missing : Math.max(transportCapacity - day.transportTotals.committed, 0))} palets`} tone={missing > 0 ? "danger" : undefined} />
+      </div>
       <section className="day-adjustment-section day-transport" aria-labelledby="day-transport-title"><h3 id="day-transport-title"><Truck size={18} />Transporte</h3>
         {day.transport.map((entry) => <AdjustmentRow key={`${entry.source}-${entry.providerId ?? "internal"}`} name={entry.providerName} sourceName={entry.providerName} responsible={entry.adjustmentResponsible} baseCapacity={entry.baseCapacity} adjustment={entry.adjustment} committed={entry.committed} capacity={entry.capacity} overload={entry.overload} onSave={(palletAdjustment, responsible) => onSave("/api/capacity/adjustments", { date: day.date, resourceType: "transport", source: entry.source, providerId: entry.providerId, palletAdjustment, responsible, status: entry.status })} />)}
         <DailyProviderAssignment date={day.date} kind="transport" providers={transporters} onSave={onSave} />
       </section>
-
-      {day.imports.length > 0 && <section className="day-adjustment-section imports" aria-labelledby="day-imports-title"><h3 id="day-imports-title">Ingresos por importación</h3>{day.imports.map((entry) => <p key={entry.orderId}><strong>{entry.client}</strong> · {number.format(entry.pallets)} palets</p>)}</section>}
     </section>
   </div>;
 }
