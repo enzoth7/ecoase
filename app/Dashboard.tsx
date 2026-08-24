@@ -29,7 +29,14 @@ import {
 } from "./data";
 
 const number = new Intl.NumberFormat("es-UY");
-type DashboardSection = "pedidos" | "calendario" | "logistica" | "clientes";
+export type DashboardSection = "pedidos" | "calendario" | "logistica" | "clientes";
+
+const sectionPaths: Record<DashboardSection, string> = {
+  pedidos: "/pedidos",
+  calendario: "/calendario",
+  logistica: "/logistica",
+  clientes: "/clientes",
+};
 
 const weekDays = [
   { name: "Lun", day: 10 },
@@ -311,8 +318,8 @@ function matchesFilter(order: OperationOrder, filter: OrderFilter) {
   return true;
 }
 
-export default function Dashboard() {
-  const [section, setSection] = useState<DashboardSection>("pedidos");
+export default function Dashboard({ initialSection = "pedidos" }: { initialSection?: DashboardSection }) {
+  const [section, setSection] = useState<DashboardSection>(initialSection);
   const [filter, setFilter] = useState<OrderFilter>("gestion");
   const [query, setQuery] = useState("");
   const [orderRows, setOrderRows] = useState<OperationOrder[]>(initialOrders);
@@ -326,6 +333,12 @@ export default function Dashboard() {
       .then((payload: { orders?: OperationOrder[] }) => { if (payload.orders) setOrderRows(payload.orders); })
       .catch(() => undefined);
   }, []);
+
+  useEffect(() => {
+    if (window.location.hash || window.location.pathname === "/") {
+      window.history.replaceState({}, "", sectionPaths[initialSection]);
+    }
+  }, [initialSection]);
 
   const visibleOrders = useMemo(() => {
     const normalized = query.trim().toLocaleLowerCase("es");
@@ -366,6 +379,7 @@ export default function Dashboard() {
 
   const openClientOrders = (client: string) => {
     setSection("pedidos");
+    window.history.pushState({}, "", sectionPaths.pedidos);
     setFilter("todos");
     setQuery(client);
     setSelectedId(orderRows.find((order) => order.client === client)?.id ?? orderRows[0].id);
@@ -373,6 +387,7 @@ export default function Dashboard() {
 
   const openOrder = (id: string) => {
     setSection("pedidos");
+    window.history.pushState({}, "", sectionPaths.pedidos);
     setFilter("todos");
     setQuery("");
     setSelectedId(id);
@@ -384,6 +399,7 @@ export default function Dashboard() {
     setFilter("gestion");
     setQuery("");
     setSection("pedidos");
+    window.history.replaceState({}, "", sectionPaths.pedidos);
     setShowAddOrder(false);
   };
 
@@ -396,7 +412,7 @@ export default function Dashboard() {
 
   return (
     <div className="dashboard-shell">
-      <a className="skip-link" href="#main-content">Saltar al contenido</a>
+      <button className="skip-link" type="button" onClick={() => document.getElementById("main-content")?.focus()}>Saltar al contenido</button>
 
       <aside className="app-sidebar" aria-label="Navegación principal">
         <div className="brand" aria-label="Ecoase">
@@ -407,18 +423,18 @@ export default function Dashboard() {
         <div className="sidebar-section">
           <p>Principal</p>
           <nav aria-label="Secciones principales">
-            <button type="button" className={section === "pedidos" ? "active" : ""} onClick={() => setSection("pedidos")} aria-pressed={section === "pedidos"}>
+            <a className={section === "pedidos" ? "active" : ""} href="/pedidos" aria-current={section === "pedidos" ? "page" : undefined}>
               <ClipboardList size={17} aria-hidden="true" /><span>Pedidos</span>
-            </button>
-            <button type="button" className={section === "calendario" ? "active" : ""} onClick={() => setSection("calendario")} aria-pressed={section === "calendario"}>
+            </a>
+            <a className={section === "calendario" ? "active" : ""} href="/calendario" aria-current={section === "calendario" ? "page" : undefined}>
               <CalendarDays size={17} aria-hidden="true" /><span>Calendario</span>
-            </button>
-            <button type="button" className={section === "logistica" ? "active" : ""} onClick={() => setSection("logistica")} aria-pressed={section === "logistica"}>
+            </a>
+            <a className={section === "logistica" ? "active" : ""} href="/logistica" aria-current={section === "logistica" ? "page" : undefined}>
               <Truck size={17} aria-hidden="true" /><span>Logística</span>
-            </button>
-            <button type="button" className={section === "clientes" ? "active" : ""} onClick={() => setSection("clientes")} aria-pressed={section === "clientes"}>
+            </a>
+            <a className={section === "clientes" ? "active" : ""} href="/clientes" aria-current={section === "clientes" ? "page" : undefined}>
               <Users size={17} aria-hidden="true" /><span>Clientes</span>
-            </button>
+            </a>
           </nav>
         </div>
 
@@ -429,7 +445,7 @@ export default function Dashboard() {
       </aside>
 
       <div className="workspace">
-        <main id="main-content" className="dashboard-main">
+        <main id="main-content" className="dashboard-main" tabIndex={-1}>
         <section className="dashboard-heading" aria-labelledby="page-title">
           <div>
             <p className="eyebrow">{sectionCopy[section].eyebrow}</p>

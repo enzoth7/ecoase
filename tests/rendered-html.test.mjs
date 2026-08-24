@@ -13,7 +13,7 @@ async function request(path = "/", init) {
   );
 }
 
-const render = () => request();
+const render = () => request("/pedidos");
 
 test("renderiza un dashboard operativo de pedidos", async () => {
   const response = await render();
@@ -45,6 +45,23 @@ test("publica metadatos del control operativo", async () => {
   assert.match(html, /<title>Ecoase — Control operativo<\/title>/i);
   assert.match(html, /Control de pedidos, preparación, logística y entregas de Ecoase\./i);
   assert.doesNotMatch(html, /Piloto operativo/i);
+});
+
+test("usa rutas reales sin navegación por hash", async () => {
+  const rootResponse = await request("/");
+  assert.equal(rootResponse.status, 307);
+  assert.equal(rootResponse.headers.get("location"), "/pedidos");
+
+  for (const path of ["/pedidos", "/calendario", "/logistica", "/clientes"]) {
+    const response = await request(path);
+    assert.equal(response.status, 200);
+  }
+
+  const html = await (await request("/pedidos")).text();
+  assert.doesNotMatch(html, /href="#/i);
+  assert.match(html, /href="\/calendario"/i);
+  assert.match(html, /href="\/logistica"/i);
+  assert.match(html, /href="\/clientes"/i);
 });
 
 test("expone endpoints separados para cada módulo", async () => {

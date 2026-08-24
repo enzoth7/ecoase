@@ -83,10 +83,12 @@ a:focus-visible {
   left: 12px;
   transform: translateY(-80px);
   padding: 10px 14px;
+  border: 0;
   border-radius: 8px;
   background: #fff;
   color: var(--forest);
   font-weight: 750;
+  cursor: pointer;
   text-decoration: none;
   box-shadow: var(--shadow-md);
   transition: transform 180ms ease;
@@ -171,7 +173,8 @@ a:focus-visible {
   gap: 5px;
 }
 
-.sidebar-section button {
+.sidebar-section button,
+.sidebar-section a {
   width: 100%;
   min-height: 46px;
   display: grid;
@@ -185,26 +188,31 @@ a:focus-visible {
   color: #c8d9d2;
   text-align: left;
   cursor: pointer;
+  text-decoration: none;
   transition: color 180ms ease, background 180ms ease, border-color 180ms ease;
 }
 
-.sidebar-section button:hover {
+.sidebar-section button:hover,
+.sidebar-section a:hover {
   background: rgba(255, 255, 255, 0.07);
   color: #fff;
 }
 
-.sidebar-section button.active {
+.sidebar-section button.active,
+.sidebar-section a.active {
   border-color: rgba(255, 255, 255, 0.13);
   background: rgba(255, 255, 255, 0.11);
   color: #fff;
 }
 
-.sidebar-section button span {
+.sidebar-section button span,
+.sidebar-section a span {
   font-size: 12px;
   font-weight: 670;
 }
 
-.sidebar-section button b {
+.sidebar-section button b,
+.sidebar-section a b {
   min-width: 24px;
   height: 24px;
   display: grid;
@@ -214,7 +222,8 @@ a:focus-visible {
   font-size: 10px;
 }
 
-.sidebar-section button.active b {
+.sidebar-section button.active b,
+.sidebar-section a.active b {
   background: rgba(255, 255, 255, 0.16);
 }
 
@@ -1491,7 +1500,8 @@ h3 {
     display: none;
   }
 
-  .sidebar-section button {
+  .sidebar-section button,
+  .sidebar-section a {
     width: auto;
     min-width: max-content;
     grid-template-columns: 18px auto auto;
@@ -1651,14 +1661,16 @@ h3 {
     height: 34px;
   }
 
-  .sidebar-section button {
+  .sidebar-section button,
+  .sidebar-section a {
     min-height: 42px;
     grid-template-columns: 16px auto auto;
     gap: 6px;
     padding-inline: 8px;
   }
 
-  .sidebar-section button span {
+  .sidebar-section button span,
+  .sidebar-section a span {
     font-size: 11px;
   }
 
