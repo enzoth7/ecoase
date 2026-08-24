@@ -25,6 +25,9 @@ test("renderiza un dashboard operativo de pedidos", async () => {
   assert.match(html, /app-sidebar/);
   assert.match(html, /En gestión/);
   assert.match(html, /Completados/);
+  assert.match(html, /Secciones principales/);
+  assert.match(html, /Clientes/);
+  assert.match(html, /Calendario/);
   assert.match(html, /Preparación y entrega/);
   assert.match(html, /Abastecimiento/);
   assert.match(html, /Logística/);

@@ -320,7 +320,9 @@ h3 {
 }
 
 .orders-surface,
-.order-detail {
+.order-detail,
+.clients-surface,
+.module-surface {
   border: 1px solid var(--line);
   border-radius: 18px;
   background: var(--surface);
@@ -936,6 +938,232 @@ h3 {
   font-size: 10px;
 }
 
+.clients-surface,
+.module-surface {
+  overflow: hidden;
+}
+
+.clients-toolbar,
+.module-toolbar {
+  min-height: 84px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 20px;
+  padding: 18px 20px;
+  border-bottom: 1px solid var(--line);
+}
+
+.clients-toolbar h2,
+.module-toolbar h2 {
+  font-size: 22px;
+}
+
+.clients-toolbar > span,
+.module-toolbar > span {
+  color: var(--muted);
+  font-size: 11px;
+  font-weight: 700;
+}
+
+.client-list {
+  display: grid;
+}
+
+.client-row {
+  width: 100%;
+  min-height: 82px;
+  display: grid;
+  grid-template-columns: 40px minmax(160px, 1fr) repeat(3, minmax(78px, 110px)) 20px;
+  align-items: center;
+  gap: 14px;
+  padding: 13px 18px;
+  border: 0;
+  border-bottom: 1px solid #ebeee9;
+  background: #fff;
+  text-align: left;
+  cursor: pointer;
+}
+
+.client-row:hover {
+  background: #f7faf8;
+}
+
+.client-row:last-child {
+  border-bottom: 0;
+}
+
+.client-avatar {
+  width: 38px;
+  height: 38px;
+  display: grid;
+  place-items: center;
+  border-radius: 10px;
+  background: var(--green-soft);
+  color: var(--forest-2);
+  font-size: 14px;
+  font-weight: 800;
+}
+
+.client-name,
+.client-row > span:not(.client-avatar) {
+  min-width: 0;
+  display: grid;
+  gap: 2px;
+}
+
+.client-name strong {
+  font-size: 13px;
+}
+
+.client-row small {
+  color: var(--muted);
+  font-size: 9px;
+  font-weight: 650;
+}
+
+.client-row > span:not(.client-name):not(.client-avatar) strong {
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+}
+
+.client-row .client-pending strong {
+  color: var(--amber);
+}
+
+.client-row .client-complete strong {
+  color: var(--green);
+}
+
+.client-row > svg {
+  color: #8e9692;
+}
+
+.calendar-board {
+  display: grid;
+  grid-template-columns: repeat(6, minmax(145px, 1fr));
+  min-height: 560px;
+  overflow-x: auto;
+}
+
+.calendar-day {
+  min-width: 145px;
+  padding: 15px 10px;
+  border-right: 1px solid var(--line);
+}
+
+.calendar-day:last-child {
+  border-right: 0;
+}
+
+.calendar-day > div:first-child {
+  display: grid;
+  gap: 1px;
+  padding: 0 4px 13px;
+}
+
+.calendar-day > div:first-child span,
+.calendar-day > div:first-child small {
+  color: var(--muted);
+  font-size: 9px;
+  font-weight: 700;
+  text-transform: uppercase;
+}
+
+.calendar-day > div:first-child strong {
+  font-size: 24px;
+}
+
+.calendar-orders {
+  display: grid;
+  gap: 8px;
+}
+
+.calendar-orders > button {
+  min-height: 118px;
+  display: grid;
+  justify-items: start;
+  gap: 3px;
+  padding: 10px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: var(--surface-soft);
+  text-align: left;
+  cursor: pointer;
+}
+
+.calendar-orders > button:hover {
+  border-color: #bad0c6;
+  background: #edf5f1;
+}
+
+.calendar-orders > button > strong {
+  margin-top: 3px;
+  font-size: 12px;
+}
+
+.calendar-orders > button > span:not(.status-badge),
+.calendar-orders > button > small,
+.calendar-orders > p {
+  color: var(--muted);
+  font-size: 9px;
+}
+
+.calendar-orders > p {
+  padding: 10px 4px;
+}
+
+.logistics-board {
+  display: grid;
+}
+
+.logistics-order {
+  width: 100%;
+  min-height: 82px;
+  display: grid;
+  grid-template-columns: 40px minmax(190px, 1fr) 120px 120px 120px 20px;
+  align-items: center;
+  gap: 14px;
+  padding: 13px 18px;
+  border: 0;
+  border-bottom: 1px solid #ebeee9;
+  background: #fff;
+  text-align: left;
+  cursor: pointer;
+}
+
+.logistics-order:hover {
+  background: #f7faf8;
+}
+
+.logistics-order > span:not(.status-badge) {
+  min-width: 0;
+  display: grid;
+  gap: 2px;
+}
+
+.logistics-order small {
+  overflow: hidden;
+  color: var(--muted);
+  font-size: 9px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.logistics-order strong {
+  font-size: 11px;
+}
+
+.logistics-icon {
+  width: 38px;
+  height: 38px;
+  display: grid !important;
+  place-items: center;
+  border-radius: 10px;
+  background: var(--blue-soft);
+  color: var(--blue);
+}
+
 @media (max-width: 1180px) {
   .operations-layout {
     grid-template-columns: minmax(0, 1.25fr) minmax(340px, 0.75fr);
@@ -1113,6 +1341,50 @@ h3 {
   .order-detail {
     padding: 18px 15px;
   }
+
+  .clients-toolbar {
+    align-items: flex-start;
+    padding: 16px;
+  }
+
+  .module-toolbar {
+    align-items: flex-start;
+    padding: 16px;
+  }
+
+  .client-row {
+    min-height: 108px;
+    grid-template-columns: 38px minmax(0, 1fr) 20px;
+    gap: 8px 11px;
+    padding: 13px 14px;
+  }
+
+  .client-row > span:not(.client-avatar):not(.client-name) {
+    grid-row: 2;
+  }
+
+  .client-row > svg {
+    grid-column: 3;
+    grid-row: 1;
+  }
+
+  .logistics-order {
+    min-height: 118px;
+    grid-template-columns: 38px minmax(0, 1fr) 20px;
+    gap: 8px 11px;
+    padding: 13px 14px;
+  }
+
+  .logistics-order > span:nth-of-type(3),
+  .logistics-order > span:nth-of-type(4),
+  .logistics-order > .status-badge {
+    grid-row: 2;
+  }
+
+  .logistics-order > svg {
+    grid-column: 3;
+    grid-row: 1;
+  }
 }
 
 @media (max-width: 430px) {
@@ -1169,6 +1441,12 @@ h3 {
   .operation-grid {
     grid-template-columns: 1fr;
   }
+
+  .filter-tabs {
+    overflow-x: auto;
+    padding-inline: 16px;
+  }
+
 
   .quantity-summary > div {
     padding: 10px 8px;
