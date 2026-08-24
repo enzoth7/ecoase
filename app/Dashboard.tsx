@@ -240,7 +240,7 @@ function EditProductModal({ product, onClose, onSave, onDelete }: { product: Pro
         <form onSubmit={save}>
           <label>Tipo<select name="kind" defaultValue={product.kind}><option value="Pallet">Pallet</option><option value="Piso">Piso</option><option value="Bin">Bin</option></select></label>
           <label>Medida<input name="measure" defaultValue={product.measure ?? ""} /></label>
-          <label>Tratamiento<select name="treatment" defaultValue={product.treatment ?? ""}><option value="">Sin tratamiento</option><option value="Marcado">Marcado</option><option value="HT">HT</option></select></label>
+          <label>Tratamiento<select name="treatment" defaultValue={product.treatment ?? ""}><option value="">Sin tratamiento</option><option value="Marcado">Marcado</option><option value="HT">HT</option><option value="Marcado y HT">Marcado y HT</option></select></label>
           {error && <p className="form-error" role="alert">{error}</p>}
           <div className="modal-actions"><button type="button" className="delete-button" onClick={remove} disabled={saving}>{confirmDelete ? "Confirmar eliminación" : "Eliminar producto"}</button><div><button type="button" className="secondary-button" onClick={onClose}>Cancelar</button><button type="submit" className="primary-button" disabled={saving}>{saving ? "Guardando…" : "Guardar cambios"}</button></div></div>
         </form>
@@ -736,7 +736,7 @@ export default function Dashboard({ initialSection = "pedidos" }: { initialSecti
     const response = await fetch(`/api/products/${id}`, {
       method: "PATCH",
       headers: { "content-type": "application/json" },
-      body: JSON.stringify({ ...changes, code: currentProduct.code, name: currentProduct.name }),
+      body: JSON.stringify(changes),
     });
     const payload = (await response.json()) as { product?: Product; error?: string };
     if (!response.ok || !payload.product) return false;

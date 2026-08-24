@@ -19,18 +19,12 @@ test("distingue proveedores de aserradero y transporte", () => {
   ]);
 });
 
-test("incluye el catálogo depurado de Palbin y Pamer", () => {
-  assert.equal(products.length, 58);
-  assert.equal(products.filter((product) => product.catalog === "Palbin" && product.kind === "Pallet").length, 26);
-  assert.equal(products.filter((product) => product.catalog === "Palbin" && product.kind === "Bin").length, 8);
-  assert.equal(products.filter((product) => product.catalog === "Palbin" && product.kind === "Piso").length, 2);
-  assert.equal(products.filter((product) => product.catalog === "Pamer" && product.kind === "Pallet").length, 22);
-  assert.ok(products.some((product) => product.name === "Proquimur" && product.measure === "120 × 100"));
-  assert.ok(products.some((product) => product.name === "Pallet" && product.measure === "122 × 102"));
-  assert.ok(products.some((product) => product.name === "Pallet" && product.measure === "216 × 110" && product.catalog === "Pamer"));
-  assert.equal(products.some((product) => product.specification), false);
-  assert.equal(products.some((product) => product.name.includes("×")), false);
-  assert.equal(products.some((product) => ["Azucarlito", "Reparados", "Granja Pocha punto rojo"].includes(product.name)), false);
+test("conserva una sola fila por medida y tipo", () => {
+  const productsWithMeasure = products.filter((product) => product.measure);
+  const productKeys = productsWithMeasure.map((product) => `${product.kind}|${product.measure}`);
+  assert.equal(new Set(productKeys).size, productsWithMeasure.length);
+  assert.ok(products.some((product) => product.measure === "120 × 100" && product.treatment === "Marcado y HT"));
+  assert.ok(products.every((product) => Object.keys(product).every((field) => ["id", "kind", "measure", "treatment"].includes(field))));
 });
 
 test("cada pedido reconcilia pedido, entrega y saldo", () => {

@@ -121,7 +121,10 @@ test("muestra el catálogo de productos sin clientes ni catálogos", async () =>
   assert.doesNotMatch(html, /Cliente \/ asignación|Catálogo|Azucarlito|Reparados|Granja Pocha punto rojo/);
   assert.match(html, /216 × 110/);
   assert.doesNotMatch(html, /abiertas|cerradas|reforzadas|Mercosur liviano/i);
-  assert.equal((await productsResponse.json()).products.length, 58);
+  const apiProducts = (await productsResponse.json()).products;
+  const measureKeys = apiProducts.filter((product) => product.measure).map((product) => `${product.kind}|${product.measure}`);
+  assert.equal(new Set(measureKeys).size, measureKeys.length);
+  assert.ok(apiProducts.every((product) => Object.keys(product).every((field) => ["id", "kind", "measure", "treatment"].includes(field))));
 });
 
 test("muestra proveedores por tipo y abastecimiento", async () => {
@@ -274,19 +277,20 @@ test("crea pedidos mediante POST /api/orders", async () => {
 });
 
 test("edita y elimina productos mediante endpoints separados", async () => {
+  const before = (await (await request("/api/products")).json()).products;
   const editResponse = await request("/api/products/palbin-p05", {
     method: "PATCH",
     headers: { "content-type": "application/json" },
-    body: JSON.stringify({ code: "P05", name: "Pallet nuevo", kind: "Pallet", measure: "122 × 102", treatment: "Marcado" }),
+    body: JSON.stringify({ kind: "Pallet", measure: "122 × 102", treatment: "Marcado" }),
   });
   assert.equal(editResponse.status, 200);
   const edited = await editResponse.json();
-  assert.equal(edited.product.name, "Pallet nuevo");
-  assert.equal(edited.product.assignment, undefined);
+  assert.equal(edited.product.measure, "122 × 102");
+  assert.deepEqual(Object.keys(edited.product).sort(), ["id", "kind", "measure", "treatment"]);
 
   const deleteResponse = await request("/api/products/palbin-p05", { method: "DELETE" });
   assert.equal(deleteResponse.status, 200);
   const products = await (await request("/api/products")).json();
   assert.equal(products.products.some((product) => product.id === "palbin-p05"), false);
-  assert.equal(products.products.length, 57);
+  assert.equal(products.products.length, before.length - 1);
 });

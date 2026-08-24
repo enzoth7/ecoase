@@ -86,19 +86,23 @@ export interface Provider {
 }
 
 export type ProductKind = "Pallet" | "Piso" | "Bin";
-export type ProductCatalog = "Palbin" | "Pamer";
+export type ProductTreatment = "Marcado" | "HT" | "Marcado y HT";
+type ProductCatalog = "Palbin" | "Pamer";
 
 export interface Product {
   id: string;
-  code: string;
-  name: string;
   kind: ProductKind;
   measure?: string;
+  treatment?: ProductTreatment;
+}
+
+type ProductSeed = Product & {
+  code: string;
+  name: string;
   assignment?: string;
   specification?: string;
-  treatment?: "Marcado" | "HT";
   catalog: ProductCatalog;
-}
+};
 
 export const providers: Provider[] = [
   { id: "blanc", name: "Blanc", type: "Aserradero", supplies: "Pallets y mercadería de terceros" },
@@ -108,7 +112,7 @@ export const providers: Provider[] = [
   { id: "matias", name: "Matías", type: "Transporte", supplies: "Traslado y entrega de pedidos" },
 ];
 
-export const products: Product[] = ([
+const productSeeds = [
   { id: "palbin-p01", code: "P01", name: "Cristal PET", kind: "Pallet", measure: "106 × 119", assignment: "Cristal PET", treatment: "Marcado", catalog: "Palbin" },
   { id: "palbin-p02", code: "P02", name: "Palets Citrus", kind: "Pallet", measure: "120 × 100", assignment: "Citrus", treatment: "Marcado", catalog: "Palbin" },
   { id: "palbin-p03", code: "P03", name: "Molinos San José", kind: "Pallet", measure: "120 × 100", assignment: "Molinos San José", treatment: "Marcado", catalog: "Palbin" },
@@ -167,11 +171,29 @@ export const products: Product[] = ([
   { id: "pamer-p20", code: "P20", name: "Pallet", kind: "Pallet", measure: "160 × 110", treatment: "HT", catalog: "Pamer" },
   { id: "pamer-p21", code: "P21", name: "Pallet", kind: "Pallet", measure: "216 × 110", treatment: "HT", catalog: "Pamer" },
   { id: "pamer-p22", code: "P22", name: "Pallet", kind: "Pallet", measure: "130 × 120", catalog: "Pamer" },
-] satisfies Product[]).map((product) => {
-  const cleanProduct = { ...product };
-  delete cleanProduct.assignment;
-  return cleanProduct;
-});
+] satisfies ProductSeed[];
+
+function combineTreatment(current?: ProductTreatment, next?: ProductTreatment) {
+  if (!current) return next;
+  if (!next || current === next || current === "Marcado y HT") return current;
+  return "Marcado y HT";
+}
+
+export const products: Product[] = productSeeds.reduce<Product[]>((unique, product) => {
+  if (!product.measure) {
+    unique.push({ id: product.id, kind: product.kind, treatment: product.treatment });
+    return unique;
+  }
+
+  const existing = unique.find((item) => item.kind === product.kind && item.measure === product.measure);
+  if (existing) {
+    existing.treatment = combineTreatment(existing.treatment, product.treatment);
+    return unique;
+  }
+
+  unique.push({ id: product.id, kind: product.kind, measure: product.measure, treatment: product.treatment });
+  return unique;
+}, []);
 
 export const orders: OperationOrder[] = [
   {
