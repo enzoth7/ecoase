@@ -114,6 +114,7 @@ type ClientSummary = {
   delivered: number;
   pending: number;
   activeOrders: number;
+  activePallets: number;
 };
 
 function ClientsView({ clients, onOpen, onAdd }: { clients: ClientSummary[]; onOpen: (client: string) => void; onAdd: () => void }) {
@@ -136,7 +137,7 @@ function ClientsView({ clients, onOpen, onAdd }: { clients: ClientSummary[]; onO
             <div><strong>{client.address ?? "—"}</strong></div>
             <div><strong>{client.department ?? "—"}</strong></div>
             <div><strong>{number.format(client.delivered)}</strong></div>
-            <div className={client.activeOrders > 0 ? "client-pending" : "client-complete"}><strong>{client.activeOrders > 0 ? `Sí · ${client.activeOrders}` : "No"}</strong></div>
+            <div className={client.activeOrders > 0 ? "client-pending" : "client-complete"}><strong>{client.activeOrders > 0 ? `${client.activeOrders} (${number.format(client.activePallets)})` : "0 (0)"}</strong></div>
             <ChevronRight size={19} aria-hidden="true" />
           </button>
         ))}
@@ -728,18 +729,18 @@ export default function Dashboard({ initialSection = "pedidos" }: { initialSecti
   const clients = useMemo<ClientSummary[]>(() => {
     const summaries = new Map<string, ClientSummary>();
     orderRows.forEach((order) => {
-      const current = summaries.get(order.client) ?? { name: order.client, orders: 0, requested: 0, delivered: 0, pending: 0, activeOrders: 0 };
+      const current = summaries.get(order.client) ?? { name: order.client, orders: 0, requested: 0, delivered: 0, pending: 0, activeOrders: 0, activePallets: 0 };
       current.orders += 1;
       current.requested += order.requested;
       current.delivered += order.delivered;
       current.pending += order.pending;
-      if (order.status !== "completado") current.activeOrders += 1;
+      if (order.status !== "completado") { current.activeOrders += 1; current.activePallets += order.requested; }
       summaries.set(order.client, current);
     });
     registeredClients.forEach((client) => {
       const current = summaries.get(client.name);
       if (current) Object.assign(current, { address: client.address, department: client.department });
-      else summaries.set(client.name, { ...client, orders: 0, requested: 0, delivered: 0, pending: 0, activeOrders: 0 });
+      else summaries.set(client.name, { ...client, orders: 0, requested: 0, delivered: 0, pending: 0, activeOrders: 0, activePallets: 0 });
     });
     return [...summaries.values()].sort((a, b) => b.pending - a.pending || a.name.localeCompare(b.name, "es"));
   }, [orderRows, registeredClients]);

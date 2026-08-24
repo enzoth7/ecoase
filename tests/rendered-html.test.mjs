@@ -310,7 +310,7 @@ test("agrega productos y clientes mediante sus endpoints", async () => {
   assert.equal(createdClient.department, "Canelones");
 
   const clients = (await (await request("/api/clients")).json()).clients;
-  assert.ok(clients.some((client) => client.name === "Cliente nuevo" && client.orders === 0 && client.activeOrders === 0));
+  assert.ok(clients.some((client) => client.name === "Cliente nuevo" && client.orders === 0 && client.activeOrders === 0 && client.activePallets === 0));
 });
 
 test("edita y elimina productos mediante endpoints separados", async () => {
