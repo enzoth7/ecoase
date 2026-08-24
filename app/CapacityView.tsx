@@ -131,7 +131,7 @@ export default function CapacityView({ providers }: { providers: Provider[] }) {
 }
 
 function GeneralInternalProduction({ capacity, onSave }: { capacity: CapacitySnapshot; onSave: (url: string, body: unknown) => Promise<void> }) {
-  return <section className="module-surface capacity-section" aria-labelledby="internal-title">
+  return <section className="module-surface capacity-section capacity-internal" aria-labelledby="internal-title">
     <div className="capacity-section-heading"><div className="capacity-icon"><Factory size={20} /></div><div><h2 id="internal-title">Producción interna</h2><small>Dotación y capacidad diaria habitual</small></div></div>
     <div className="capacity-operation-grid">
       {operations.map((operation) => <GeneralInternalOperation key={operation} operation={operation} capacity={capacity} onSave={onSave} />)}
@@ -174,7 +174,7 @@ function GeneralExternalProduction({ capacity, providers, onSave }: { capacity: 
     const form = new FormData(event.currentTarget);
     void onSave("/api/capacity/external-production", { providerId: form.get("providerId"), operation: form.get("operation"), palletCapacity: Number(form.get("palletCapacity")), status: form.get("status") });
   };
-  return <section className="module-surface capacity-section" aria-labelledby="external-title">
+  return <section className="module-surface capacity-section capacity-external" aria-labelledby="external-title">
     <div className="capacity-section-heading"><div className="capacity-icon"><Factory size={20} /></div><div><h2 id="external-title">Producción externa</h2><small>Capacidad diaria habitual por aserradero</small></div></div>
     {capacity.externalDefaults.length > 0 ? <div className="capacity-table"><div className="capacity-table-heading general"><div>Aserradero</div><div>Operación</div><div>Estado</div><div>Capacidad diaria</div></div>{capacity.externalDefaults.map((entry) => <div className="capacity-table-row general" key={`${entry.providerId}-${entry.operation}`}><strong>{providers.find((provider) => provider.id === entry.providerId)?.name ?? "Proveedor"}</strong><div>{capacityOperationLabels[entry.operation]}</div><div>{entry.status === "confirmed" ? "Confirmada" : "Estimada"}</div><div>{number.format(entry.palletCapacity)} palets</div></div>)}</div> : <p className="capacity-empty">Todavía no hay capacidad general de aserraderos.</p>}
     <form className="capacity-add-form" onSubmit={submit}>
@@ -194,7 +194,7 @@ function GeneralTransport({ capacity, providers, onSave }: { capacity: CapacityS
     const form = new FormData(event.currentTarget);
     void onSave("/api/capacity/transport", { source, providerId: source === "external" ? form.get("providerId") : undefined, palletCapacity: Number(form.get("palletCapacity")), status: source === "internal" ? "confirmed" : form.get("status") as CapacityStatus });
   };
-  return <section className="module-surface capacity-section" aria-labelledby="transport-title">
+  return <section className="module-surface capacity-section capacity-transport" aria-labelledby="transport-title">
     <div className="capacity-section-heading"><div className="capacity-icon"><Truck size={20} /></div><div><h2 id="transport-title">Transporte</h2><small>Capacidad diaria habitual en palets</small></div></div>
     {capacity.transportDefaults.length > 0 ? <div className="capacity-table"><div className="capacity-table-heading general"><div>Origen</div><div>Estado</div><div>Capacidad diaria</div><div>Tipo</div></div>{capacity.transportDefaults.map((entry) => <div className="capacity-table-row general" key={`${entry.source}-${entry.providerId ?? "internal"}`}><strong>{entry.source === "internal" ? "Transporte interno" : providers.find((provider) => provider.id === entry.providerId)?.name ?? "Transportista"}</strong><div>{entry.status === "confirmed" ? "Confirmada" : "Estimada"}</div><div>{number.format(entry.palletCapacity)} palets</div><div>{entry.source === "internal" ? "Propio" : "Externo"}</div></div>)}</div> : <p className="capacity-empty">Todavía no hay capacidad general de transporte.</p>}
     <form className="capacity-add-form" onSubmit={submit}>

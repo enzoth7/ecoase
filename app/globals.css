@@ -2261,6 +2261,21 @@ h3 {
 
 .capacity-section-heading h2 { font-size: 18px; }
 .capacity-icon { width: 40px; height: 40px; display: grid; place-items: center; border-radius: 10px; background: var(--green-soft); color: var(--forest-2); }
+.capacity-internal { border-color: #b6dbc2; background: #edf8f1; }
+.capacity-external { border-color: #bfd7eb; background: #eff7ff; }
+.capacity-transport { border-color: #edd49b; background: #fff8e6; }
+.capacity-internal .capacity-section-heading,
+.capacity-external .capacity-section-heading,
+.capacity-transport .capacity-section-heading { background: transparent; }
+.capacity-internal .capacity-icon { background: #d9f0e1; color: var(--green); }
+.capacity-external .capacity-icon { background: #dceefd; color: var(--blue); }
+.capacity-transport .capacity-icon { background: #ffedbf; color: #9a6500; }
+.capacity-internal .capacity-operation-card,
+.capacity-external .capacity-table-row,
+.capacity-transport .capacity-table-row { background: transparent; }
+.capacity-internal .capacity-add-form,
+.capacity-external .capacity-add-form,
+.capacity-transport .capacity-add-form { background: rgba(255, 255, 255, .42); }
 .capacity-operation-grid { display: grid; grid-template-columns: repeat(3, 1fr); }
 .capacity-operation-card { min-width: 0; padding: 18px; border-right: 1px solid var(--line); }
 .capacity-operation-card:last-child { border-right: 0; }
