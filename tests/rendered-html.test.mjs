@@ -159,6 +159,11 @@ test("administra capacidad general, ajustes diarios y permite sobrecarga", async
   const released = (await (await request("/api/capacity?from=2026-09-07&to=2026-09-08")).json()).capacity;
   assert.equal(released.days[0].internalProduction.find((item) => item.operation === "assembly").committed, 0);
   assert.equal(released.days[1].transportTotals.committed, 0);
+
+  const deletedRule = await request("/api/capacity/rules", { method: "DELETE", headers: { "content-type": "application/json" }, body: JSON.stringify({ operation: "assembly", peopleCount: 5 }) });
+  assert.equal(deletedRule.status, 200);
+  const withoutRule = (await (await request("/api/capacity?from=2026-09-07&to=2026-09-07")).json()).capacity;
+  assert.ok(!withoutRule.rules.some((item) => item.operation === "assembly" && item.peopleCount === 5));
 });
 
 test("muestra el calendario por semana con controles de navegación", async () => {

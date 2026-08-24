@@ -583,6 +583,14 @@ export async function saveCapacityRule(value: CapacityRule) {
   return value;
 }
 
+export async function deleteCapacityRule(operation: CapacityOperation, peopleCount: number) {
+  if (!useMemoryStore) return supabaseRequest<boolean>("/rest/v1/rpc/delete_capacity_rule", { method: "POST", body: JSON.stringify({ p_operation: operation, p_people_count: peopleCount }) });
+  const index = memoryCapacityRules.findIndex((item) => item.operation === operation && item.peopleCount === peopleCount);
+  if (index === -1) return false;
+  memoryCapacityRules.splice(index, 1);
+  return true;
+}
+
 export async function saveInternalProduction(value: InternalProductionDefault) {
   if (!useMemoryStore) await supabaseRequest("/rest/v1/rpc/upsert_internal_production_default", { method: "POST", body: JSON.stringify({ p_operation: value.operation, p_people_count: value.peopleCount, p_manual_capacity: value.manualCapacity ?? null }) });
   else upsertMemory(memoryInternalDefaults, (item) => item.operation === value.operation, value);

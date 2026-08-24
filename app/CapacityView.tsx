@@ -1,6 +1,6 @@
 "use client";
 
-import { AlertTriangle, ChevronLeft, ChevronRight, Factory, Save, Truck, Users, X } from "lucide-react";
+import { AlertTriangle, ChevronLeft, ChevronRight, Factory, Save, Trash2, Truck, Users, X } from "lucide-react";
 import { useEffect, useMemo, useRef, useState, type FormEvent } from "react";
 import { capacityOperationLabels, type CapacityDay, type CapacitySnapshot } from "./capacity";
 import type { CapacityOperation, CapacityStatus, Provider, TransportSource } from "./data";
@@ -78,6 +78,16 @@ export default function CapacityView({ providers }: { providers: Provider[] }) {
     try { await put(url, body); await load(); }
     catch (reason) { setError(reason instanceof Error ? reason.message : "No se pudo guardar."); throw reason; }
   };
+  const remove = async (url: string, body: unknown) => {
+    if (!window.confirm("¿Eliminar esta regla? La capacidad dejará de calcularse para esa cantidad de personas.")) return;
+    setError("");
+    try {
+      const response = await fetch(url, { method: "DELETE", headers: { "content-type": "application/json" }, body: JSON.stringify(body) });
+      const payload = await response.json() as { error?: string };
+      if (!response.ok) throw new Error(payload.error ?? "No se pudo eliminar la regla.");
+      await load();
+    } catch (reason) { setError(reason instanceof Error ? reason.message : "No se pudo eliminar."); }
+  };
 
   const moveWeek = (offset: number) => {
     const next = new Date(week);
@@ -121,7 +131,7 @@ export default function CapacityView({ providers }: { providers: Provider[] }) {
     {error && <p className="capacity-error" role="alert">{error}</p>}
     {loading && !capacity ? <div className="module-surface capacity-loading">Cargando capacidad…</div> : capacity && <>
       <div className="capacity-general-heading"><div><h2>Capacidad general</h2><p>Estos valores se repiten de lunes a domingo. Los cambios excepcionales se cargan desde cada día.</p></div></div>
-      <GeneralInternalProduction capacity={capacity} onSave={save} />
+      <GeneralInternalProduction capacity={capacity} onSave={save} onDelete={remove} />
       <GeneralExternalProduction capacity={capacity} providers={sawmills} onSave={save} />
       <GeneralTransport capacity={capacity} providers={transporters} onSave={save} />
     </>}
@@ -130,16 +140,16 @@ export default function CapacityView({ providers }: { providers: Provider[] }) {
   </section>;
 }
 
-function GeneralInternalProduction({ capacity, onSave }: { capacity: CapacitySnapshot; onSave: (url: string, body: unknown) => Promise<void> }) {
+function GeneralInternalProduction({ capacity, onSave, onDelete }: { capacity: CapacitySnapshot; onSave: (url: string, body: unknown) => Promise<void>; onDelete: (url: string, body: unknown) => Promise<void> }) {
   return <section className="module-surface capacity-section capacity-internal" aria-labelledby="internal-title">
     <div className="capacity-section-heading"><div className="capacity-icon"><Factory size={20} /></div><div><h2 id="internal-title">Producción interna</h2><small>Dotación y capacidad diaria habitual</small></div></div>
     <div className="capacity-operation-grid">
-      {operations.map((operation) => <GeneralInternalOperation key={operation} operation={operation} capacity={capacity} onSave={onSave} />)}
+      {operations.map((operation) => <GeneralInternalOperation key={operation} operation={operation} capacity={capacity} onSave={onSave} onDelete={onDelete} />)}
     </div>
   </section>;
 }
 
-function GeneralInternalOperation({ operation, capacity, onSave }: { operation: CapacityOperation; capacity: CapacitySnapshot; onSave: (url: string, body: unknown) => Promise<void> }) {
+function GeneralInternalOperation({ operation, capacity, onSave, onDelete }: { operation: CapacityOperation; capacity: CapacitySnapshot; onSave: (url: string, body: unknown) => Promise<void>; onDelete: (url: string, body: unknown) => Promise<void> }) {
   const defaults = capacity.internalDefaults.find((item) => item.operation === operation);
   const [people, setPeople] = useState(String(defaults?.peopleCount ?? 0));
   const [manual, setManual] = useState(defaults?.manualCapacity === undefined ? "" : String(defaults.manualCapacity));
@@ -158,7 +168,7 @@ function GeneralInternalOperation({ operation, capacity, onSave }: { operation: 
       <button type="submit" aria-label={`Guardar capacidad general de ${capacityOperationLabels[operation]}`}><Save size={17} /></button>
     </form>
     <details className="capacity-rules"><summary>Reglas por personas ({rules.length})</summary>
-      {rules.length > 0 && <ul>{rules.map((rule) => <li key={rule.peopleCount}>{rule.peopleCount} personas → {number.format(rule.palletCapacity)} palets</li>)}</ul>}
+      {rules.length > 0 && <ul>{rules.map((rule) => <li key={rule.peopleCount}><p>{rule.peopleCount} personas → {number.format(rule.palletCapacity)} palets</p><button type="button" className="capacity-rule-delete" onClick={() => void onDelete("/api/capacity/rules", { operation, peopleCount: rule.peopleCount })} aria-label={`Eliminar regla de ${rule.peopleCount} personas para ${capacityOperationLabels[operation]}`}><Trash2 size={14} />Eliminar</button></li>)}</ul>}
       <form onSubmit={(event) => { event.preventDefault(); void onSave("/api/capacity/rules", { operation, peopleCount: Number(rulePeople), palletCapacity: Number(ruleCapacity) }); setRulePeople(""); setRuleCapacity(""); }}>
         <label>Personas<input type="number" min="0" step="1" value={rulePeople} onChange={(event) => setRulePeople(event.target.value)} required /></label>
         <label>Palets/día<input type="number" min="0" step="1" value={ruleCapacity} onChange={(event) => setRuleCapacity(event.target.value)} required /></label>
