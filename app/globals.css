@@ -98,28 +98,31 @@ a:focus-visible {
 
 .dashboard-shell {
   min-height: 100vh;
+  display: grid;
+  grid-template-columns: 232px minmax(0, 1fr);
 }
 
-.site-header {
-  min-height: 70px;
+.app-sidebar {
+  position: sticky;
+  top: 0;
+  height: 100vh;
   display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 24px;
-  padding: 10px clamp(20px, 4vw, 64px);
-  border-bottom: 1px solid rgba(255, 255, 255, 0.09);
+  flex-direction: column;
+  padding: 24px 16px 18px;
   background: var(--forest);
   color: #fff;
 }
 
 .brand,
-.week-label {
+.sidebar-week {
   display: flex;
   align-items: center;
 }
 
 .brand {
   gap: 11px;
+  padding: 0 8px 22px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.1);
 }
 
 .brand-mark {
@@ -135,7 +138,7 @@ a:focus-visible {
 }
 
 .brand > span:last-child,
-.week-label > span {
+.sidebar-week > span {
   display: grid;
 }
 
@@ -145,18 +148,90 @@ a:focus-visible {
 }
 
 .brand small,
-.week-label small {
+.sidebar-week small {
   color: #b9cec5;
   font-size: 11px;
 }
 
-.week-label {
-  gap: 9px;
+.sidebar-section {
+  margin-top: 32px;
 }
 
-.week-label strong {
+.sidebar-section > p {
+  margin: 0 10px 9px;
+  color: #9fb9ae;
+  font-size: 10px;
+  font-weight: 760;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.sidebar-section nav {
+  display: grid;
+  gap: 5px;
+}
+
+.sidebar-section button {
+  width: 100%;
+  min-height: 46px;
+  display: grid;
+  grid-template-columns: 22px minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 9px;
+  padding: 0 11px;
+  border: 1px solid transparent;
+  border-radius: 10px;
+  background: transparent;
+  color: #c8d9d2;
+  text-align: left;
+  cursor: pointer;
+  transition: color 180ms ease, background 180ms ease, border-color 180ms ease;
+}
+
+.sidebar-section button:hover {
+  background: rgba(255, 255, 255, 0.07);
+  color: #fff;
+}
+
+.sidebar-section button.active {
+  border-color: rgba(255, 255, 255, 0.13);
+  background: rgba(255, 255, 255, 0.11);
+  color: #fff;
+}
+
+.sidebar-section button span {
   font-size: 12px;
+  font-weight: 670;
+}
+
+.sidebar-section button b {
+  min-width: 24px;
+  height: 24px;
+  display: grid;
+  place-items: center;
+  border-radius: 7px;
+  background: rgba(255, 255, 255, 0.09);
+  font-size: 10px;
+}
+
+.sidebar-section button.active b {
+  background: rgba(255, 255, 255, 0.16);
+}
+
+.sidebar-week {
+  gap: 9px;
+  margin-top: auto;
+  padding: 15px 10px 2px;
+  border-top: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+.sidebar-week strong {
+  font-size: 11px;
   font-weight: 650;
+}
+
+.workspace {
+  min-width: 0;
 }
 
 .dashboard-main {
@@ -913,20 +988,58 @@ h3 {
   }
 }
 
-@media (max-width: 680px) {
-  .site-header {
-    min-height: 64px;
-    padding-inline: 16px;
+@media (max-width: 760px) {
+  .dashboard-shell {
+    grid-template-columns: 1fr;
   }
 
-  .week-label small {
+  .app-sidebar {
+    position: static;
+    height: auto;
+    min-height: 72px;
+    display: grid;
+    grid-template-columns: auto minmax(0, 1fr);
+    align-items: center;
+    gap: 12px;
+    padding: 10px 12px;
+  }
+
+  .app-sidebar .brand {
+    padding: 0 14px 0 0;
+    border-right: 1px solid rgba(255, 255, 255, 0.12);
+    border-bottom: 0;
+  }
+
+  .sidebar-section {
+    min-width: 0;
+    margin-top: 0;
+  }
+
+  .sidebar-section > p,
+  .sidebar-week {
     display: none;
   }
 
-  .week-label strong {
-    font-size: 11px;
+  .sidebar-section nav {
+    display: flex;
+    gap: 5px;
+    overflow-x: auto;
+    scrollbar-width: none;
   }
 
+  .sidebar-section nav::-webkit-scrollbar {
+    display: none;
+  }
+
+  .sidebar-section button {
+    width: auto;
+    min-width: max-content;
+    grid-template-columns: 18px auto auto;
+    padding-inline: 9px;
+  }
+}
+
+@media (max-width: 680px) {
   .dashboard-main {
     padding: 18px 12px 28px;
   }
@@ -956,15 +1069,6 @@ h3 {
 
   .search-field {
     width: 100%;
-  }
-
-  .filter-tabs {
-    padding: 0 12px 12px;
-    overflow-x: auto;
-  }
-
-  .filter-tabs button {
-    flex: 0 0 auto;
   }
 
   .list-heading {
@@ -1016,10 +1120,33 @@ h3 {
     display: none;
   }
 
-  .week-label strong {
-    max-width: 110px;
-    line-height: 1.25;
-    text-align: right;
+  .app-sidebar {
+    grid-template-columns: 42px minmax(0, 1fr);
+    gap: 8px;
+  }
+
+  .app-sidebar .brand {
+    padding-right: 8px;
+  }
+
+  .brand > span:last-child {
+    display: none;
+  }
+
+  .brand-mark {
+    width: 34px;
+    height: 34px;
+  }
+
+  .sidebar-section button {
+    min-height: 42px;
+    grid-template-columns: 16px auto auto;
+    gap: 6px;
+    padding-inline: 8px;
+  }
+
+  .sidebar-section button span {
+    font-size: 11px;
   }
 
   .summary-pills {
@@ -1033,10 +1160,6 @@ h3 {
 
   .summary-pills .completed {
     grid-column: 1 / -1;
-  }
-
-  .filter-tabs button {
-    padding-inline: 9px;
   }
 
   .order-row {

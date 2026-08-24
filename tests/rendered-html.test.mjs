@@ -22,6 +22,7 @@ test("renderiza un dashboard operativo de pedidos", async () => {
   assert.match(html, /<html lang="es">/i);
   assert.match(html, /Control operativo/);
   assert.match(html, /Pedidos y logística/);
+  assert.match(html, /app-sidebar/);
   assert.match(html, /En gestión/);
   assert.match(html, /Completados/);
   assert.match(html, /Preparación y entrega/);
@@ -29,6 +30,7 @@ test("renderiza un dashboard operativo de pedidos", async () => {
   assert.match(html, /Logística/);
   assert.match(html, /Frutura/);
   assert.match(html, /Proquimur/);
+  assert.doesNotMatch(html, /<header\b/i);
   assert.doesNotMatch(html, /piloto|qué falta confirmar|tres preguntas para Jony|casos para validar|modelo completo|no confirmado/i);
 });
 

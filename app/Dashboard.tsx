@@ -180,18 +180,43 @@ export default function Dashboard() {
     <div className="dashboard-shell">
       <a className="skip-link" href="#main-content">Saltar al contenido</a>
 
-      <header className="site-header">
+      <aside className="app-sidebar" aria-label="Navegación de pedidos">
         <div className="brand" aria-label="Ecoase">
           <span className="brand-mark" aria-hidden="true">E</span>
           <span><strong>Ecoase</strong><small>Control operativo</small></span>
         </div>
-        <div className="week-label">
+
+        <div className="sidebar-section">
+          <p>Pedidos</p>
+          <nav aria-label="Estados de pedidos">
+            {orderFilters.map((item) => {
+              const count = orders.filter((order) => matchesFilter(order, item.id)).length;
+              const Icon = item.id === "gestion" ? CircleDot : item.id === "completados" ? CheckCircle2 : ClipboardList;
+              return (
+                <button
+                  type="button"
+                  key={item.id}
+                  className={filter === item.id ? "active" : ""}
+                  onClick={() => setFilter(item.id)}
+                  aria-pressed={filter === item.id}
+                >
+                  <Icon size={17} aria-hidden="true" />
+                  <span>{item.label}</span>
+                  <b>{count}</b>
+                </button>
+              );
+            })}
+          </nav>
+        </div>
+
+        <div className="sidebar-week">
           <CalendarDays size={17} aria-hidden="true" />
           <span><small>Plan semanal</small><strong>10–15 agosto 2026</strong></span>
         </div>
-      </header>
+      </aside>
 
-      <main id="main-content" className="dashboard-main">
+      <div className="workspace">
+        <main id="main-content" className="dashboard-main">
         <section className="dashboard-heading" aria-labelledby="page-title">
           <div>
             <p className="eyebrow">Pedidos y logística</p>
@@ -226,23 +251,6 @@ export default function Dashboard() {
                   </button>
                 )}
               </label>
-            </div>
-
-            <div className="filter-tabs" aria-label="Filtrar pedidos">
-              {orderFilters.map((item) => {
-                const count = orders.filter((order) => matchesFilter(order, item.id)).length;
-                return (
-                  <button
-                    type="button"
-                    key={item.id}
-                    className={filter === item.id ? "active" : ""}
-                    onClick={() => setFilter(item.id)}
-                    aria-pressed={filter === item.id}
-                  >
-                    {item.label}<span>{count}</span>
-                  </button>
-                );
-              })}
             </div>
 
             <div className="list-heading" aria-hidden="true">
@@ -293,12 +301,13 @@ export default function Dashboard() {
             <OrderDetail order={selectedOrder} />
           </div>
         </div>
-      </main>
+        </main>
 
-      <footer className="dashboard-footer">
-        <Boxes size={17} aria-hidden="true" />
-        <span>Ecoase · Control de pedidos</span>
-      </footer>
+        <footer className="dashboard-footer">
+          <Boxes size={17} aria-hidden="true" />
+          <span>Ecoase · Control de pedidos</span>
+        </footer>
+      </div>
     </div>
   );
 }
