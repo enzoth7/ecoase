@@ -1,226 +1,304 @@
-export type StageId =
-  | "pedido"
-  | "plan"
-  | "disponibilidad"
-  | "preparacion"
-  | "entrega";
+export type OrderStatus = "bloqueado" | "coordinacion" | "completado";
+export type OrderFilter = "gestion" | "completados" | "todos";
 
-export type EvidenceKind = "excel" | "regla_relevada" | "no_confirmado";
-
-export interface EvidenceSource {
-  kind: EvidenceKind;
-  label: "Dato del Excel" | "Regla relevada" | "No confirmado";
-  reference: string;
-  note?: string;
-}
-
-export interface Stage {
-  id: StageId;
-  number: number;
-  title: string;
-  question: string;
-  decision: string;
-  output: string;
-  known: string[];
-  unknown: string[];
-  evidence: EvidenceSource[];
-}
-
-export type ValidationCaseStatus = "cerrado" | "bloqueado" | "por_confirmar";
-
-export interface ValidationCase {
+export interface OrderLine {
   id: string;
-  client: string;
-  reference: string;
-  status: ValidationCaseStatus;
-  statusLabel: "Circuito cerrado" | "Bloqueado" | "Por confirmar";
-  summary: string;
-  currentStageId: StageId;
-  facts: string[];
-  nextQuestion: string;
-  evidence: EvidenceSource[];
+  product: string;
+  quantity: number;
+  preparation?: string;
 }
 
-const excel = (reference: string, note?: string): EvidenceSource => ({
-  kind: "excel",
-  label: "Dato del Excel",
-  reference,
-  note,
-});
+export interface OperationOrder {
+  id: string;
+  reference: string;
+  client: string;
+  product: string;
+  requested: number;
+  delivered: number;
+  pending: number;
+  status: OrderStatus;
+  statusLabel: "Bloqueado" | "En coordinación" | "Completado";
+  dateLabel: string;
+  transport: string;
+  supply: string;
+  preparation: string;
+  logistics: string;
+  delivery: string;
+  action: string;
+  remittance?: string;
+  lines: OrderLine[];
+  source: string;
+}
 
-const rule = (reference: string, note?: string): EvidenceSource => ({
-  kind: "regla_relevada",
-  label: "Regla relevada",
-  reference,
-  note,
-});
-
-const unknown = (reference: string, note?: string): EvidenceSource => ({
-  kind: "no_confirmado",
-  label: "No confirmado",
-  reference,
-  note,
-});
-
-export const stages: Stage[] = [
+export const orders: OperationOrder[] = [
   {
-    id: "pedido",
-    number: 1,
-    title: "Pedido",
-    question: "¿Qué necesita el cliente?",
-    decision: "Aclarar cliente, producto, cantidad y fecha solicitada.",
-    output: "Pedido entendible",
-    known: [
-      "Los pedidos llegan por WhatsApp, llamada, correo u orden de compra.",
-      "Los datos mínimos son cliente, producto, cantidad y fecha solicitada.",
-    ],
-    unknown: [
-      "Qué canal o documento manda cuando dos fuentes se contradicen.",
-      "Cómo se registra un pedido recibido por llamada.",
-    ],
-    evidence: [
-      rule("Audios 1, 7 y 8", "Canales de ingreso y aclaración del pedido."),
-      unknown("Fuente de verdad del pedido"),
-    ],
-  },
-  {
-    id: "plan",
-    number: 2,
-    title: "Plan y compromiso",
-    question: "¿Qué se puede prometer?",
-    decision: "Priorizar y separar fecha solicitada de fecha acordada.",
-    output: "Compromiso vigente",
-    known: [
-      "Los pedidos se consolidan en un plan semanal y se ajustan durante la operación.",
-      "Una urgencia puede cambiar el plan y obligar a renegociar otros compromisos.",
-    ],
-    unknown: [
-      "Cuál es la fuente final del compromiso: orden, plan o acuerdo posterior.",
-      "Qué reglas determinan la prioridad entre clientes.",
-    ],
-    evidence: [
-      excel("Plan semanal · semanas 32 y 33"),
-      rule("Audios 1, 7 y 9", "Consolidación, urgencias y renegociación."),
-      unknown("Fuente de verdad del compromiso"),
-    ],
-  },
-  {
-    id: "disponibilidad",
-    number: 3,
-    title: "Disponibilidad",
-    question: "¿De dónde sale el producto?",
-    decision: "Elegir stock, producción propia, tercero o importación.",
-    output: "Origen y fecha viable",
-    known: [
-      "Producción decide el origen y la viabilidad según stock, capacidad y plazo.",
-      "Los movimientos de producción y recepción alimentan el control de stock.",
-      "Impuestos y trámites afectan solamente a la rama de importación.",
-    ],
-    unknown: [
-      "Capacidad diaria por producto y mesa.",
-      "Plazos y cupos de proveedores e importación.",
-    ],
-    evidence: [
-      rule("Audios 5, 7 y 9", "Decisión entre origen propio, tercero o importación."),
-      excel("Stock Palbin y Stock Pamer · MOVIMIENTOS"),
-      unknown("Capacidades y plazos de abastecimiento"),
-    ],
-  },
-  {
-    id: "preparacion",
-    number: 4,
-    title: "Preparación y logística",
-    question: "¿Está listo para salir?",
-    decision: "Coordinar marcado o HT, disponibilidad y camión.",
-    output: "Despacho viable",
-    known: [
-      "Marcar o tratar cambia el estado del producto sin crear stock físico nuevo.",
-      "El HT demora aproximadamente 3–4 horas.",
-      "Coordinación organiza la entrega cuando producción confirma viabilidad.",
-    ],
-    unknown: [
-      "Capacidad del secadero por ciclo y cantidad de ciclos diarios.",
-      "Capacidad disponible por camión, día y zona.",
-    ],
-    evidence: [
-      excel("Stock Palbin y Stock Pamer · MOVIMIENTOS"),
-      rule("Audio 6", "Duración de referencia del tratamiento térmico: 3–4 horas."),
-      unknown("Capacidad de HT y transporte"),
-    ],
-  },
-  {
-    id: "entrega",
-    number: 5,
-    title: "Entrega y cierre",
-    question: "¿Qué se entregó y qué queda?",
-    decision: "Relacionar remito, entrega, saldo y próxima fecha.",
-    output: "Cumplido o reprogramado",
-    known: [
-      "Las órdenes registran cantidad, remito, entregado y saldo.",
-      "Una entrega parcial conserva el pendiente y exige una nueva decisión.",
-    ],
-    unknown: [
-      "Qué evidencia convierte un despacho en entrega confirmada.",
-      "Quién registra y valida una incidencia o rechazo.",
-    ],
-    evidence: [
-      excel("Órdenes de compra · columnas Cantidad, Remito, Entregados y Saldo"),
-      rule("Audio 7", "Negociación de entregas parciales y nuevas fechas."),
-      unknown("Confirmación final de entrega"),
-    ],
-  },
-];
-
-export const validationCases: ValidationCase[] = [
-  {
-    id: "pamer-184833",
-    client: "Pamer",
-    reference: "Orden 184833",
-    status: "cerrado",
-    statusLabel: "Circuito cerrado",
-    summary: "Un ejemplo que sí puede reconciliarse desde la orden hasta la salida.",
-    currentStageId: "entrega",
-    facts: ["5 líneas · 500 unidades", "Remito 603", "Entregado 500 · saldo 0"],
-    nextQuestion: "¿Este es el nivel de trazabilidad que Jony espera para los demás pedidos?",
-    evidence: [
-      excel("Órdenes de compra · PAMER!A4:J8"),
-      excel("Stock Pamer · MOVIMIENTOS!A53:I57", "Cinco ventas vinculadas al remito 603."),
-    ],
-  },
-  {
-    id: "frutura-14",
+    id: "frutura-74",
+    reference: "Plan 74",
     client: "Frutura",
-    reference: "Viernes 14",
+    product: "Pallet 122 × 102",
+    requested: 600,
+    delivered: 0,
+    pending: 600,
     status: "bloqueado",
     statusLabel: "Bloqueado",
-    summary: "El plan registra el faltante, pero no contiene el acuerdo siguiente.",
-    currentStageId: "disponibilidad",
-    facts: ["600 pallets 122 × 102", "El plan dice: no llegaron los pallets"],
-    nextQuestion: "¿Cuál es la nueva fecha viable y quién debe confirmarla con el cliente?",
-    evidence: [
-      excel("Plan diario · Plan semanal!A74:E74"),
-      unknown("Nueva fecha de llegada y entrega"),
-    ],
+    dateLabel: "Viernes 14",
+    transport: "Linares",
+    supply: "Los pallets previstos no llegaron",
+    preparation: "Marcado requerido",
+    logistics: "Viaje con Linares detenido",
+    delivery: "0 de 600 entregados",
+    action: "Reprogramar la entrega cuando ingrese la mercadería.",
+    lines: [{ id: "frutura-74-1", product: "Pallet 122 × 102", quantity: 600, preparation: "Marcado" }],
+    source: "Plan semanal · fila 74",
   },
   {
     id: "proquimur-63",
+    reference: "Plan 63",
     client: "Proquimur",
-    reference: "Plan semanal",
-    status: "por_confirmar",
-    statusLabel: "Por confirmar",
-    summary: "Las cantidades están escritas, pero el compromiso todavía no está cerrado.",
-    currentStageId: "plan",
-    facts: ["300 pallets con HT", "300 pallets sin HT", "Estado: esperando confirmación"],
-    nextQuestion: "¿El cliente confirma ambas cantidades y qué fecha queda acordada?",
-    evidence: [
-      excel("Plan diario · Plan semanal!A63:E63"),
-      unknown("Fecha acordada con Proquimur"),
+    product: "Pallet 120 × 100 Mercosur",
+    requested: 600,
+    delivered: 0,
+    pending: 600,
+    status: "coordinacion",
+    statusLabel: "En coordinación",
+    dateLabel: "Martes 11",
+    transport: "Linares",
+    supply: "600 en stock Palbin · 300 marcados y 300 sin marcar",
+    preparation: "300 con HT · 300 sin HT",
+    logistics: "Linares asignado",
+    delivery: "Pedido en coordinación",
+    action: "Coordinar fecha con el cliente y reservar el viaje.",
+    lines: [
+      { id: "proquimur-63-1", product: "Pallet 120 × 100 Mercosur", quantity: 300, preparation: "Con HT" },
+      { id: "proquimur-63-2", product: "Pallet 120 × 100 Mercosur", quantity: 300, preparation: "Sin HT" },
     ],
+    source: "Plan semanal · fila 63 / Stock Palbin · fila 19",
+  },
+  {
+    id: "pamer-184833",
+    reference: "Orden 184833",
+    client: "Pamer",
+    product: "Cinco líneas de pallets",
+    requested: 500,
+    delivered: 500,
+    pending: 0,
+    status: "completado",
+    statusLabel: "Completado",
+    dateLabel: "28 de julio",
+    transport: "Remito 603",
+    supply: "Orden despachada en cinco líneas",
+    preparation: "380 sin HT · 120 con HT",
+    logistics: "Remito 603",
+    delivery: "500 entregados · saldo 0",
+    action: "Pedido cerrado.",
+    remittance: "603",
+    lines: [
+      { id: "184833-1", product: "Pallet 100 × 100 doble entrada", quantity: 100, preparation: "Sin HT" },
+      { id: "184833-2", product: "Pallet 100 × 100", quantity: 20, preparation: "Con HT" },
+      { id: "184833-3", product: "Pallet 120 × 80 doble entrada", quantity: 180, preparation: "Sin HT" },
+      { id: "184833-4", product: "Pallet 120 × 130", quantity: 100, preparation: "Sin HT" },
+      { id: "184833-5", product: "Pallet 100 × 120 Mercosur", quantity: 100, preparation: "Con HT" },
+    ],
+    source: "Órdenes Pamer · filas 4–8",
+  },
+  {
+    id: "pamer-641",
+    reference: "Remito 641",
+    client: "Pamer",
+    product: "Seis líneas de pallets",
+    requested: 360,
+    delivered: 360,
+    pending: 0,
+    status: "completado",
+    statusLabel: "Completado",
+    dateLabel: "12 de agosto",
+    transport: "Propio",
+    supply: "Seis líneas despachadas",
+    preparation: "200 sin HT · 160 con HT",
+    logistics: "Transporte propio · remito 641",
+    delivery: "360 entregados · saldo 0",
+    action: "Pedido cerrado.",
+    remittance: "641",
+    lines: [
+      { id: "641-1", product: "Pallet 216 × 110 simple", quantity: 100, preparation: "Con HT" },
+      { id: "641-2", product: "Pallet 216 × 110 simple", quantity: 41, preparation: "Sin HT" },
+      { id: "641-3", product: "Pallet 100 × 80", quantity: 100, preparation: "Sin HT" },
+      { id: "641-4", product: "Pallet 100 × 100", quantity: 59, preparation: "Sin HT" },
+      { id: "641-5", product: "Pallet 120 × 80", quantity: 20, preparation: "Con HT" },
+      { id: "641-6", product: "Pallet 120 × 90 cerrado", quantity: 40, preparation: "Con HT" },
+    ],
+    source: "Órdenes Pamer · filas 10–15",
+  },
+  {
+    id: "afb-62",
+    reference: "Plan 62",
+    client: "AFB",
+    product: "Pallet 120 × 100 Mercosur cepillado",
+    requested: 600,
+    delivered: 600,
+    pending: 0,
+    status: "completado",
+    statusLabel: "Completado",
+    dateLabel: "Martes 11",
+    transport: "Linares",
+    supply: "Pedido completo",
+    preparation: "Mercosur cepillado",
+    logistics: "Linares · un viaje",
+    delivery: "600 entregados",
+    action: "Pedido cerrado.",
+    lines: [{ id: "afb-62-1", product: "Pallet 120 × 100 Mercosur cepillado", quantity: 600 }],
+    source: "Plan semanal · fila 62",
+  },
+  {
+    id: "granja-pocha-65",
+    reference: "Plan 65",
+    client: "Granja Pocha",
+    product: "Punto rojo y Mercosur exportación",
+    requested: 600,
+    delivered: 600,
+    pending: 0,
+    status: "completado",
+    statusLabel: "Completado",
+    dateLabel: "Miércoles 12",
+    transport: "Linares",
+    supply: "Dos líneas completas",
+    preparation: "400 punto rojo · 200 Mercosur exportación",
+    logistics: "Linares · un viaje",
+    delivery: "600 entregados",
+    action: "Pedido cerrado.",
+    lines: [
+      { id: "pocha-65-1", product: "Pallet punto rojo 120 × 100", quantity: 400 },
+      { id: "pocha-65-2", product: "Pallet Mercosur exportación 120 × 100", quantity: 200 },
+    ],
+    source: "Plan semanal · fila 65",
+  },
+  {
+    id: "forestal-66",
+    reference: "Plan 66",
+    client: "Forestal Oriental",
+    product: "Pallet 120 × 130",
+    requested: 50,
+    delivered: 50,
+    pending: 0,
+    status: "completado",
+    statusLabel: "Completado",
+    dateLabel: "Miércoles 12",
+    transport: "Matías",
+    supply: "Pedido completo",
+    preparation: "Sin HT · sin corte de esquina · sin rebaje",
+    logistics: "Matías · un viaje",
+    delivery: "50 entregados",
+    action: "Pedido cerrado.",
+    lines: [{ id: "forestal-66-1", product: "Pallet 120 × 130", quantity: 50, preparation: "Sin HT" }],
+    source: "Plan semanal · fila 66",
+  },
+  {
+    id: "frutura-67",
+    reference: "Plan 67",
+    client: "Frutura",
+    product: "Pallet 122 × 102",
+    requested: 518,
+    delivered: 518,
+    pending: 0,
+    status: "completado",
+    statusLabel: "Completado",
+    dateLabel: "Miércoles 12",
+    transport: "Milton",
+    supply: "Pedido completo",
+    preparation: "Pallet 122 × 102",
+    logistics: "Milton · un viaje",
+    delivery: "518 entregados",
+    action: "Pedido cerrado.",
+    lines: [{ id: "frutura-67-1", product: "Pallet 122 × 102", quantity: 518 }],
+    source: "Plan semanal · fila 67",
+  },
+  {
+    id: "frutura-69",
+    reference: "Plan 69",
+    client: "Frutura",
+    product: "Pallet 120 × 100",
+    requested: 600,
+    delivered: 600,
+    pending: 0,
+    status: "completado",
+    statusLabel: "Completado",
+    dateLabel: "Jueves 13",
+    transport: "Linares",
+    supply: "Pedido completo",
+    preparation: "Pallet 120 × 100",
+    logistics: "Linares · un viaje",
+    delivery: "600 entregados",
+    action: "Pedido cerrado.",
+    lines: [{ id: "frutura-69-1", product: "Pallet 120 × 100", quantity: 600 }],
+    source: "Plan semanal · fila 69",
+  },
+  {
+    id: "azucitrus-75",
+    reference: "Plan 75",
+    client: "Azucitrus",
+    product: "Pallet 120 × 100",
+    requested: 600,
+    delivered: 600,
+    pending: 0,
+    status: "completado",
+    statusLabel: "Completado",
+    dateLabel: "Viernes 14",
+    transport: "Linares",
+    supply: "Pedido completo",
+    preparation: "Pallet 120 × 100",
+    logistics: "Linares · un viaje",
+    delivery: "600 entregados",
+    action: "Pedido cerrado.",
+    lines: [{ id: "azucitrus-75-1", product: "Pallet 120 × 100", quantity: 600 }],
+    source: "Plan semanal · fila 75",
+  },
+  {
+    id: "san-miguel-76",
+    reference: "Plan 76",
+    client: "San Miguel",
+    product: "Dos medidas de pallets",
+    requested: 360,
+    delivered: 360,
+    pending: 0,
+    status: "completado",
+    statusLabel: "Completado",
+    dateLabel: "Viernes 14",
+    transport: "Milton",
+    supply: "Dos líneas completas",
+    preparation: "250 de 120 × 120 · 110 de 116,5 × 114",
+    logistics: "Milton · un viaje",
+    delivery: "360 entregados",
+    action: "Pedido cerrado.",
+    lines: [
+      { id: "san-miguel-76-1", product: "Pallet 120 × 120", quantity: 250 },
+      { id: "san-miguel-76-2", product: "Pallet 116,5 × 114", quantity: 110 },
+    ],
+    source: "Plan semanal · fila 76",
+  },
+  {
+    id: "pontevedra-79",
+    reference: "Plan 79",
+    client: "Pontevedra",
+    product: "Pallet Mercosur con HT",
+    requested: 150,
+    delivered: 150,
+    pending: 0,
+    status: "completado",
+    statusLabel: "Completado",
+    dateLabel: "Sábado 15",
+    transport: "Matías",
+    supply: "Pedido completo",
+    preparation: "Mercosur con HT",
+    logistics: "Matías · un viaje",
+    delivery: "150 entregados",
+    action: "Pedido cerrado.",
+    lines: [{ id: "pontevedra-79-1", product: "Pallet Mercosur", quantity: 150, preparation: "Con HT" }],
+    source: "Plan semanal · fila 79",
   },
 ];
 
-export const validationQuestions = [
-  "¿Estas son las cinco etapas reales del recorrido?",
-  "¿Qué decisión importante falta o está ubicada en la etapa equivocada?",
-  "¿Qué variable conviene confirmar primero para que el piloto sea útil?",
+export const orderFilters: Array<{ id: OrderFilter; label: string }> = [
+  { id: "gestion", label: "En gestión" },
+  { id: "completados", label: "Completados" },
+  { id: "todos", label: "Todos" },
 ];

@@ -1,77 +1,62 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { stages, validationCases, validationQuestions } from "../app/data.ts";
+import { orderFilters, orders } from "../app/data.ts";
 
-test("el recorrido conserva exactamente cinco etapas en orden", () => {
-  assert.deepEqual(
-    stages.map((stage) => stage.id),
-    ["pedido", "plan", "disponibilidad", "preparacion", "entrega"],
-  );
+test("divide los pedidos entre gestión y completados", () => {
+  assert.equal(orders.length, 12);
+  assert.equal(orders.filter((order) => order.status !== "completado").length, 2);
+  assert.equal(orders.filter((order) => order.status === "bloqueado").length, 1);
+  assert.equal(orders.filter((order) => order.status === "completado").length, 10);
+  assert.deepEqual(orderFilters.map((item) => item.id), ["gestion", "completados", "todos"]);
+});
 
-  for (const [index, stage] of stages.entries()) {
-    assert.equal(stage.number, index + 1);
-    assert.ok(stage.question.length > 0, `${stage.id}: pregunta`);
-    assert.ok(stage.decision.length > 0, `${stage.id}: decisión`);
-    assert.ok(stage.output.length > 0, `${stage.id}: salida`);
-    assert.ok(stage.known.length > 0, `${stage.id}: hechos`);
-    assert.ok(stage.unknown.length > 0, `${stage.id}: pendientes`);
+test("cada pedido reconcilia pedido, entrega y saldo", () => {
+  for (const order of orders) {
+    assert.equal(order.requested, order.delivered + order.pending, order.id);
+    assert.equal(order.requested, order.lines.reduce((total, line) => total + line.quantity, 0), order.id);
+    assert.ok(order.supply.length > 0, `${order.id}: abastecimiento`);
+    assert.ok(order.preparation.length > 0, `${order.id}: preparación`);
+    assert.ok(order.logistics.length > 0, `${order.id}: logística`);
+    assert.ok(order.delivery.length > 0, `${order.id}: entrega`);
+    assert.ok(order.source.length > 0, `${order.id}: fuente`);
   }
 });
 
-test("el modelo no contiene supuestos de demostración", () => {
-  const serialized = JSON.stringify({ stages, validationCases });
-  assert.doesNotMatch(serialized, /supuesto de demostración|escenario didáctico|"demo"/i);
+test("Pamer 184833 conserva las cinco líneas y el remito 603", () => {
+  const order = orders.find((item) => item.id === "pamer-184833");
+  assert.ok(order);
+  assert.equal(order.requested, 500);
+  assert.equal(order.delivered, 500);
+  assert.equal(order.pending, 0);
+  assert.equal(order.remittance, "603");
+  assert.equal(order.lines.length, 5);
+  assert.match(order.source, /filas 4–8/);
+});
 
-  const kinds = new Set([
-    ...stages.flatMap((stage) => stage.evidence.map((source) => source.kind)),
-    ...validationCases.flatMap((item) => item.evidence.map((source) => source.kind)),
+test("Frutura mantiene el bloqueo de 600 pallets", () => {
+  const order = orders.find((item) => item.id === "frutura-74");
+  assert.ok(order);
+  assert.equal(order.status, "bloqueado");
+  assert.equal(order.requested, 600);
+  assert.equal(order.pending, 600);
+  assert.match(order.supply, /no llegaron/i);
+  assert.match(order.source, /fila 74/);
+});
+
+test("Proquimur separa preparación, stock y transporte", () => {
+  const order = orders.find((item) => item.id === "proquimur-63");
+  assert.ok(order);
+  assert.equal(order.status, "coordinacion");
+  assert.deepEqual(order.lines.map((line) => [line.quantity, line.preparation]), [
+    [300, "Con HT"],
+    [300, "Sin HT"],
   ]);
-  assert.deepEqual([...kinds].sort(), ["excel", "no_confirmado", "regla_relevada"]);
+  assert.match(order.supply, /300 marcados y 300 sin marcar/i);
+  assert.equal(order.transport, "Linares");
+  assert.match(order.source, /fila 63/);
 });
 
-test("cada caso conserva evidencia Excel y marca los huecos como no confirmados", () => {
-  for (const item of validationCases) {
-    assert.ok(item.evidence.some((source) => source.kind === "excel"), `${item.id}: evidencia Excel`);
-  }
-
-  for (const item of validationCases.filter((candidate) => candidate.status !== "cerrado")) {
-    assert.ok(item.evidence.some((source) => source.kind === "no_confirmado"), `${item.id}: pendiente explícito`);
-  }
-});
-
-test("Pamer 184833 conserva la reconciliación verificable", () => {
-  const pamer = validationCases.find((item) => item.id === "pamer-184833");
-  assert.ok(pamer);
-  assert.equal(pamer.status, "cerrado");
-  assert.deepEqual(pamer.facts, ["5 líneas · 500 unidades", "Remito 603", "Entregado 500 · saldo 0"]);
-  assert.ok(pamer.evidence.some((source) => source.reference.includes("PAMER!A4:J8")));
-  assert.ok(pamer.evidence.some((source) => source.reference.includes("MOVIMIENTOS!A53:I57")));
-});
-
-test("Frutura expone el bloqueo sin inventar una nueva fecha", () => {
-  const frutura = validationCases.find((item) => item.id === "frutura-14");
-  assert.ok(frutura);
-  assert.equal(frutura.status, "bloqueado");
-  assert.deepEqual(frutura.facts, ["600 pallets 122 × 102", "El plan dice: no llegaron los pallets"]);
-  assert.ok(frutura.evidence.some((source) => source.reference.includes("A74:E74")));
-  assert.ok(frutura.evidence.some((source) => source.reference === "Nueva fecha de llegada y entrega"));
-});
-
-test("Proquimur separa HT, sin HT y confirmación pendiente", () => {
-  const proquimur = validationCases.find((item) => item.id === "proquimur-63");
-  assert.ok(proquimur);
-  assert.equal(proquimur.status, "por_confirmar");
-  assert.deepEqual(proquimur.facts, [
-    "300 pallets con HT",
-    "300 pallets sin HT",
-    "Estado: esperando confirmación",
-  ]);
-  assert.ok(proquimur.evidence.some((source) => source.reference.includes("A63:E63")));
-});
-
-test("el cierre mantiene las tres preguntas para Jony", () => {
-  assert.equal(validationQuestions.length, 3);
-  assert.match(validationQuestions[0], /cinco etapas/i);
-  assert.match(validationQuestions[1], /decisión importante/i);
-  assert.match(validationQuestions[2], /variable/i);
+test("el modelo operativo no contiene texto de validación", () => {
+  const serialized = JSON.stringify({ orders, orderFilters });
+  assert.doesNotMatch(serialized, /piloto|qué falta confirmar|pregunta para|casos para validar|modelo completo|no confirmado/i);
 });

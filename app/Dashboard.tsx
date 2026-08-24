@@ -2,313 +2,302 @@
 
 import {
   AlertTriangle,
-  BookOpenCheck,
   Boxes,
-  CalendarRange,
-  Check,
+  CalendarDays,
   CheckCircle2,
   ChevronRight,
-  CircleHelp,
-  ClipboardCheck,
-  Factory,
-  FileSpreadsheet,
-  MessageSquareText,
+  CircleDot,
+  ClipboardList,
+  PackageCheck,
+  Search,
   Truck,
+  Warehouse,
+  Wrench,
+  X,
   type LucideIcon,
 } from "lucide-react";
-import { useMemo, useState } from "react";
+import { useMemo, useRef, useState } from "react";
 import {
-  stages,
-  validationCases,
-  validationQuestions,
-  type EvidenceKind,
-  type EvidenceSource,
-  type Stage,
-  type StageId,
-  type ValidationCase,
-  type ValidationCaseStatus,
+  orderFilters,
+  orders,
+  type OperationOrder,
+  type OrderFilter,
+  type OrderStatus,
 } from "./data";
 
-const stageIcons: Record<StageId, LucideIcon> = {
-  pedido: MessageSquareText,
-  plan: CalendarRange,
-  disponibilidad: Factory,
-  preparacion: Truck,
-  entrega: ClipboardCheck,
-};
+const number = new Intl.NumberFormat("es-UY");
 
-const evidenceIcons: Record<EvidenceKind, LucideIcon> = {
-  excel: FileSpreadsheet,
-  regla_relevada: BookOpenCheck,
-  no_confirmado: CircleHelp,
-};
-
-const statusIcons: Record<ValidationCaseStatus, LucideIcon> = {
-  cerrado: CheckCircle2,
+const statusIcons: Record<OrderStatus, LucideIcon> = {
   bloqueado: AlertTriangle,
-  por_confirmar: CircleHelp,
+  coordinacion: CircleDot,
+  completado: CheckCircle2,
 };
 
-function EvidenceBadge({ source }: { source: EvidenceSource }) {
-  const Icon = evidenceIcons[source.kind];
+function StatusBadge({ order }: { order: OperationOrder }) {
+  const Icon = statusIcons[order.status];
   return (
-    <span className={`evidence-badge ${source.kind}`}>
+    <span className={`status-badge ${order.status}`}>
       <Icon size={14} aria-hidden="true" />
-      {source.label}
+      {order.statusLabel}
     </span>
   );
 }
 
-function EvidenceList({ sources }: { sources: EvidenceSource[] }) {
+function QuantitySummary({ order }: { order: OperationOrder }) {
   return (
-    <div className="evidence-list" aria-label="Fuentes y pendientes de validación">
-      {sources.map((source, index) => (
-        <div className="evidence-row" key={`${source.reference}-${index}`}>
-          <EvidenceBadge source={source} />
-          <p>
-            <strong>{source.reference}</strong>
-            {source.note && <span>{source.note}</span>}
-          </p>
-        </div>
-      ))}
+    <div className="quantity-summary" aria-label="Cantidades del pedido">
+      <div>
+        <span>Pedido</span>
+        <strong>{number.format(order.requested)}</strong>
+      </div>
+      <div>
+        <span>Entregado</span>
+        <strong>{number.format(order.delivered)}</strong>
+      </div>
+      <div className={order.pending > 0 ? "pending" : ""}>
+        <span>Saldo</span>
+        <strong>{number.format(order.pending)}</strong>
+      </div>
     </div>
   );
 }
 
-function StageDetail({ stage }: { stage: Stage }) {
+function OperationFact({ icon: Icon, label, value }: { icon: LucideIcon; label: string; value: string }) {
   return (
-    <section className="stage-detail" id="stage-detail" aria-live="polite" aria-labelledby="stage-detail-title">
-      <div className="detail-intro">
-        <span className="detail-number">Etapa {stage.number}</span>
-        <div>
-          <p className="eyebrow">Detalle de la etapa seleccionada</p>
-          <h2 id="stage-detail-title">{stage.title}</h2>
-          <p>{stage.decision}</p>
-        </div>
+    <article className="operation-fact">
+      <span className="fact-icon"><Icon size={17} aria-hidden="true" /></span>
+      <div>
+        <span>{label}</span>
+        <strong>{value}</strong>
       </div>
-
-      <div className="detail-columns">
-        <article className="known-card">
-          <div className="detail-card-title">
-            <Check size={18} aria-hidden="true" />
-            <h3>Qué sabemos</h3>
-          </div>
-          <ul>
-            {stage.known.map((item) => <li key={item}>{item}</li>)}
-          </ul>
-        </article>
-
-        <article className="unknown-card">
-          <div className="detail-card-title">
-            <CircleHelp size={18} aria-hidden="true" />
-            <h3>Qué falta confirmar</h3>
-          </div>
-          <ul>
-            {stage.unknown.map((item) => <li key={item}>{item}</li>)}
-          </ul>
-        </article>
-      </div>
-
-      <EvidenceList sources={stage.evidence} />
-    </section>
+    </article>
   );
 }
 
-function StatusBadge({ item }: { item: ValidationCase }) {
-  const Icon = statusIcons[item.status];
+function OrderDetail({ order }: { order: OperationOrder }) {
+  const progress = Math.round((order.delivered / order.requested) * 100);
+
   return (
-    <span className={`case-status ${item.status}`}>
-      <Icon size={14} aria-hidden="true" />
-      {item.statusLabel}
-    </span>
+    <aside className="order-detail" id="order-detail" aria-live="polite" aria-labelledby="order-detail-title">
+      <div className="detail-heading">
+        <div>
+          <StatusBadge order={order} />
+          <h2 id="order-detail-title">{order.client}</h2>
+          <p>{order.product}</p>
+        </div>
+        <span className="order-reference">{order.reference}</span>
+      </div>
+
+      <div className="detail-meta">
+        <span><CalendarDays size={15} aria-hidden="true" />{order.dateLabel}</span>
+        <span><Truck size={15} aria-hidden="true" />{order.transport}</span>
+      </div>
+
+      <QuantitySummary order={order} />
+
+      <div className="detail-progress" aria-label={`${progress}% entregado`}>
+        <span><b>Avance</b><strong>{progress}%</strong></span>
+        <i><b style={{ width: `${progress}%` }} /></i>
+      </div>
+
+      <section className="operation-section" aria-labelledby="operation-title">
+        <div className="subsection-title">
+          <p>Operación</p>
+          <h3 id="operation-title">Preparación y entrega</h3>
+        </div>
+        <div className="operation-grid">
+          <OperationFact icon={Warehouse} label="Abastecimiento" value={order.supply} />
+          <OperationFact icon={Wrench} label="Preparación" value={order.preparation} />
+          <OperationFact icon={Truck} label="Logística" value={order.logistics} />
+          <OperationFact icon={PackageCheck} label="Entrega" value={order.delivery} />
+        </div>
+      </section>
+
+      <section className="lines-section" aria-labelledby="lines-title">
+        <div className="subsection-title horizontal">
+          <div>
+            <p>Pedido</p>
+            <h3 id="lines-title">{order.lines.length} {order.lines.length === 1 ? "línea" : "líneas"}</h3>
+          </div>
+          {order.remittance && <span>Remito {order.remittance}</span>}
+        </div>
+        <div className="line-list">
+          {order.lines.map((line) => (
+            <div key={line.id}>
+              <span>
+                <strong>{line.product}</strong>
+                {line.preparation && <small>{line.preparation}</small>}
+              </span>
+              <b>{number.format(line.quantity)}</b>
+            </div>
+          ))}
+        </div>
+      </section>
+
+      <div className={`action-card ${order.status}`}>
+        <span>{order.status === "completado" ? "Estado" : "Acción operativa"}</span>
+        <strong>{order.action}</strong>
+      </div>
+    </aside>
   );
 }
 
-function CaseDetail({ item }: { item: ValidationCase }) {
-  const stage = stages.find((candidate) => candidate.id === item.currentStageId);
-
-  return (
-    <section className={`case-detail ${item.status}`} id="case-detail" aria-live="polite" aria-labelledby="case-detail-title">
-      <div className="case-detail-heading">
-        <div>
-          <StatusBadge item={item} />
-          <h3 id="case-detail-title">{item.client} · {item.reference}</h3>
-          <p>{item.summary}</p>
-        </div>
-        {stage && (
-          <span className="current-stage">
-            Etapa actual
-            <strong>{stage.number}. {stage.title}</strong>
-          </span>
-        )}
-      </div>
-
-      <div className="case-facts" aria-label="Hechos verificados">
-        {item.facts.map((fact) => (
-          <span key={fact}><Check size={15} aria-hidden="true" />{fact}</span>
-        ))}
-      </div>
-
-      <div className="next-question">
-        <CircleHelp size={20} aria-hidden="true" />
-        <div>
-          <span>Pregunta para validar</span>
-          <p>{item.nextQuestion}</p>
-        </div>
-      </div>
-
-      <EvidenceList sources={item.evidence} />
-    </section>
-  );
+function matchesFilter(order: OperationOrder, filter: OrderFilter) {
+  if (filter === "gestion") return order.status !== "completado";
+  if (filter === "completados") return order.status === "completado";
+  return true;
 }
 
 export default function Dashboard() {
-  const [selectedStageId, setSelectedStageId] = useState<StageId>("pedido");
-  const [selectedCaseId, setSelectedCaseId] = useState(validationCases[0].id);
+  const [filter, setFilter] = useState<OrderFilter>("gestion");
+  const [query, setQuery] = useState("");
+  const [selectedId, setSelectedId] = useState(orders[0].id);
+  const detailRef = useRef<HTMLDivElement>(null);
 
-  const selectedStage = useMemo(
-    () => stages.find((stage) => stage.id === selectedStageId) ?? stages[0],
-    [selectedStageId],
-  );
-  const selectedCase = useMemo(
-    () => validationCases.find((item) => item.id === selectedCaseId) ?? validationCases[0],
-    [selectedCaseId],
-  );
+  const visibleOrders = useMemo(() => {
+    const normalized = query.trim().toLocaleLowerCase("es");
+    return orders.filter((order) => {
+      if (!matchesFilter(order, filter)) return false;
+      if (!normalized) return true;
+      return [order.client, order.reference, order.product, order.transport]
+        .some((value) => value.toLocaleLowerCase("es").includes(normalized));
+    });
+  }, [filter, query]);
 
-  const selectCase = (item: ValidationCase) => {
-    setSelectedCaseId(item.id);
-    setSelectedStageId(item.currentStageId);
+  const selectedOrder = visibleOrders.find((order) => order.id === selectedId) ?? visibleOrders[0] ?? orders[0];
+  const inManagement = orders.filter((order) => order.status !== "completado").length;
+  const blocked = orders.filter((order) => order.status === "bloqueado").length;
+  const completed = orders.filter((order) => order.status === "completado").length;
+
+  const selectOrder = (id: string) => {
+    setSelectedId(id);
+    if (window.matchMedia("(max-width: 920px)").matches) {
+      window.requestAnimationFrame(() => detailRef.current?.scrollIntoView({ behavior: "smooth", block: "start" }));
+    }
   };
 
   return (
-    <div className="pilot-shell">
+    <div className="dashboard-shell">
       <a className="skip-link" href="#main-content">Saltar al contenido</a>
 
       <header className="site-header">
         <div className="brand" aria-label="Ecoase">
           <span className="brand-mark" aria-hidden="true">E</span>
-          <span>
-            <strong>Ecoase</strong>
-            <small>Piloto operativo</small>
-          </span>
+          <span><strong>Ecoase</strong><small>Control operativo</small></span>
         </div>
-        <span className="pilot-pill">Piloto para validar con Jony</span>
+        <div className="week-label">
+          <CalendarDays size={17} aria-hidden="true" />
+          <span><small>Plan semanal</small><strong>10–15 agosto 2026</strong></span>
+        </div>
       </header>
 
-      <main id="main-content">
-        <section className="hero" aria-labelledby="page-title">
-          <p className="eyebrow">Modelo completo · una sola pantalla</p>
-          <h1 id="page-title">Cómo se transforma un pedido en una entrega</h1>
-          <p className="hero-copy">
-            Esta no es una aplicación terminada. Es una lectura simple de la operación para confirmar
-            si el recorrido, las decisiones y los pendientes están bien entendidos.
-          </p>
-          <div className="source-note">
-            <FileSpreadsheet size={18} aria-hidden="true" />
-            <p><strong>Datos ficticios de los archivos originales.</strong> Solo lectura: este piloto no modifica las planillas.</p>
-          </div>
-        </section>
-
-        <section className="flow-section" aria-labelledby="flow-title">
-          <div className="section-heading">
-            <div>
-              <p className="eyebrow">El recorrido en cinco decisiones</p>
-              <h2 id="flow-title">Del pedido al cierre</h2>
-            </div>
-            <p>Seleccioná una etapa para ver lo confirmado y lo que falta preguntar.</p>
-          </div>
-
-          <div className="process-flow" aria-label="Etapas del recorrido operativo">
-            {stages.map((stage) => {
-              const Icon = stageIcons[stage.id];
-              const active = selectedStage.id === stage.id;
-              return (
-                <button
-                  type="button"
-                  className={`stage-card ${active ? "active" : ""}`}
-                  key={stage.id}
-                  onClick={() => setSelectedStageId(stage.id)}
-                  aria-pressed={active}
-                  aria-controls="stage-detail"
-                >
-                  <span className="stage-topline">
-                    <span className="stage-number">{stage.number}</span>
-                    <Icon size={19} aria-hidden="true" />
-                  </span>
-                  <strong>{stage.title}</strong>
-                  <span className="stage-question">{stage.question}</span>
-                  <span className="stage-decision">{stage.decision}</span>
-                  <span className="stage-output">
-                    Salida <b>{stage.output}</b>
-                  </span>
-                  <ChevronRight className="stage-chevron" size={18} aria-hidden="true" />
-                </button>
-              );
-            })}
-          </div>
-
-          <StageDetail stage={selectedStage} />
-        </section>
-
-        <section className="cases-section" aria-labelledby="cases-title">
-          <div className="section-heading">
-            <div>
-              <p className="eyebrow">Tres ejemplos de los Excel</p>
-              <h2 id="cases-title">Casos para validar</h2>
-            </div>
-            <p>Acá no se completan huecos con supuestos: lo que falta aparece como “No confirmado”.</p>
-          </div>
-
-          <div className="case-grid">
-            {validationCases.map((item) => {
-              const active = selectedCase.id === item.id;
-              return (
-                <button
-                  type="button"
-                  className={`case-card ${item.status} ${active ? "active" : ""}`}
-                  key={item.id}
-                  onClick={() => selectCase(item)}
-                  aria-pressed={active}
-                  aria-controls="case-detail"
-                >
-                  <StatusBadge item={item} />
-                  <span className="case-name">
-                    <strong>{item.client}</strong>
-                    <small>{item.reference}</small>
-                  </span>
-                  <span className="case-summary">{item.summary}</span>
-                  <span className="case-action">Ver caso <ChevronRight size={16} aria-hidden="true" /></span>
-                </button>
-              );
-            })}
-          </div>
-
-          <CaseDetail item={selectedCase} />
-        </section>
-
-        <section className="validation-section" aria-labelledby="validation-title">
+      <main id="main-content" className="dashboard-main">
+        <section className="dashboard-heading" aria-labelledby="page-title">
           <div>
-            <p className="eyebrow">Cierre de la conversación</p>
-            <h2 id="validation-title">Tres preguntas para Jony</h2>
-            <p>Si estas tres respuestas quedan claras, el piloto ya cumplió su objetivo.</p>
+            <p className="eyebrow">Pedidos y logística</p>
+            <h1 id="page-title">Control operativo</h1>
           </div>
-          <ol>
-            {validationQuestions.map((question, index) => (
-              <li key={question}>
-                <span>{index + 1}</span>
-                <p>{question}</p>
-              </li>
-            ))}
-          </ol>
+          <div className="summary-pills" aria-label="Resumen de pedidos">
+            <span><b>{inManagement}</b> en gestión</span>
+            <span className="blocked"><b>{blocked}</b> bloqueado</span>
+            <span className="completed"><b>{completed}</b> completados</span>
+          </div>
         </section>
+
+        <div className="operations-layout">
+          <section className="orders-surface" aria-labelledby="orders-title">
+            <div className="orders-toolbar">
+              <div>
+                <p className="eyebrow">Semana 33</p>
+                <h2 id="orders-title">Pedidos</h2>
+              </div>
+              <label className="search-field">
+                <span className="sr-only">Buscar cliente, pedido, producto o transporte</span>
+                <Search size={17} aria-hidden="true" />
+                <input
+                  type="search"
+                  value={query}
+                  onChange={(event) => setQuery(event.target.value)}
+                  placeholder="Buscar pedido o cliente"
+                />
+                {query && (
+                  <button type="button" onClick={() => setQuery("")} aria-label="Limpiar búsqueda">
+                    <X size={15} aria-hidden="true" />
+                  </button>
+                )}
+              </label>
+            </div>
+
+            <div className="filter-tabs" aria-label="Filtrar pedidos">
+              {orderFilters.map((item) => {
+                const count = orders.filter((order) => matchesFilter(order, item.id)).length;
+                return (
+                  <button
+                    type="button"
+                    key={item.id}
+                    className={filter === item.id ? "active" : ""}
+                    onClick={() => setFilter(item.id)}
+                    aria-pressed={filter === item.id}
+                  >
+                    {item.label}<span>{count}</span>
+                  </button>
+                );
+              })}
+            </div>
+
+            <div className="list-heading" aria-hidden="true">
+              <span>Cliente y pedido</span><span>Fecha / transporte</span><span>Cantidades</span><span />
+            </div>
+
+            <div className="order-list" aria-label={`${visibleOrders.length} pedidos`}>
+              {visibleOrders.length > 0 ? visibleOrders.map((order) => {
+                const active = order.id === selectedOrder.id;
+                const progress = Math.round((order.delivered / order.requested) * 100);
+                return (
+                  <button
+                    type="button"
+                    className={`order-row ${active ? "active" : ""}`}
+                    key={order.id}
+                    onClick={() => selectOrder(order.id)}
+                    aria-pressed={active}
+                    aria-controls="order-detail"
+                  >
+                    <div className="order-main">
+                      <StatusBadge order={order} />
+                      <strong>{order.client}</strong>
+                      <span>{order.reference} · {order.product}</span>
+                    </div>
+                    <div className="order-schedule">
+                      <strong>{order.dateLabel}</strong>
+                      <span><Truck size={14} aria-hidden="true" />{order.transport}</span>
+                    </div>
+                    <div className="order-quantities">
+                      <span><b>{number.format(order.delivered)}</b> / {number.format(order.requested)}</span>
+                      <i><b style={{ width: `${progress}%` }} /></i>
+                      <small>{order.pending > 0 ? `${number.format(order.pending)} pendientes` : "Completo"}</small>
+                    </div>
+                    <ChevronRight className="row-chevron" size={19} aria-hidden="true" />
+                  </button>
+                );
+              }) : (
+                <div className="empty-state">
+                  <ClipboardList size={28} aria-hidden="true" />
+                  <strong>No hay pedidos en esta vista</strong>
+                  <button type="button" onClick={() => { setQuery(""); setFilter("todos"); }}>Ver todos</button>
+                </div>
+              )}
+            </div>
+          </section>
+
+          <div ref={detailRef} className="detail-column">
+            <OrderDetail order={selectedOrder} />
+          </div>
+        </div>
       </main>
 
-      <footer className="site-footer">
-        <div>
-          <Boxes size={18} aria-hidden="true" />
-          <span><strong>Ecoase · piloto de validación</strong>Basado en 6 Excel y el resumen existente de los audios.</span>
-        </div>
-        <p>No incluye automatización, edición ni integración con WhatsApp.</p>
+      <footer className="dashboard-footer">
+        <Boxes size={17} aria-hidden="true" />
+        <span>Ecoase · Control de pedidos</span>
       </footer>
     </div>
   );

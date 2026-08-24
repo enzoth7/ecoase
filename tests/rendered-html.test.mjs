@@ -13,24 +13,29 @@ async function render() {
   );
 }
 
-test("renderiza el piloto Ecoase como una sola pantalla", async () => {
+test("renderiza un dashboard operativo de pedidos", async () => {
   const response = await render();
   assert.equal(response.status, 200);
   assert.match(response.headers.get("content-type") ?? "", /^text\/html\b/i);
 
   const html = await response.text();
   assert.match(html, /<html lang="es">/i);
-  assert.match(html, /Cómo se transforma un pedido en una entrega/);
-  assert.match(html, /Del pedido al cierre/);
-  assert.match(html, /Casos para validar/);
-  assert.match(html, /Tres preguntas para Jony/);
-  assert.match(html, /Solo lectura/);
-  assert.doesNotMatch(html, /Próximos 14 días|Stock y preparación|Supuesto de demostración/i);
+  assert.match(html, /Control operativo/);
+  assert.match(html, /Pedidos y logística/);
+  assert.match(html, /En gestión/);
+  assert.match(html, /Completados/);
+  assert.match(html, /Preparación y entrega/);
+  assert.match(html, /Abastecimiento/);
+  assert.match(html, /Logística/);
+  assert.match(html, /Frutura/);
+  assert.match(html, /Proquimur/);
+  assert.doesNotMatch(html, /piloto|qué falta confirmar|tres preguntas para Jony|casos para validar|modelo completo|no confirmado/i);
 });
 
-test("publica metadatos específicos del piloto", async () => {
+test("publica metadatos del control operativo", async () => {
   const response = await render();
   const html = await response.text();
-  assert.match(html, /<title>Ecoase — Piloto operativo<\/title>/i);
-  assert.match(html, /Una pantalla simple para validar cómo un pedido de Ecoase se transforma en una entrega\./i);
+  assert.match(html, /<title>Ecoase — Control operativo<\/title>/i);
+  assert.match(html, /Control de pedidos, preparación, logística y entregas de Ecoase\./i);
+  assert.doesNotMatch(html, /Piloto operativo/i);
 });
