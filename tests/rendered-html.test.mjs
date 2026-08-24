@@ -337,7 +337,7 @@ test("crea pedidos mediante POST /api/orders", async () => {
       orderDate: "2026-08-01",
       requestedDeliveryDate: "2026-08-10",
       plannedDate: "2026-08-10",
-      stage: "produccion",
+      stage: "reorganizando",
       transport: "Matías",
       reference: "OC-4321",
       zetaCode: "Z-08",
@@ -352,7 +352,7 @@ test("crea pedidos mediante POST /api/orders", async () => {
   assert.equal(payload.order.pending, 50);
   assert.equal(payload.order.orderDate, "2026-08-01");
   assert.equal(payload.order.requestedDeliveryDate, "2026-08-10");
-  assert.equal(payload.order.stage, "produccion");
+  assert.equal(payload.order.stage, "reorganizando");
   assert.equal(payload.order.zetaCode, "Z-08");
   assert.equal(payload.order.deliveryAddress, "Ruta 5 km 18");
   assert.equal(payload.order.notes, "Descargar por el acceso norte.");
