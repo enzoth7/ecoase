@@ -170,7 +170,6 @@ test("permite editar el plan y registra los cambios del pedido", async () => {
     method: "PATCH",
     headers: { "content-type": "application/json" },
     body: JSON.stringify({
-      status: "coordinacion",
       transport: "Milton",
       plannedDate: "2026-08-18",
       requested: 650,
@@ -180,8 +179,6 @@ test("permite editar el plan y registra los cambios del pedido", async () => {
 
   assert.equal(response.status, 200);
   const payload = await response.json();
-  assert.equal(payload.order.status, "coordinacion");
-  assert.equal(payload.order.statusLabel, "En coordinación");
   assert.equal(payload.order.transport, "Milton");
   assert.match(payload.order.dateLabel, /18 de agosto/i);
   assert.equal(payload.order.plannedDate, "2026-08-18");
@@ -201,7 +198,7 @@ test("al completar un pedido se mueve al historial", async () => {
   const updateResponse = await request("/api/orders/proquimur-63", {
     method: "PATCH",
     headers: { "content-type": "application/json" },
-    body: JSON.stringify({ status: "completado" }),
+    body: JSON.stringify({ stage: "completado" }),
   });
   assert.equal(updateResponse.status, 200);
 

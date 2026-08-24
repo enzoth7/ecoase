@@ -1,15 +1,11 @@
 import { getProviders, updateOrder } from "../../store";
-import type { OrderStatus, OperationStage } from "../../../data";
+import type { OperationStage } from "../../../data";
 
-const validStatuses = new Set<OrderStatus>(["bloqueado", "coordinacion", "completado"]);
 const validStages = new Set<OperationStage>(["negociacion", "produccion", "logistica", "completado"]);
 
 export async function PATCH(request: Request, context: { params: Promise<{ id: string }> }) {
   const { id } = await context.params;
-  const payload = (await request.json()) as { status?: unknown; transport?: unknown; plannedDate?: unknown; requested?: unknown; stage?: unknown };
-  const status = typeof payload.status === "string" && validStatuses.has(payload.status as OrderStatus)
-    ? payload.status as OrderStatus
-    : undefined;
+  const payload = (await request.json()) as { transport?: unknown; plannedDate?: unknown; requested?: unknown; stage?: unknown };
   const transportCandidate = typeof payload.transport === "string" ? payload.transport.trim() : undefined;
   const validTransports = new Set((await getProviders()).filter((provider) => provider.type === "Transporte").map((provider) => provider.name));
   const transport = transportCandidate && validTransports.has(transportCandidate) ? transportCandidate : undefined;
@@ -23,12 +19,12 @@ export async function PATCH(request: Request, context: { params: Promise<{ id: s
     ? payload.stage as OperationStage
     : undefined;
 
-  if (!status && !transport && !plannedDate && !requested && !stage) {
+  if (!transport && !plannedDate && !requested && !stage) {
     return Response.json({ error: "Indique al menos un cambio válido." }, { status: 400 });
   }
 
   try {
-    const result = await updateOrder(id, { status, transport, plannedDate, requested, stage });
+    const result = await updateOrder(id, { transport, plannedDate, requested, stage });
     if (!result) return Response.json({ error: "Pedido no encontrado." }, { status: 404 });
 
     return Response.json(result);

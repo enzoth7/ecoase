@@ -1,4 +1,3 @@
-export type OrderStatus = "bloqueado" | "coordinacion" | "completado";
 export type OperationStage = "negociacion" | "produccion" | "logistica" | "completado";
 export type DeliveryStatus = "programada" | "en_transito" | "parcial" | "completa" | "fallida" | "rechazada";
 export type OrderUpdateKind = "cambio" | "entrega" | "direccion" | "despacho" | "incidencia";
@@ -18,8 +17,6 @@ export interface OperationOrder {
   requested: number;
   delivered: number;
   pending: number;
-  status: OrderStatus;
-  statusLabel: "Bloqueado" | "En coordinación" | "Completado";
   stage?: OperationStage;
   dateLabel: string;
   plannedDate?: string;
@@ -60,7 +57,7 @@ export const stageLabels: Record<OperationStage, string> = {
 
 export function getOrderStage(order: OperationOrder): OperationStage {
   if (order.stage) return order.stage;
-  return order.status === "completado" ? "completado" : "negociacion";
+  return "negociacion";
 }
 
 function dateFromLabel(label: string) {
@@ -210,8 +207,7 @@ export const orders: OperationOrder[] = [
     requested: 600,
     delivered: 0,
     pending: 600,
-    status: "bloqueado",
-    statusLabel: "Bloqueado",
+    stage: "produccion",
     dateLabel: "Viernes 14",
     transport: "Linares",
     supply: "Los pallets previstos no llegaron",
@@ -230,8 +226,7 @@ export const orders: OperationOrder[] = [
     requested: 600,
     delivered: 0,
     pending: 600,
-    status: "coordinacion",
-    statusLabel: "En coordinación",
+    stage: "produccion",
     dateLabel: "Martes 11",
     transport: "Linares",
     supply: "600 en stock Palbin · 300 marcados y 300 sin marcar",
@@ -253,8 +248,7 @@ export const orders: OperationOrder[] = [
     requested: 500,
     delivered: 500,
     pending: 0,
-    status: "completado",
-    statusLabel: "Completado",
+    stage: "completado",
     dateLabel: "28 de julio",
     transport: "No registrado",
     supply: "Orden despachada en cinco líneas",
@@ -280,8 +274,7 @@ export const orders: OperationOrder[] = [
     requested: 360,
     delivered: 360,
     pending: 0,
-    status: "completado",
-    statusLabel: "Completado",
+    stage: "completado",
     dateLabel: "12 de agosto",
     transport: "Propio",
     supply: "Seis líneas despachadas",
@@ -308,8 +301,7 @@ export const orders: OperationOrder[] = [
     requested: 600,
     delivered: 600,
     pending: 0,
-    status: "completado",
-    statusLabel: "Completado",
+    stage: "completado",
     dateLabel: "Martes 11",
     transport: "Linares",
     supply: "Pedido completo",
@@ -328,8 +320,7 @@ export const orders: OperationOrder[] = [
     requested: 600,
     delivered: 600,
     pending: 0,
-    status: "completado",
-    statusLabel: "Completado",
+    stage: "completado",
     dateLabel: "Miércoles 12",
     transport: "Linares",
     supply: "Dos líneas completas",
@@ -351,8 +342,7 @@ export const orders: OperationOrder[] = [
     requested: 50,
     delivered: 50,
     pending: 0,
-    status: "completado",
-    statusLabel: "Completado",
+    stage: "completado",
     dateLabel: "Miércoles 12",
     transport: "Matías",
     supply: "Pedido completo",
@@ -371,8 +361,7 @@ export const orders: OperationOrder[] = [
     requested: 518,
     delivered: 518,
     pending: 0,
-    status: "completado",
-    statusLabel: "Completado",
+    stage: "completado",
     dateLabel: "Miércoles 12",
     transport: "Milton",
     supply: "Pedido completo",
@@ -391,8 +380,7 @@ export const orders: OperationOrder[] = [
     requested: 600,
     delivered: 600,
     pending: 0,
-    status: "completado",
-    statusLabel: "Completado",
+    stage: "completado",
     dateLabel: "Jueves 13",
     transport: "Linares",
     supply: "Pedido completo",
@@ -411,8 +399,7 @@ export const orders: OperationOrder[] = [
     requested: 600,
     delivered: 600,
     pending: 0,
-    status: "completado",
-    statusLabel: "Completado",
+    stage: "completado",
     dateLabel: "Viernes 14",
     transport: "Linares",
     supply: "Pedido completo",
@@ -431,8 +418,7 @@ export const orders: OperationOrder[] = [
     requested: 360,
     delivered: 360,
     pending: 0,
-    status: "completado",
-    statusLabel: "Completado",
+    stage: "completado",
     dateLabel: "Viernes 14",
     transport: "Milton",
     supply: "Dos líneas completas",
@@ -454,8 +440,7 @@ export const orders: OperationOrder[] = [
     requested: 150,
     delivered: 150,
     pending: 0,
-    status: "completado",
-    statusLabel: "Completado",
+    stage: "completado",
     dateLabel: "Sábado 15",
     transport: "Matías",
     supply: "Pedido completo",

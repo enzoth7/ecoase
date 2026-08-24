@@ -10,7 +10,6 @@ import {
   type OperationStage,
   type OrderChange,
   type OrderUpdateKind,
-  type OrderStatus,
   type Provider,
   type Client,
   type Product,
@@ -33,7 +32,7 @@ export type CreateOrderInput = {
   stage?: Exclude<OperationStage, "completado">;
 };
 
-export type UpdateOrderInput = Partial<Pick<OperationOrder, "status" | "transport" | "requested" | "stage">> & {
+export type UpdateOrderInput = Partial<Pick<OperationOrder, "transport" | "requested" | "stage">> & {
   plannedDate?: string;
 };
 
@@ -65,8 +64,6 @@ type DbOrder = {
   requested: number;
   delivered: number;
   pending: number;
-  status: OrderStatus;
-  status_label: OperationOrder["statusLabel"];
   stage: OperationStage;
   order_date: string | null;
   requested_delivery_date: string | null;
@@ -101,12 +98,6 @@ const memoryOrders: OperationOrder[] = structuredClone(seededOrders);
 const memoryHistory = new Map<string, OrderChange[]>();
 const memoryProducts: Product[] = structuredClone(seededProducts);
 const memoryClients: Client[] = [...new Set(seededOrders.map((order) => order.client))].map((name, index) => ({ id: `cliente-${index + 1}`, name }));
-const statusLabels: Record<OrderStatus, OperationOrder["statusLabel"]> = {
-  bloqueado: "Bloqueado",
-  coordinacion: "En coordinación",
-  completado: "Completado",
-};
-
 function mapOrder(row: DbOrder): OperationOrder {
   return {
     id: row.id,
@@ -116,8 +107,6 @@ function mapOrder(row: DbOrder): OperationOrder {
     requested: row.requested,
     delivered: row.delivered,
     pending: row.pending,
-    status: row.status,
-    statusLabel: row.status_label,
     stage: row.stage,
     orderDate: row.order_date ?? undefined,
     requestedDeliveryDate: row.requested_delivery_date ?? undefined,
@@ -281,8 +270,6 @@ export async function createOrder(input: CreateOrderInput) {
     requested: input.requested,
     delivered: 0,
     pending: input.requested,
-    status: "coordinacion",
-    statusLabel: "En coordinación",
     stage: input.stage ?? "negociacion",
     orderDate: input.orderDate,
     requestedDeliveryDate: input.requestedDeliveryDate,
@@ -369,8 +356,6 @@ export async function recordOrderUpdate(id: string, input: RecordOrderUpdateInpu
     if (order.pending === 0 && getOrderStage(order) !== "completado") {
       changes.push({ field: "Etapa", from: stageLabels[getOrderStage(order)], to: stageLabels.completado });
       order.stage = "completado";
-      order.status = "completado";
-      order.statusLabel = "Completado";
     }
   }
 
@@ -419,7 +404,6 @@ export async function updateOrder(id: string, changes: UpdateOrderInput) {
       method: "POST",
       body: JSON.stringify({
         p_id: id,
-        p_status: changes.status ?? null,
         p_transport: changes.transport?.trim() || null,
         p_planned_date: changes.plannedDate ?? null,
         p_requested: changes.requested ?? null,
@@ -468,13 +452,6 @@ export async function updateOrder(id: string, changes: UpdateOrderInput) {
   if (changes.stage && changes.stage !== getOrderStage(order)) {
     recordedChanges.push({ field: "Etapa", from: stageLabels[getOrderStage(order)], to: stageLabels[changes.stage] });
     order.stage = changes.stage;
-    order.status = changes.stage === "completado" ? "completado" : "coordinacion";
-    order.statusLabel = changes.stage === "completado" ? "Completado" : "En coordinación";
-  }
-  if (changes.status && changes.status !== order.status) {
-    recordedChanges.push({ field: "Estado", from: order.statusLabel, to: statusLabels[changes.status] });
-    order.status = changes.status;
-    order.statusLabel = statusLabels[changes.status];
   }
   const change = recordedChanges.length > 0 ? {
     id: `cambio-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,

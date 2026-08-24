@@ -1,12 +1,11 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { orders, products, providers } from "../app/data.ts";
+import { getOrderStage, orders, products, providers } from "../app/data.ts";
 
 test("separa los pedidos activos del historial", () => {
   assert.equal(orders.length, 12);
-  assert.equal(orders.filter((order) => order.status !== "completado").length, 2);
-  assert.equal(orders.filter((order) => order.status === "bloqueado").length, 1);
-  assert.equal(orders.filter((order) => order.status === "completado").length, 10);
+  assert.equal(orders.filter((order) => getOrderStage(order) !== "completado").length, 2);
+  assert.equal(orders.filter((order) => getOrderStage(order) === "completado").length, 10);
 });
 
 test("distingue proveedores de aserradero y transporte", () => {
@@ -49,10 +48,10 @@ test("Pamer 184833 conserva las cinco líneas y el remito 603", () => {
   assert.match(order.source, /filas 4–8/);
 });
 
-test("Frutura mantiene el bloqueo de 600 pallets", () => {
+test("Frutura mantiene los 600 pallets pendientes", () => {
   const order = orders.find((item) => item.id === "frutura-74");
   assert.ok(order);
-  assert.equal(order.status, "bloqueado");
+  assert.equal(getOrderStage(order), "produccion");
   assert.equal(order.requested, 600);
   assert.equal(order.pending, 600);
   assert.match(order.supply, /no llegaron/i);
@@ -62,7 +61,7 @@ test("Frutura mantiene el bloqueo de 600 pallets", () => {
 test("Proquimur separa preparación, stock y transporte", () => {
   const order = orders.find((item) => item.id === "proquimur-63");
   assert.ok(order);
-  assert.equal(order.status, "coordinacion");
+  assert.equal(getOrderStage(order), "produccion");
   assert.deepEqual(order.lines.map((line) => [line.quantity, line.preparation]), [
     [300, "Con HT"],
     [300, "Sin HT"],

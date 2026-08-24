@@ -6,7 +6,6 @@ import {
   CalendarDays,
   CheckCircle2,
   ChevronRight,
-  CircleDot,
   ClipboardList,
   Factory,
   Package,
@@ -18,7 +17,6 @@ import {
   Truck,
   Users,
   X,
-  type LucideIcon,
 } from "lucide-react";
 import { useEffect, useMemo, useRef, useState, type FormEvent } from "react";
 import {
@@ -31,7 +29,6 @@ import {
   type OperationOrder,
   type OrderChange,
   type OrderUpdateKind,
-  type OrderStatus,
   type OperationStage,
   type Provider,
   type Product,
@@ -88,22 +85,6 @@ const weekDays = [
   { name: "Vie", day: 14 },
   { name: "Sáb", day: 15 },
 ];
-
-const statusIcons: Record<OrderStatus, LucideIcon> = {
-  bloqueado: AlertTriangle,
-  coordinacion: CircleDot,
-  completado: CheckCircle2,
-};
-
-function StatusBadge({ order }: { order: OperationOrder }) {
-  const Icon = statusIcons[order.status];
-  return (
-    <small className={`status-badge ${order.status}`}>
-      <Icon size={14} aria-hidden="true" />
-      {order.statusLabel}
-    </small>
-  );
-}
 
 type ClientSummary = {
   name: string;
@@ -311,7 +292,7 @@ function CalendarView({ orders, onOpen }: { orders: OperationOrder[]; onOpen: (i
               <div className="calendar-orders">
                 {dayOrders.map((order) => (
                   <button type="button" key={order.id} onClick={() => onOpen(order.id)}>
-                    <StatusBadge order={order} /><strong>{order.client}</strong>{visibleReference(order) && <small>{visibleReference(order)}</small>}<small>{number.format(order.requested)} unidades</small>
+                    <StageBadge stage={getOrderStage(order)} /><strong>{order.client}</strong>{visibleReference(order) && <small>{visibleReference(order)}</small>}<small>{number.format(order.requested)} unidades</small>
                   </button>
                 ))}
                 {dayOrders.length === 0 && <p>Sin entregas</p>}
@@ -342,7 +323,7 @@ function LogisticsView({ orders, onOpen }: { orders: OperationOrder[]; onOpen: (
             <div><strong>{order.client}</strong><small>{[visibleReference(order), order.product].filter(Boolean).join(" · ")}</small></div>
             <div><small className="column-label">Fecha</small><strong>{order.dateLabel}</strong></div>
             <div><small className="column-label">Transporte</small><strong>{order.transport}</strong></div>
-            <StatusBadge order={order} />
+            <StageBadge stage={getOrderStage(order)} />
             <ChevronRight size={19} aria-hidden="true" />
           </button>
         ))}
@@ -704,8 +685,8 @@ export default function Dashboard({ initialSection = "pedidos" }: { initialSecti
     }
   }, [initialSection]);
 
-  const activeOrders = useMemo(() => orderRows.filter((order) => order.status !== "completado"), [orderRows]);
-  const historyOrders = useMemo(() => orderRows.filter((order) => order.status === "completado"), [orderRows]);
+  const activeOrders = useMemo(() => orderRows.filter((order) => getOrderStage(order) !== "completado"), [orderRows]);
+  const historyOrders = useMemo(() => orderRows.filter((order) => getOrderStage(order) === "completado"), [orderRows]);
   const isHistory = section === "historial";
   const visibleOrders = useMemo(() => {
     const normalized = query.trim().toLocaleLowerCase("es");
@@ -719,9 +700,9 @@ export default function Dashboard({ initialSection = "pedidos" }: { initialSecti
   const selectedOrder = visibleOrders.find((order) => order.id === selectedId) ?? visibleOrders[0];
   const completed = historyOrders.length;
   const kpiOrders = useMemo(() => orderRows.filter((order) => isOrderInPeriod(order, kpiPeriod, today)), [kpiPeriod, orderRows, today]);
-  const kpiActiveOrders = kpiOrders.filter((order) => order.status !== "completado");
+  const kpiActiveOrders = kpiOrders.filter((order) => getOrderStage(order) !== "completado");
   const productionCount = kpiActiveOrders.filter((order) => getOrderStage(order) === "produccion").length;
-  const waitingCount = kpiActiveOrders.filter((order) => order.status === "bloqueado" || getOrderStage(order) === "negociacion").length;
+  const waitingCount = kpiActiveOrders.filter((order) => getOrderStage(order) === "negociacion").length;
   const palletsToProduce = kpiActiveOrders.reduce((sum, order) => sum + order.pending, 0);
   const periodRequested = kpiOrders.reduce((sum, order) => sum + order.requested, 0);
   const periodDelivered = kpiOrders.reduce((sum, order) => sum + order.delivered, 0);
@@ -734,7 +715,7 @@ export default function Dashboard({ initialSection = "pedidos" }: { initialSecti
       current.requested += order.requested;
       current.delivered += order.delivered;
       current.pending += order.pending;
-      if (order.status !== "completado") { current.activeOrders += 1; current.activePallets += order.requested; }
+      if (getOrderStage(order) !== "completado") { current.activeOrders += 1; current.activePallets += order.requested; }
       summaries.set(order.client, current);
     });
     registeredClients.forEach((client) => {
@@ -751,7 +732,7 @@ export default function Dashboard({ initialSection = "pedidos" }: { initialSecti
 
   const openClientOrders = (client: string) => {
     const clientOrders = orderRows.filter((order) => order.client === client);
-    const firstActiveOrder = clientOrders.find((order) => order.status !== "completado");
+    const firstActiveOrder = clientOrders.find((order) => getOrderStage(order) !== "completado");
     const nextSection: DashboardSection = firstActiveOrder ? "pedidos" : "historial";
     setSection(nextSection);
     window.history.pushState({}, "", sectionPaths[nextSection]);
@@ -761,7 +742,7 @@ export default function Dashboard({ initialSection = "pedidos" }: { initialSecti
 
   const openOrder = (id: string) => {
     const order = orderRows.find((item) => item.id === id);
-    const nextSection: DashboardSection = order?.status === "completado" ? "historial" : "pedidos";
+    const nextSection: DashboardSection = getOrderStage(order ?? { stage: "negociacion" } as OperationOrder) === "completado" ? "historial" : "pedidos";
     setSection(nextSection);
     window.history.pushState({}, "", sectionPaths[nextSection]);
     setQuery("");

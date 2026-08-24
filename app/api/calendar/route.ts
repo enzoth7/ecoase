@@ -1,8 +1,9 @@
 import { getOrders } from "../store";
+import { getOrderStage } from "../../data";
 
 export async function GET() {
-  const calendar = (await getOrders()).filter((order) => order.status !== "completado").map(({ id, client, reference, dateLabel, requested, status, statusLabel }) => ({
-    id, client, reference, dateLabel, requested, status, statusLabel,
+  const calendar = (await getOrders()).filter((order) => getOrderStage(order) !== "completado").map(({ id, client, reference, dateLabel, requested }) => ({
+    id, client, reference, dateLabel, requested,
   }));
   return Response.json({ calendar });
 }

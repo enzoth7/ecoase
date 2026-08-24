@@ -1,16 +1,16 @@
 import { getOrders } from "../store";
 import { getOrderStage } from "../../data";
 
-const statusPriority = { bloqueado: 0, coordinacion: 1, completado: 2 } as const;
+const stagePriority = { negociacion: 0, produccion: 1, logistica: 2, completado: 3 } as const;
 
 export async function GET() {
   const plan = (await getOrders())
-    .filter((order) => order.status !== "completado")
+    .filter((order) => getOrderStage(order) !== "completado")
     .map((order) => ({
       ...order,
       stage: getOrderStage(order),
     }))
-    .sort((a, b) => statusPriority[a.status] - statusPriority[b.status] || a.client.localeCompare(b.client, "es"));
+    .sort((a, b) => stagePriority[getOrderStage(a)] - stagePriority[getOrderStage(b)] || a.client.localeCompare(b.client, "es"));
 
   return Response.json({ plan });
 }
