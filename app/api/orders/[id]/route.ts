@@ -1,9 +1,8 @@
-import { updateOrder } from "../../store";
-import { providers, type OrderStatus, type OperationStage } from "../../../data";
+import { getProviders, updateOrder } from "../../store";
+import type { OrderStatus, OperationStage } from "../../../data";
 
 const validStatuses = new Set<OrderStatus>(["bloqueado", "coordinacion", "completado"]);
 const validStages = new Set<OperationStage>(["negociacion", "produccion", "logistica", "completado"]);
-const validTransports = new Set(providers.filter((provider) => provider.type === "Transporte").map((provider) => provider.name));
 
 export async function PATCH(request: Request, context: { params: Promise<{ id: string }> }) {
   const { id } = await context.params;
@@ -12,6 +11,7 @@ export async function PATCH(request: Request, context: { params: Promise<{ id: s
     ? payload.status as OrderStatus
     : undefined;
   const transportCandidate = typeof payload.transport === "string" ? payload.transport.trim() : undefined;
+  const validTransports = new Set((await getProviders()).filter((provider) => provider.type === "Transporte").map((provider) => provider.name));
   const transport = transportCandidate && validTransports.has(transportCandidate) ? transportCandidate : undefined;
   const plannedDate = typeof payload.plannedDate === "string" && /^\d{4}-\d{2}-\d{2}$/.test(payload.plannedDate)
     ? payload.plannedDate
@@ -28,7 +28,7 @@ export async function PATCH(request: Request, context: { params: Promise<{ id: s
   }
 
   try {
-    const result = updateOrder(id, { status, transport, plannedDate, requested, stage });
+    const result = await updateOrder(id, { status, transport, plannedDate, requested, stage });
     if (!result) return Response.json({ error: "Pedido no encontrado." }, { status: 404 });
 
     return Response.json(result);

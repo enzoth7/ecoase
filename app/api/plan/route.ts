@@ -4,7 +4,7 @@ import { getOrderStage } from "../../data";
 const statusPriority = { bloqueado: 0, coordinacion: 1, completado: 2 } as const;
 
 export async function GET() {
-  const plan = getOrders()
+  const plan = (await getOrders())
     .filter((order) => order.status !== "completado")
     .map((order) => ({
       ...order,

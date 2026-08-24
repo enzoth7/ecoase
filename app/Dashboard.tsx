@@ -26,7 +26,7 @@ import {
   getOrderStage,
   getOrderPlannedDate,
   orders as initialOrders,
-  providers,
+  providers as initialProviders,
   stageLabels,
   type OperationOrder,
   type OrderChange,
@@ -400,7 +400,7 @@ function PlanView({ orders, onEdit }: { orders: OperationOrder[]; onEdit: (order
   );
 }
 
-function AddOrderModal({ onClose, onCreated }: { onClose: () => void; onCreated: (order: OperationOrder) => void }) {
+function AddOrderModal({ transportOptions, onClose, onCreated }: { transportOptions: string[]; onClose: () => void; onCreated: (order: OperationOrder) => void }) {
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
   const clientInputRef = useRef<HTMLInputElement>(null);
@@ -425,7 +425,7 @@ function AddOrderModal({ onClose, onCreated }: { onClose: () => void; onCreated:
         reference: form.get("reference"),
         product: form.get("product"),
         requested: Number(form.get("requested")),
-        dateLabel: form.get("dateLabel"),
+        plannedDate: form.get("plannedDate"),
         transport: form.get("transport"),
       }),
     });
@@ -450,8 +450,8 @@ function AddOrderModal({ onClose, onCreated }: { onClose: () => void; onCreated:
           <label>Referencia<input name="reference" placeholder="Ej. Orden 184834" /></label>
           <label className="field-wide">Producto<input name="product" required /></label>
           <label>Cantidad<input name="requested" type="number" min="1" step="1" required /></label>
-          <label>Fecha<input name="dateLabel" placeholder="Ej. Viernes 14" required /></label>
-          <label className="field-wide">Transportista<select name="transport" required defaultValue=""><option value="" disabled>Seleccionar transportista</option>{providers.filter((provider) => provider.type === "Transporte").map((provider) => <option key={provider.id} value={provider.name}>{provider.name}</option>)}</select></label>
+          <label>Fecha planificada<input name="plannedDate" type="date" required /></label>
+          <label className="field-wide">Transportista<select name="transport" required defaultValue=""><option value="" disabled>Seleccionar transportista</option>{transportOptions.map((transport) => <option key={transport} value={transport}>{transport}</option>)}</select></label>
           {error && <p className="form-error" role="alert">{error}</p>}
           <div className="modal-actions">
             <button type="button" className="secondary-button" onClick={onClose}>Cancelar</button>
@@ -467,6 +467,7 @@ export default function Dashboard({ initialSection = "pedidos" }: { initialSecti
   const [section, setSection] = useState<DashboardSection>(initialSection);
   const [query, setQuery] = useState("");
   const [orderRows, setOrderRows] = useState<OperationOrder[]>(initialOrders);
+  const [providerRows, setProviderRows] = useState<Provider[]>(initialProviders);
   const [selectedId, setSelectedId] = useState(initialOrders[0].id);
   const [showAddOrder, setShowAddOrder] = useState(false);
   const [editingPlanOrder, setEditingPlanOrder] = useState<OperationOrder | null>(null);
@@ -474,15 +475,19 @@ export default function Dashboard({ initialSection = "pedidos" }: { initialSecti
   const detailRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
-    Promise.all([fetch("/api/orders"), fetch("/api/history")])
-      .then(async ([ordersResponse, historyResponse]) => {
-        const [ordersPayload, historyPayload] = await Promise.all([
+    Promise.all([fetch("/api/orders"), fetch("/api/history"), fetch("/api/providers")])
+      .then(async ([ordersResponse, historyResponse, providersResponse]) => {
+        const [ordersPayload, historyPayload, providersPayload] = await Promise.all([
           ordersResponse.json() as Promise<{ orders?: OperationOrder[] }>,
           historyResponse.json() as Promise<{ history?: OperationOrder[] }>,
+          providersResponse.json() as Promise<{ providers?: Provider[] }>,
         ]);
-        return [...(ordersPayload.orders ?? []), ...(historyPayload.history ?? [])];
+        return { orders: [...(ordersPayload.orders ?? []), ...(historyPayload.history ?? [])], providers: providersPayload.providers ?? [] };
       })
-      .then((orders) => setOrderRows(orders))
+      .then(({ orders, providers }) => {
+        setOrderRows(orders);
+        setProviderRows(providers);
+      })
       .catch(() => undefined);
   }, []);
 
@@ -718,12 +723,12 @@ export default function Dashboard({ initialSection = "pedidos" }: { initialSecti
           <div ref={detailRef} className="detail-column">
             {selectedOrder ? <OrderDetail order={selectedOrder} /> : <EmptyOrderDetail history={isHistory} />}
           </div>
-        </div> : section === "plan" ? <><PlanView orders={activeOrders} onEdit={setEditingPlanOrder} />{updateError && <p className="plan-error" role="alert">{updateError}</p>}</> : section === "calendario" ? <CalendarView orders={activeOrders} onOpen={openOrder} /> : section === "logistica" ? <LogisticsView orders={activeOrders} onOpen={openOrder} /> : section === "proveedores" ? <ProvidersView providers={providers} /> : <ClientsView clients={clients} onOpen={openClientOrders} />}
+        </div> : section === "plan" ? <><PlanView orders={activeOrders} onEdit={setEditingPlanOrder} />{updateError && <p className="plan-error" role="alert">{updateError}</p>}</> : section === "calendario" ? <CalendarView orders={activeOrders} onOpen={openOrder} /> : section === "logistica" ? <LogisticsView orders={activeOrders} onOpen={openOrder} /> : section === "proveedores" ? <ProvidersView providers={providerRows} /> : <ClientsView clients={clients} onOpen={openClientOrders} />}
         </main>
 
       </div>
-      {showAddOrder && <AddOrderModal onClose={() => setShowAddOrder(false)} onCreated={addCreatedOrder} />}
-      {editingPlanOrder && <EditPlanModal order={editingPlanOrder} transportOptions={providers.filter((provider) => provider.type === "Transporte").map((provider) => provider.name)} onClose={() => setEditingPlanOrder(null)} onSave={(changes) => updateOrder(editingPlanOrder.id, changes)} />}
+      {showAddOrder && <AddOrderModal transportOptions={providerRows.filter((provider) => provider.type === "Transporte").map((provider) => provider.name)} onClose={() => setShowAddOrder(false)} onCreated={addCreatedOrder} />}
+      {editingPlanOrder && <EditPlanModal order={editingPlanOrder} transportOptions={providerRows.filter((provider) => provider.type === "Transporte").map((provider) => provider.name)} onClose={() => setEditingPlanOrder(null)} onSave={(changes) => updateOrder(editingPlanOrder.id, changes)} />}
     </div>
   );
 }

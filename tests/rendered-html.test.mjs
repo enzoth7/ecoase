@@ -19,6 +19,7 @@ async function request(path = "/", init = {}) {
 before(async () => {
   server = spawn(process.execPath, ["node_modules/next/dist/bin/next", "start", "-p", String(port)], {
     cwd: projectRoot,
+    env: { ...process.env, ECOASE_DATA_BACKEND: "memory" },
     stdio: ["ignore", "pipe", "pipe"],
   });
   server.stdout.on("data", (chunk) => { serverOutput += chunk.toString(); });
@@ -194,7 +195,7 @@ test("crea pedidos mediante POST /api/orders", async () => {
   const invalidTransport = await request("/api/orders", {
     method: "POST",
     headers: { "content-type": "application/json" },
-    body: JSON.stringify({ client: "Cliente prueba", product: "Pallet prueba", requested: 50, dateLabel: "Lunes 10", transport: "Remito 603" }),
+    body: JSON.stringify({ client: "Cliente prueba", product: "Pallet prueba", requested: 50, plannedDate: "2026-08-10", transport: "Remito 603" }),
   });
   assert.equal(invalidTransport.status, 400);
 
@@ -205,7 +206,7 @@ test("crea pedidos mediante POST /api/orders", async () => {
       client: "Cliente prueba",
       product: "Pallet prueba",
       requested: 50,
-      dateLabel: "Lunes 10",
+      plannedDate: "2026-08-10",
       transport: "Matías",
     }),
   });

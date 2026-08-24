@@ -8,6 +8,18 @@ Requiere Node.js `>=22.13.0`.
 
 ```bash
 npm install
+```
+
+Creá un archivo `.env.local` con:
+
+```bash
+SUPABASE_URL=https://tu-proyecto.supabase.co
+SUPABASE_PUBLISHABLE_KEY=tu-clave-publicable
+```
+
+Luego iniciá la aplicación:
+
+```bash
 npm run dev
 ```
 
@@ -32,8 +44,10 @@ La aplicación queda disponible en `http://localhost:3000`.
 - `GET /api/logistics`: entregas y transportes.
 - `GET /api/providers`: proveedores y tipo de abastecimiento.
 
-Por ahora las altas se guardan en memoria y se reinician con el servidor. La estructura de Drizzle queda disponible para incorporar una base persistente en la siguiente etapa.
+Los pedidos, sus líneas, los proveedores y el historial de cambios se guardan en Supabase. Las vistas de clientes, calendario, logística y plan se calculan a partir de esos datos.
+
+El esquema está versionado en `supabase/migrations` y los datos iniciales en `supabase/seed.sql`. Las pruebas de endpoints usan un almacenamiento temporal aislado para no modificar la base real.
 
 ## Despliegue en Vercel
 
-Vercel detecta Next.js automáticamente. Importá el repositorio, elegí la rama `main` como producción y mantené los comandos por defecto. No requiere directorio de salida ni configuración adicional.
+Vercel detecta Next.js automáticamente. Antes de desplegar, cargá `SUPABASE_URL` y `SUPABASE_PUBLISHABLE_KEY` en las variables de entorno del proyecto. No requiere directorio de salida personalizado.

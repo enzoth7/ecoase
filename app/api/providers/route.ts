@@ -1,5 +1,5 @@
-import { providers } from "../../data";
+import { getProviders } from "../store";
 
 export async function GET() {
-  return Response.json({ providers });
+  return Response.json({ providers: await getProviders() });
 }

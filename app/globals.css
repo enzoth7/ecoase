@@ -1147,6 +1147,7 @@ h3 {
 }
 
 .add-order-modal input,
+.add-order-modal select,
 .edit-plan-modal input,
 .edit-plan-modal select {
   width: 100%;
@@ -1160,6 +1161,7 @@ h3 {
 }
 
 .add-order-modal input:focus,
+.add-order-modal select:focus,
 .edit-plan-modal input:focus,
 .edit-plan-modal select:focus {
   border-color: var(--forest-2);
