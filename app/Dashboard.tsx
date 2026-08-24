@@ -3,7 +3,6 @@
 import {
   Archive,
   AlertTriangle,
-  Boxes,
   CalendarDays,
   CheckCircle2,
   ChevronRight,
@@ -607,10 +606,6 @@ export default function Dashboard({ initialSection = "pedidos" }: { initialSecti
         </div> : section === "plan" ? <><PlanView orders={activeOrders} onOpen={openOrder} onUpdate={updateOrder} />{updateError && <p className="plan-error" role="alert">{updateError}</p>}</> : section === "calendario" ? <CalendarView orders={activeOrders} onOpen={openOrder} /> : section === "logistica" ? <LogisticsView orders={activeOrders} onOpen={openOrder} /> : <ClientsView clients={clients} onOpen={openClientOrders} />}
         </main>
 
-        <footer className="dashboard-footer">
-          <Boxes size={17} aria-hidden="true" />
-          <small>Ecoase · Control de pedidos</small>
-        </footer>
       </div>
       {showAddOrder && <AddOrderModal onClose={() => setShowAddOrder(false)} onCreated={addCreatedOrder} />}
     </div>

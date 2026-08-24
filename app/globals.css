@@ -1073,16 +1073,6 @@ h3 {
   line-height: 1.45;
 }
 
-.dashboard-footer {
-  min-height: 46px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  gap: 7px;
-  color: #7a837e;
-  font-size: 10px;
-}
-
 .modal-backdrop {
   position: fixed;
   z-index: 200;
