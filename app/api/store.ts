@@ -14,7 +14,17 @@ import {
   type Client,
   type Product,
   type ProductKind,
+  type ProductionSource,
+  type TransportSource,
+  type CapacityOperation,
 } from "../data";
+import {
+  buildCapacitySnapshot,
+  type CapacityRule,
+  type ExternalProductionEntry,
+  type InternalProductionEntry,
+  type TransportCapacityEntry,
+} from "../capacity";
 import { supabaseRequest } from "../lib/supabase";
 
 export type CreateOrderInput = {
@@ -30,9 +40,16 @@ export type CreateOrderInput = {
   deliveryAddress?: string;
   notes?: string;
   stage?: Exclude<OperationStage, "completado">;
+  productionSource: ProductionSource;
+  producerProviderId?: string;
+  productionDate?: string;
+  importArrivalDate?: string;
+  requiredOperations: CapacityOperation[];
+  transportSource: TransportSource;
+  transportProviderId?: string;
 };
 
-export type UpdateOrderInput = Partial<Pick<OperationOrder, "transport" | "requested" | "stage">> & {
+export type UpdateOrderInput = Partial<Pick<OperationOrder, "transport" | "requested" | "stage" | "productionSource" | "producerProviderId" | "productionDate" | "importArrivalDate" | "requiredOperations" | "transportSource" | "transportProviderId">> & {
   plannedDate?: string;
 };
 
@@ -83,6 +100,13 @@ type DbOrder = {
   dispatched_at: string | null;
   delivered_at: string | null;
   source: string;
+  production_source: ProductionSource | null;
+  producer_provider_id: string | null;
+  production_date: string | null;
+  import_arrival_date: string | null;
+  required_operations: CapacityOperation[] | null;
+  transport_source: TransportSource | null;
+  transport_provider_id: string | null;
   order_lines: DbLine[];
 };
 type DbChange = {
@@ -98,6 +122,10 @@ const memoryOrders: OperationOrder[] = structuredClone(seededOrders);
 const memoryHistory = new Map<string, OrderChange[]>();
 const memoryProducts: Product[] = structuredClone(seededProducts);
 const memoryClients: Client[] = [...new Set(seededOrders.map((order) => order.client))].map((name, index) => ({ id: `cliente-${index + 1}`, name }));
+const memoryCapacityRules: CapacityRule[] = [];
+const memoryInternalCapacity: InternalProductionEntry[] = [];
+const memoryExternalCapacity: ExternalProductionEntry[] = [];
+const memoryTransportCapacity: TransportCapacityEntry[] = [];
 function mapOrder(row: DbOrder): OperationOrder {
   return {
     id: row.id,
@@ -127,6 +155,13 @@ function mapOrder(row: DbOrder): OperationOrder {
     dispatchedAt: row.dispatched_at ?? undefined,
     deliveredAt: row.delivered_at ?? undefined,
     source: row.source,
+    productionSource: row.production_source ?? "internal",
+    producerProviderId: row.producer_provider_id ?? undefined,
+    productionDate: row.production_date ?? undefined,
+    importArrivalDate: row.import_arrival_date ?? undefined,
+    requiredOperations: row.required_operations ?? ["assembly"],
+    transportSource: row.transport_source ?? (row.transport.toLocaleLowerCase() === "interno" || row.transport.toLocaleLowerCase() === "propio" ? "internal" : "external"),
+    transportProviderId: row.transport_provider_id ?? undefined,
     lines: [...(row.order_lines ?? [])]
       .sort((a, b) => a.position - b.position)
       .map((line) => ({ id: line.id, product: line.product, quantity: line.quantity, preparation: line.preparation ?? undefined })),
@@ -239,7 +274,7 @@ export async function deleteProduct(id: string) {
 
 export async function createOrder(input: CreateOrderInput) {
   if (!useMemoryStore) {
-    const id = await supabaseRequest<string>("/rest/v1/rpc/create_operation_order", {
+    const id = await supabaseRequest<string>("/rest/v1/rpc/create_operation_order_v2", {
       method: "POST",
       body: JSON.stringify({
         p_client: input.client.trim(),
@@ -248,12 +283,18 @@ export async function createOrder(input: CreateOrderInput) {
         p_order_date: input.orderDate,
         p_requested_delivery_date: input.requestedDeliveryDate,
         p_planned_date: input.plannedDate,
-        p_transport: input.transport.trim(),
         p_reference: input.reference?.trim() || null,
         p_zeta_code: input.zetaCode?.trim() || null,
         p_delivery_address: input.deliveryAddress?.trim() || null,
         p_notes: input.notes?.trim() || null,
         p_stage: input.stage ?? "negociacion",
+        p_production_source: input.productionSource,
+        p_producer_provider_id: input.producerProviderId ?? null,
+        p_production_date: input.productionDate ?? null,
+        p_import_arrival_date: input.importArrivalDate ?? null,
+        p_required_operations: input.requiredOperations,
+        p_transport_source: input.transportSource,
+        p_transport_provider_id: input.transportProviderId ?? null,
       }),
     });
     const order = await getDatabaseOrder(id);
@@ -277,6 +318,13 @@ export async function createOrder(input: CreateOrderInput) {
     plannedDate: input.plannedDate,
     dateLabel: formatPlannedDate(input.plannedDate),
     transport: input.transport.trim(),
+    transportSource: input.transportSource,
+    transportProviderId: input.transportProviderId,
+    productionSource: input.productionSource,
+    producerProviderId: input.producerProviderId,
+    productionDate: input.productionDate,
+    importArrivalDate: input.importArrivalDate,
+    requiredOperations: input.requiredOperations,
     supply: input.stage === "produccion" ? "Producción planificada" : "Pendiente de asignación",
     preparation: "Pendiente de preparación",
     logistics: `${input.transport.trim()} · entrega planificada`,
@@ -400,14 +448,24 @@ export async function recordOrderUpdate(id: string, input: RecordOrderUpdateInpu
 
 export async function updateOrder(id: string, changes: UpdateOrderInput) {
   if (!useMemoryStore) {
-    await supabaseRequest<string>("/rest/v1/rpc/update_operation_order", {
+    const current = await getDatabaseOrder(id);
+    if (!current) return null;
+    const productionSource = changes.productionSource ?? current.productionSource ?? "internal";
+    const transportSource = changes.transportSource ?? current.transportSource ?? "external";
+    await supabaseRequest<string>("/rest/v1/rpc/update_operation_order_v2", {
       method: "POST",
       body: JSON.stringify({
         p_id: id,
-        p_transport: changes.transport?.trim() || null,
-        p_planned_date: changes.plannedDate ?? null,
-        p_requested: changes.requested ?? null,
-        p_stage: changes.stage ?? null,
+        p_planned_date: changes.plannedDate ?? getOrderPlannedDate(current),
+        p_requested: changes.requested ?? current.requested,
+        p_stage: changes.stage ?? getOrderStage(current),
+        p_production_source: productionSource,
+        p_producer_provider_id: productionSource === "internal" ? null : changes.producerProviderId ?? current.producerProviderId ?? null,
+        p_production_date: productionSource === "import" ? null : changes.productionDate ?? current.productionDate ?? getOrderPlannedDate(current),
+        p_import_arrival_date: productionSource === "import" ? changes.importArrivalDate ?? current.importArrivalDate ?? null : null,
+        p_required_operations: changes.requiredOperations ?? current.requiredOperations ?? ["assembly"],
+        p_transport_source: transportSource,
+        p_transport_provider_id: transportSource === "internal" ? null : changes.transportProviderId ?? current.transportProviderId ?? null,
       }),
     });
     const [order, history] = await Promise.all([getDatabaseOrder(id), getOrderHistory(id)]);
@@ -453,6 +511,28 @@ export async function updateOrder(id: string, changes: UpdateOrderInput) {
     recordedChanges.push({ field: "Etapa", from: stageLabels[getOrderStage(order)], to: stageLabels[changes.stage] });
     order.stage = changes.stage;
   }
+  const assignmentFields: Array<[keyof OperationOrder, string, unknown]> = [
+    ["productionSource", "Origen de producción", changes.productionSource],
+    ["producerProviderId", "Productor", changes.producerProviderId],
+    ["productionDate", "Fecha de producción", changes.productionDate],
+    ["importArrivalDate", "Llegada de importación", changes.importArrivalDate],
+    ["requiredOperations", "Operaciones", changes.requiredOperations],
+    ["transportSource", "Origen del transporte", changes.transportSource],
+    ["transportProviderId", "Transportista", changes.transportProviderId],
+  ];
+  for (const [field, label, value] of assignmentFields) {
+    if (value === undefined) continue;
+    const previous = order[field];
+    const normalize = (item: unknown) => Array.isArray(item) ? item.join(", ") : String(item ?? "—");
+    if (normalize(previous) !== normalize(value)) {
+      recordedChanges.push({ field: label, from: normalize(previous), to: normalize(value) });
+      (order as unknown as Record<string, unknown>)[field] = value;
+    }
+  }
+  if (changes.productionSource === "internal") order.producerProviderId = undefined;
+  if (changes.productionSource === "import") order.productionDate = undefined;
+  if (changes.productionSource && changes.productionSource !== "import") order.importArrivalDate = undefined;
+  if (changes.transportSource === "internal") order.transportProviderId = undefined;
   const change = recordedChanges.length > 0 ? {
     id: `cambio-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
     changedAt: new Intl.DateTimeFormat("es-UY", { dateStyle: "short", timeStyle: "short" }).format(new Date()),
@@ -460,4 +540,57 @@ export async function updateOrder(id: string, changes: UpdateOrderInput) {
   } satisfies OrderChange : undefined;
   if (change) memoryHistory.set(id, [change, ...(memoryHistory.get(id) ?? [])]);
   return { order, change };
+}
+
+type DbCapacityRule = { operation: CapacityOperation; people_count: number; pallet_capacity: number };
+type DbInternalCapacity = { capacity_date: string; operation: CapacityOperation; people_count: number; manual_capacity: number | null };
+type DbExternalCapacity = { id: string; capacity_date: string; provider_id: string; operation: CapacityOperation; pallet_capacity: number; status: ExternalProductionEntry["status"] };
+type DbTransportCapacity = { id: string; capacity_date: string; source: TransportSource; provider_id: string | null; pallet_capacity: number; status: TransportCapacityEntry["status"] };
+
+export async function getCapacity(from: string, to: string) {
+  if (useMemoryStore) return buildCapacitySnapshot({ from, to, rules: memoryCapacityRules, internalEntries: memoryInternalCapacity, externalEntries: memoryExternalCapacity, transportEntries: memoryTransportCapacity, orders: memoryOrders, providers: seededProviders });
+  const range = `capacity_date=gte.${from}&capacity_date=lte.${to}`;
+  const [rules, internal, external, transport, orders, providers] = await Promise.all([
+    supabaseRequest<DbCapacityRule[]>("/rest/v1/capacity_rules?select=operation,people_count,pallet_capacity&order=operation.asc,people_count.asc"),
+    supabaseRequest<DbInternalCapacity[]>(`/rest/v1/internal_production_capacity?select=capacity_date,operation,people_count,manual_capacity&${range}`),
+    supabaseRequest<DbExternalCapacity[]>(`/rest/v1/external_production_capacity?select=id,capacity_date,provider_id,operation,pallet_capacity,status&${range}`),
+    supabaseRequest<DbTransportCapacity[]>(`/rest/v1/transport_capacity?select=id,capacity_date,source,provider_id,pallet_capacity,status&${range}`),
+    getOrders(), getProviders(),
+  ]);
+  return buildCapacitySnapshot({
+    from, to, orders, providers,
+    rules: rules.map((item) => ({ operation: item.operation, peopleCount: item.people_count, palletCapacity: item.pallet_capacity })),
+    internalEntries: internal.map((item) => ({ date: item.capacity_date, operation: item.operation, peopleCount: item.people_count, manualCapacity: item.manual_capacity ?? undefined })),
+    externalEntries: external.map((item) => ({ id: item.id, date: item.capacity_date, providerId: item.provider_id, operation: item.operation, palletCapacity: item.pallet_capacity, status: item.status })),
+    transportEntries: transport.map((item) => ({ id: item.id, date: item.capacity_date, source: item.source, providerId: item.provider_id ?? undefined, palletCapacity: item.pallet_capacity, status: item.status })),
+  });
+}
+
+function upsertMemory<T>(items: T[], predicate: (item: T) => boolean, value: T) {
+  const index = items.findIndex(predicate);
+  if (index === -1) items.push(value); else items[index] = value;
+}
+
+export async function saveCapacityRule(value: CapacityRule) {
+  if (!useMemoryStore) await supabaseRequest("/rest/v1/rpc/upsert_capacity_rule", { method: "POST", body: JSON.stringify({ p_operation: value.operation, p_people_count: value.peopleCount, p_pallet_capacity: value.palletCapacity }) });
+  else upsertMemory(memoryCapacityRules, (item) => item.operation === value.operation && item.peopleCount === value.peopleCount, value);
+  return value;
+}
+
+export async function saveInternalProduction(value: InternalProductionEntry) {
+  if (!useMemoryStore) await supabaseRequest("/rest/v1/rpc/upsert_internal_production_capacity", { method: "POST", body: JSON.stringify({ p_date: value.date, p_operation: value.operation, p_people_count: value.peopleCount, p_manual_capacity: value.manualCapacity ?? null }) });
+  else upsertMemory(memoryInternalCapacity, (item) => item.date === value.date && item.operation === value.operation, value);
+  return value;
+}
+
+export async function saveExternalProduction(value: ExternalProductionEntry) {
+  if (!useMemoryStore) await supabaseRequest("/rest/v1/rpc/upsert_external_production_capacity", { method: "POST", body: JSON.stringify({ p_date: value.date, p_provider_id: value.providerId, p_operation: value.operation, p_pallet_capacity: value.palletCapacity, p_status: value.status }) });
+  else upsertMemory(memoryExternalCapacity, (item) => item.date === value.date && item.providerId === value.providerId && item.operation === value.operation, { ...value, id: value.id ?? `external-${Date.now()}` });
+  return value;
+}
+
+export async function saveTransportCapacity(value: TransportCapacityEntry) {
+  if (!useMemoryStore) await supabaseRequest("/rest/v1/rpc/upsert_transport_capacity", { method: "POST", body: JSON.stringify({ p_date: value.date, p_source: value.source, p_provider_id: value.providerId ?? null, p_pallet_capacity: value.palletCapacity, p_status: value.status }) });
+  else upsertMemory(memoryTransportCapacity, (item) => item.date === value.date && item.source === value.source && (item.providerId ?? "") === (value.providerId ?? ""), { ...value, id: value.id ?? `transport-${Date.now()}` });
+  return value;
 }

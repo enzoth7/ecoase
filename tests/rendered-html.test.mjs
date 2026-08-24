@@ -93,7 +93,7 @@ test("usa rutas reales sin navegación por hash", async () => {
   assert.equal(rootResponse.status, 307);
   assert.equal(rootResponse.headers.get("location"), "/pedidos");
 
-  for (const path of ["/pedidos", "/historial", "/plan", "/calendario", "/logistica", "/clientes", "/productos", "/proveedores"]) {
+  for (const path of ["/pedidos", "/historial", "/plan", "/calendario", "/logistica", "/capacidad", "/clientes", "/productos", "/proveedores"]) {
     const response = await request(path);
     assert.equal(response.status, 200);
   }
@@ -107,6 +107,46 @@ test("usa rutas reales sin navegación por hash", async () => {
   assert.match(html, /href="\/clientes"/i);
   assert.match(html, /href="\/proveedores"/i);
   assert.match(html, /href="\/productos"/i);
+  assert.match(html, /href="\/capacidad"/i);
+});
+
+test("administra capacidad por día y permite sobrecarga", async () => {
+  const capacityPage = await request("/capacidad");
+  assert.equal(capacityPage.status, 200);
+  const html = await capacityPage.text();
+  assert.match(html, /Capacidad semanal/);
+  assert.match(html, /Producción y transporte en palets/);
+
+  const rule = await request("/api/capacity/rules", { method: "PUT", headers: { "content-type": "application/json" }, body: JSON.stringify({ operation: "assembly", peopleCount: 5, palletCapacity: 30 }) });
+  const internal = await request("/api/capacity/internal-production", { method: "PUT", headers: { "content-type": "application/json" }, body: JSON.stringify({ date: "2026-09-07", operation: "assembly", peopleCount: 5 }) });
+  const transport = await request("/api/capacity/transport", { method: "PUT", headers: { "content-type": "application/json" }, body: JSON.stringify({ date: "2026-09-08", source: "internal", palletCapacity: 25, status: "confirmed" }) });
+  assert.equal(rule.status, 200);
+  assert.equal(internal.status, 200);
+  assert.equal(transport.status, 200);
+
+  const created = await request("/api/orders", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({
+    client: "Capacidad prueba", product: "Pallet 120 × 100", requested: 40, orderDate: "2026-09-01", requestedDeliveryDate: "2026-09-08", plannedDate: "2026-09-08", stage: "produccion",
+    productionSource: "internal", productionDate: "2026-09-07", requiredOperations: ["assembly"], transportSource: "internal",
+  }) });
+  assert.equal(created.status, 201);
+  const createdOrder = (await created.json()).order;
+
+  const snapshotResponse = await request("/api/capacity?from=2026-09-07&to=2026-09-08");
+  assert.equal(snapshotResponse.status, 200);
+  const snapshot = (await snapshotResponse.json()).capacity;
+  const productionDay = snapshot.days.find((day) => day.date === "2026-09-07");
+  const deliveryDay = snapshot.days.find((day) => day.date === "2026-09-08");
+  assert.equal(productionDay.internalProduction.find((item) => item.operation === "assembly").capacity, 30);
+  assert.equal(productionDay.internalProduction.find((item) => item.operation === "assembly").committed, 40);
+  assert.equal(productionDay.internalProduction.find((item) => item.operation === "assembly").overload, 10);
+  assert.equal(deliveryDay.transportTotals.committed, 40);
+  assert.equal(deliveryDay.transportTotals.missing, 15);
+
+  const completed = await request(`/api/orders/${createdOrder.id}`, { method: "PATCH", headers: { "content-type": "application/json" }, body: JSON.stringify({ stage: "completado" }) });
+  assert.equal(completed.status, 200);
+  const released = (await (await request("/api/capacity?from=2026-09-07&to=2026-09-08")).json()).capacity;
+  assert.equal(released.days[0].internalProduction.find((item) => item.operation === "assembly").committed, 0);
+  assert.equal(released.days[1].transportTotals.committed, 0);
 });
 
 test("muestra el calendario por semana con controles de navegación", async () => {
@@ -167,7 +207,7 @@ test("expone pedidos activos e historial en endpoints separados", async () => {
   assert.equal(logisticsResponse.status, 200);
   assert.equal(planResponse.status, 200);
   assert.equal((await ordersResponse.json()).orders.length, 2);
-  assert.equal((await historyResponse.json()).history.length, 10);
+  assert.ok((await historyResponse.json()).history.length >= 10);
   assert.ok((await clientsResponse.json()).clients.length > 0);
   assert.equal((await calendarResponse.json()).calendar.length, 2);
   assert.equal((await logisticsResponse.json()).logistics.length, 2);

@@ -1,6 +1,10 @@
 export type OperationStage = "negociacion" | "produccion" | "logistica" | "atrasado" | "pospuesto" | "cancelado" | "reorganizando" | "completado";
 export type DeliveryStatus = "programada" | "en_transito" | "parcial" | "completa" | "fallida" | "rechazada";
 export type OrderUpdateKind = "cambio" | "entrega" | "direccion" | "despacho" | "incidencia";
+export type ProductionSource = "internal" | "sawmill" | "import";
+export type TransportSource = "internal" | "external";
+export type CapacityOperation = "assembly" | "marking" | "ht";
+export type CapacityStatus = "estimated" | "confirmed";
 
 export interface OrderLine {
   id: string;
@@ -25,6 +29,13 @@ export interface OperationOrder {
   requestedDeliveryDate?: string;
   zetaCode?: string;
   transport: string;
+  transportSource?: TransportSource;
+  transportProviderId?: string;
+  productionSource?: ProductionSource;
+  producerProviderId?: string;
+  productionDate?: string;
+  importArrivalDate?: string;
+  requiredOperations?: CapacityOperation[];
   supply: string;
   preparation: string;
   logistics: string;
@@ -81,7 +92,7 @@ export function formatPlannedDate(date: string) {
   return new Intl.DateTimeFormat("es-UY", { weekday: "long", day: "numeric", month: "long" }).format(value);
 }
 
-export type ProviderType = "Aserradero" | "Transporte";
+export type ProviderType = "Aserradero" | "Transporte" | "Importador";
 
 export interface Provider {
   id: string;

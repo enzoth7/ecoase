@@ -2121,6 +2121,195 @@ h3 {
   font-weight: 650;
 }
 
+.assignment-fieldset {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+  margin: 4px 0;
+  padding: 14px;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: var(--surface-soft);
+}
+
+.assignment-fieldset legend {
+  padding: 0 6px;
+  color: var(--ink);
+  font-size: 13px;
+  font-weight: 800;
+}
+
+.operation-options {
+  grid-column: 1 / -1;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 16px;
+}
+
+.operation-options > strong {
+  width: 100%;
+  font-size: 11px;
+}
+
+.operation-options label {
+  display: flex;
+  grid-template-columns: none;
+  align-items: center;
+  gap: 7px;
+  font-size: 12px;
+  font-weight: 650;
+}
+
+.operation-options input {
+  width: 18px;
+  min-height: 18px;
+  accent-color: var(--forest-2);
+}
+
+.capacity-hint {
+  grid-column: 1 / -1;
+  min-height: 42px;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 7px 16px;
+  padding: 10px 12px;
+  border: 1px solid var(--line);
+  border-radius: 9px;
+  background: #fff;
+  color: var(--muted);
+  font-size: 11px;
+}
+
+.capacity-hint strong { font-size: 11px; }
+.capacity-hint p { width: 100%; display: flex; align-items: center; gap: 6px; margin: 0; }
+.capacity-hint.ok { border-color: #a8dbc3; background: var(--green-soft); color: var(--green); }
+.capacity-hint.warning { border-color: #edd49b; background: var(--amber-soft); color: var(--amber); }
+.capacity-hint.danger { border-color: #e6bbb5; background: var(--red-soft); color: var(--red); }
+
+.capacity-page {
+  display: grid;
+  gap: 18px;
+}
+
+.capacity-week,
+.capacity-section {
+  overflow: hidden;
+}
+
+.capacity-toolbar > div:first-child,
+.capacity-section-heading > div:last-child {
+  display: grid;
+  gap: 3px;
+}
+
+.capacity-toolbar small,
+.capacity-section-heading small {
+  color: var(--muted);
+  font-size: 11px;
+}
+
+.capacity-days {
+  display: grid;
+  grid-template-columns: repeat(7, 1fr);
+  border-top: 1px solid var(--line);
+}
+
+.capacity-days button {
+  min-height: 96px;
+  display: grid;
+  align-content: center;
+  justify-items: start;
+  gap: 3px;
+  padding: 13px 14px;
+  border: 0;
+  border-right: 1px solid var(--line);
+  background: #fff;
+  color: var(--ink);
+  cursor: pointer;
+}
+
+.capacity-days button:last-child { border-right: 0; }
+.capacity-days button:hover { background: #f5f8f6; }
+.capacity-days button.selected { background: #e8f1ed; box-shadow: inset 0 -3px 0 var(--forest-2); }
+.capacity-days button.today { background: #eff6ff; }
+.capacity-days button.today.selected { background: #e6f0f7; box-shadow: inset 0 -3px 0 #3b82f6; }
+.capacity-days small { color: var(--muted); font-size: 9px; font-weight: 800; text-transform: uppercase; }
+.capacity-days strong { font-size: 23px; }
+.capacity-days em { color: var(--muted); font-size: 10px; font-style: normal; }
+
+.capacity-section-heading {
+  min-height: 78px;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 16px 20px;
+  border-bottom: 1px solid var(--line);
+}
+
+.capacity-section-heading h2 { font-size: 18px; }
+.capacity-icon { width: 40px; height: 40px; display: grid; place-items: center; border-radius: 10px; background: var(--green-soft); color: var(--forest-2); }
+.capacity-operation-grid { display: grid; grid-template-columns: repeat(3, 1fr); }
+.capacity-operation-card { min-width: 0; padding: 18px; border-right: 1px solid var(--line); }
+.capacity-operation-card:last-child { border-right: 0; }
+.capacity-operation-card > header { display: flex; align-items: center; gap: 8px; margin-bottom: 14px; color: var(--forest-2); }
+.capacity-operation-card h3 { color: var(--ink); font-size: 14px; }
+.capacity-metrics { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; }
+.capacity-metric { min-width: 0; display: grid; gap: 4px; padding: 10px; border: 1px solid var(--line); border-radius: 9px; background: var(--surface-soft); }
+.capacity-metric small { color: var(--muted); font-size: 8px; font-weight: 750; text-transform: uppercase; }
+.capacity-metric strong { overflow: hidden; font-size: 15px; text-overflow: ellipsis; }
+.capacity-metric.danger { border-color: #e6bbb5; background: var(--red-soft); color: var(--red); }
+.capacity-warning { display: flex; align-items: flex-start; gap: 7px; margin: 10px 0 0; padding: 9px; border-radius: 8px; background: var(--amber-soft); color: var(--amber); font-size: 10px; line-height: 1.4; }
+.capacity-inline-form { display: grid; grid-template-columns: 1fr 1fr 42px; align-items: end; gap: 8px; margin-top: 12px; }
+.capacity-inline-form label,
+.capacity-add-form label,
+.capacity-rules label { display: grid; gap: 5px; color: var(--muted); font-size: 9px; font-weight: 750; }
+.capacity-inline-form input,
+.capacity-add-form input,
+.capacity-add-form select,
+.capacity-rules input { width: 100%; min-height: 40px; padding: 0 9px; border: 1px solid var(--line-strong); border-radius: 8px; background: #fff; color: var(--ink); }
+.capacity-inline-form button { width: 42px; height: 42px; display: grid; place-items: center; border: 0; border-radius: 8px; background: var(--forest-2); color: #fff; cursor: pointer; }
+.capacity-rules { margin-top: 12px; padding-top: 11px; border-top: 1px solid var(--line); }
+.capacity-rules summary { color: var(--forest-2); font-size: 10px; font-weight: 750; cursor: pointer; }
+.capacity-rules ul { margin: 10px 0; padding-left: 18px; color: var(--muted); font-size: 10px; line-height: 1.6; }
+.capacity-rules form { display: grid; grid-template-columns: 1fr 1fr auto; align-items: end; gap: 8px; margin-top: 10px; }
+.capacity-rules button { min-height: 40px; padding: 0 11px; border: 1px solid var(--forest-2); border-radius: 8px; background: #fff; color: var(--forest-2); font-size: 10px; font-weight: 750; cursor: pointer; }
+
+.capacity-table { display: grid; }
+.capacity-table-heading,
+.capacity-table-row { display: grid; grid-template-columns: 1.2fr 1fr .8fr .8fr .9fr .7fr; align-items: center; gap: 12px; padding: 12px 20px; }
+.capacity-table-heading { background: #fafbf8; color: var(--muted); font-size: 9px; font-weight: 800; text-transform: uppercase; }
+.capacity-table-row { min-height: 56px; border-top: 1px solid var(--line); font-size: 11px; }
+.overload { color: var(--red) !important; font-weight: 800; }
+.capacity-empty { margin: 0; padding: 18px 20px 0; color: var(--muted); font-size: 11px; }
+.capacity-imports { display: grid; gap: 8px; padding: 16px 20px 0; border-top: 1px solid var(--line); }
+.capacity-imports > strong { font-size: 11px; }
+.capacity-imports article { display: grid; grid-template-columns: 1fr 100px; gap: 12px; padding: 11px 12px; border: 1px solid #bfd7eb; border-radius: 9px; background: var(--blue-soft); }
+.capacity-imports article div { display: grid; gap: 2px; }
+.capacity-imports small { color: var(--muted); font-size: 8px; text-transform: uppercase; }
+.capacity-imports b { font-size: 11px; }
+.capacity-add-form { display: grid; grid-template-columns: repeat(4, minmax(130px, 1fr)) auto; align-items: end; gap: 10px; padding: 18px 20px; border-top: 1px solid var(--line); background: var(--surface-soft); }
+.capacity-add-form .primary-button { min-height: 40px; white-space: nowrap; }
+.capacity-summary-strip { display: grid; grid-template-columns: repeat(5, 1fr); gap: 10px; padding: 16px 20px; }
+.transport-cards { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 10px; padding: 0 20px 18px; }
+.transport-cards article { display: grid; grid-template-columns: 36px minmax(0, 1fr) auto; align-items: center; gap: 10px; padding: 12px; border: 1px solid var(--line); border-radius: 10px; }
+.transport-cards article > svg { padding: 8px; box-sizing: content-box; border-radius: 9px; background: var(--blue-soft); color: var(--blue); }
+.transport-cards article div { display: grid; gap: 2px; }
+.transport-cards small { color: var(--muted); font-size: 8px; text-transform: uppercase; }
+.transport-cards strong { font-size: 12px; }
+.transport-cards p { margin: 0; color: var(--muted); font-size: 9px; }
+.transport-cards b { color: var(--green); font-size: 10px; }
+.capacity-error { margin: 0; padding: 12px 14px; border: 1px solid #e6bbb5; border-radius: 9px; background: var(--red-soft); color: var(--red); font-size: 12px; font-weight: 700; }
+.capacity-loading { min-height: 180px; display: grid; place-items: center; color: var(--muted); font-size: 12px; }
+.logistics-capacity-strip { display: grid; grid-template-columns: repeat(7, 1fr); border-bottom: 1px solid var(--line); }
+.logistics-capacity-strip article { min-width: 0; display: grid; gap: 3px; padding: 11px; border-right: 1px solid var(--line); }
+.logistics-capacity-strip article:last-child { border-right: 0; }
+.logistics-capacity-strip small { color: var(--muted); font-size: 9px; font-weight: 750; text-transform: capitalize; }
+.logistics-capacity-strip strong { font-size: 10px; }
+.logistics-capacity-strip p { margin: 0; color: var(--muted); font-size: 8px; }
+.logistics-capacity-strip b { color: var(--red); font-size: 8px; }
+
 @media (max-width: 1180px) {
   .dashboard-kpis {
     grid-template-columns: repeat(2, minmax(160px, 180px));
@@ -2194,6 +2383,13 @@ h3 {
   .operation-grid {
     grid-template-columns: 1fr 1fr;
   }
+
+  .capacity-operation-grid { grid-template-columns: 1fr; }
+  .capacity-operation-card { border-right: 0; border-bottom: 1px solid var(--line); }
+  .capacity-operation-card:last-child { border-bottom: 0; }
+  .capacity-add-form { grid-template-columns: repeat(2, 1fr); }
+  .capacity-add-form .primary-button { width: 100%; }
+  .logistics-capacity-strip { overflow-x: auto; grid-template-columns: repeat(7, minmax(130px, 1fr)); }
 }
 
 @media (max-width: 760px) {
@@ -2453,6 +2649,18 @@ h3 {
     grid-column: 3;
     grid-row: 1;
   }
+
+  .capacity-toolbar { align-items: stretch; flex-direction: column; }
+  .capacity-days { display: flex; overflow-x: auto; }
+  .capacity-days button { min-width: 92px; border-bottom: 1px solid var(--line); }
+  .capacity-summary-strip { grid-template-columns: 1fr 1fr; }
+  .capacity-table-heading { display: none; }
+  .capacity-table-row { grid-template-columns: 1fr 1fr; gap: 7px 12px; padding: 14px; }
+  .capacity-add-form { grid-template-columns: 1fr; }
+  .assignment-fieldset { grid-template-columns: 1fr; }
+  .assignment-fieldset > label,
+  .assignment-fieldset .capacity-hint,
+  .assignment-fieldset .operation-options { grid-column: 1; }
 }
 
 @media (max-width: 430px) {

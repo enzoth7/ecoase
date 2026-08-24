@@ -9,6 +9,7 @@ import {
   ChevronRight,
   ClipboardList,
   Factory,
+  Gauge,
   Package,
   ListChecks,
   MapPin,
@@ -34,15 +35,20 @@ import {
   type Provider,
   type Product,
 } from "./data";
+import type { CapacityOperation, ProductionSource, TransportSource } from "./data";
+import type { CapacitySnapshot } from "./capacity";
+import { capacityOperationLabels } from "./capacity";
+import CapacityView from "./CapacityView";
 
 const number = new Intl.NumberFormat("es-UY");
-export type DashboardSection = "pedidos" | "plan" | "calendario" | "logistica" | "clientes" | "historial" | "proveedores" | "productos";
+export type DashboardSection = "pedidos" | "plan" | "calendario" | "logistica" | "capacidad" | "clientes" | "historial" | "proveedores" | "productos";
 
 const sectionPaths: Record<DashboardSection, string> = {
   pedidos: "/pedidos",
   plan: "/plan",
   calendario: "/calendario",
   logistica: "/logistica",
+  capacidad: "/capacidad",
   clientes: "/clientes",
   historial: "/historial",
   proveedores: "/proveedores",
@@ -349,12 +355,21 @@ function CalendarView({ orders, onOpen }: { orders: OperationOrder[]; onOpen: (i
 
 function LogisticsView({ orders, onOpen }: { orders: OperationOrder[]; onOpen: (id: string) => void }) {
   const transports = [...new Set(orders.map((order) => order.transport))];
+  const currentWeek = useMemo(() => startOfWeek(new Date()), []);
+  const [capacity, setCapacity] = useState<CapacitySnapshot | null>(null);
+  useEffect(() => {
+    const end = new Date(currentWeek); end.setDate(currentWeek.getDate() + 6);
+    fetch(`/api/capacity?from=${dateKey(currentWeek)}&to=${dateKey(end)}`).then((response) => response.json()).then((payload: { capacity?: CapacitySnapshot }) => setCapacity(payload.capacity ?? null)).catch(() => setCapacity(null));
+  }, [currentWeek]);
   return (
     <section className="module-surface" aria-labelledby="logistics-page-title">
       <div className="module-toolbar">
         <div><h2 id="logistics-page-title">Logística</h2></div>
         <small>{transports.length} transportes registrados</small>
       </div>
+      {capacity && <div className="logistics-capacity-strip" aria-label="Capacidad logística de la semana">
+        {capacity.days.map((day) => <article key={day.date}><small>{new Intl.DateTimeFormat("es-UY", { weekday: "short", day: "numeric" }).format(new Date(`${day.date}T12:00:00`))}</small><strong>{number.format(day.transportTotals.committed)} a entregar</strong><p>{number.format(day.transportTotals.internal)} interna · {number.format(day.transportTotals.externalConfirmed)} externa</p>{day.transportTotals.missing > 0 && <b>{number.format(day.transportTotals.missing)} faltantes</b>}</article>)}
+      </div>}
       <div className="logistics-board">
         <div className="data-heading logistics-heading" aria-hidden="true">
           <div /><div>Cliente y pedido</div><div>Fecha</div><div>Transporte</div><div>Estado</div><div />
@@ -403,7 +418,7 @@ type TrackingUpdate = {
   note?: string;
 };
 
-function OrderTrackingPanel({ order, refreshKey, onAdd }: { order?: OperationOrder; refreshKey: number; onAdd: (order: OperationOrder) => void }) {
+function OrderTrackingPanel({ order, providers, refreshKey, onAdd }: { order?: OperationOrder; providers: Provider[]; refreshKey: number; onAdd: (order: OperationOrder) => void }) {
   const [history, setHistory] = useState<OrderChange[]>([]);
   const [loading, setLoading] = useState(true);
   const orderId = order?.id;
@@ -420,6 +435,9 @@ function OrderTrackingPanel({ order, refreshKey, onAdd }: { order?: OperationOrd
   if (!order) {
     return <aside className="detail-column order-tracking-panel empty-order-detail" aria-label="Seguimiento del pedido"><strong>Seleccione un pedido</strong></aside>;
   }
+  const productionSourceLabel = order.productionSource === "sawmill" ? "Otro aserradero" : order.productionSource === "import" ? "Importación" : "Producción interna";
+  const producer = order.productionSource === "internal" ? "Ecoase" : providers.find((provider) => provider.id === order.producerProviderId)?.name ?? "—";
+  const transportOrigin = order.transportSource === "internal" ? "Interno" : "Externo";
 
   return (
     <aside className="detail-column order-tracking-panel" aria-labelledby="tracking-title">
@@ -439,6 +457,11 @@ function OrderTrackingPanel({ order, refreshKey, onAdd }: { order?: OperationOrd
         <div><small>Entrega solicitada</small><strong>{formatOrderDate(order.requestedDeliveryDate)}</strong></div>
         <div><small>Fecha planificada</small><strong>{order.dateLabel}</strong></div>
         <div><small>Transportista</small><strong>{order.transport}</strong></div>
+        <div><small>Origen productivo</small><strong>{productionSourceLabel}</strong></div>
+        <div><small>Productor</small><strong>{producer}</strong></div>
+        <div><small>{order.productionSource === "import" ? "Llegada prevista" : "Fecha de producción"}</small><strong>{formatOrderDate(order.productionSource === "import" ? order.importArrivalDate : order.productionDate)}</strong></div>
+        <div><small>Origen del transporte</small><strong>{transportOrigin}</strong></div>
+        <div className="tracking-data-wide"><small>Operaciones requeridas</small><strong>{(order.requiredOperations ?? ["assembly"]).map((operation) => capacityOperationLabels[operation]).join(" · ")}</strong></div>
         <div className="tracking-data-wide"><small>Dirección de entrega</small><strong>{order.deliveryAddress ?? "—"}</strong></div>
         {order.notes && <div className="tracking-data-wide"><small>Observaciones</small><strong>{order.notes}</strong></div>}
       </section>
@@ -513,17 +536,35 @@ type PlanChanges = {
   requested?: number;
   stage?: OperationStage;
   transport?: string;
+  productionSource?: ProductionSource;
+  producerProviderId?: string;
+  productionDate?: string;
+  importArrivalDate?: string;
+  requiredOperations?: CapacityOperation[];
+  transportSource?: TransportSource;
+  transportProviderId?: string;
 };
 
-function EditPlanModal({ order, transportOptions, onClose, onSave }: {
+function EditPlanModal({ order, providers, onClose, onSave }: {
   order: OperationOrder;
-  transportOptions: string[];
+  providers: Provider[];
   onClose: () => void;
   onSave: (changes: PlanChanges) => Promise<boolean>;
 }) {
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
   const [history, setHistory] = useState<OrderChange[]>([]);
+  const [productionSource, setProductionSource] = useState<ProductionSource>(order.productionSource ?? "internal");
+  const [transportSource, setTransportSource] = useState<TransportSource>(order.transportSource ?? (order.transport === "Interno" || order.transport === "Propio" ? "internal" : "external"));
+  const [producerProviderId, setProducerProviderId] = useState(order.producerProviderId ?? "");
+  const [transportProviderId, setTransportProviderId] = useState(order.transportProviderId ?? providers.find((provider) => provider.type === "Transporte" && provider.name === order.transport)?.id ?? "");
+  const [productionDate, setProductionDate] = useState(order.productionDate ?? getOrderPlannedDate(order));
+  const [arrivalDate, setArrivalDate] = useState(order.importArrivalDate ?? "");
+  const [plannedDate, setPlannedDate] = useState(getOrderPlannedDate(order));
+  const [quantity, setQuantity] = useState(order.requested);
+  const [requiredOperations, setRequiredOperations] = useState<CapacityOperation[]>(order.requiredOperations ?? ["assembly"]);
+  const producers = providers.filter((provider) => provider.type === (productionSource === "sawmill" ? "Aserradero" : "Importador"));
+  const transporters = providers.filter((provider) => provider.type === "Transporte");
 
   useEffect(() => {
     fetch(`/api/orders/${order.id}/history`)
@@ -544,10 +585,16 @@ function EditPlanModal({ order, transportOptions, onClose, onSave }: {
     setError("");
     const form = new FormData(event.currentTarget);
     const saved = await onSave({
-      plannedDate: String(form.get("plannedDate") ?? ""),
-      requested: Number(form.get("requested")),
+      plannedDate,
+      requested: quantity,
       stage: form.get("stage") as OperationStage,
-      transport: String(form.get("transport") ?? "").trim(),
+      productionSource,
+      producerProviderId: productionSource === "internal" ? undefined : producerProviderId,
+      productionDate: productionSource === "import" ? undefined : productionDate,
+      importArrivalDate: productionSource === "import" ? arrivalDate : undefined,
+      requiredOperations,
+      transportSource,
+      transportProviderId: transportSource === "external" ? transportProviderId : undefined,
     });
     setSaving(false);
     if (saved) onClose();
@@ -562,10 +609,21 @@ function EditPlanModal({ order, transportOptions, onClose, onSave }: {
           <button type="button" onClick={onClose} aria-label="Cerrar"><X size={18} aria-hidden="true" /></button>
         </div>
         <form onSubmit={submit}>
-          <label>Fecha planificada<input name="plannedDate" type="date" defaultValue={getOrderPlannedDate(order)} required /></label>
-          <label>Cantidad de pallets<input name="requested" type="number" min={order.delivered} step="1" defaultValue={order.requested} required /></label>
+          <label>Fecha planificada<input type="date" value={plannedDate} onChange={(event) => setPlannedDate(event.target.value)} required /></label>
+          <label>Cantidad de pallets<input type="number" min={order.delivered} step="1" value={quantity} onChange={(event) => setQuantity(Number(event.target.value))} required /></label>
           <label>Etapa<select name="stage" defaultValue={getOrderStage(order)}>{editableStages.map((stage) => <option key={stage} value={stage}>{stageLabels[stage]}</option>)}</select></label>
-          <label className="field-wide">Transportista<select name="transport" defaultValue={order.transport}>{transportOptions.map((transport) => <option key={transport} value={transport}>{transport}</option>)}</select></label>
+          <fieldset className="field-wide assignment-fieldset"><legend>Producción</legend>
+            <label>Origen<select value={productionSource} onChange={(event) => { setProductionSource(event.target.value as ProductionSource); setProducerProviderId(""); }}><option value="internal">Producción interna</option><option value="sawmill">Otro aserradero</option><option value="import">Importación</option></select></label>
+            {productionSource !== "internal" && <label>{productionSource === "sawmill" ? "Aserradero" : "Importador"}<select value={producerProviderId} onChange={(event) => setProducerProviderId(event.target.value)} required><option value="" disabled>Seleccionar</option>{producers.map((provider) => <option key={provider.id} value={provider.id}>{provider.name}</option>)}</select></label>}
+            {productionSource === "import" ? <label>Fecha prevista de llegada<input type="date" value={arrivalDate} onChange={(event) => setArrivalDate(event.target.value)} required /></label> : <label>Fecha de producción<input type="date" value={productionDate} onChange={(event) => setProductionDate(event.target.value)} required /></label>}
+            <div className="operation-options"><strong>Operaciones requeridas</strong>{(["assembly", "marking", "ht"] as CapacityOperation[]).map((operation) => <label key={operation}><input type="checkbox" checked={requiredOperations.includes(operation)} onChange={(event) => setRequiredOperations((current) => event.target.checked ? [...new Set([...current, operation])] : current.filter((item) => item !== operation))} />{capacityOperationLabels[operation]}</label>)}</div>
+            <CapacityHint date={productionSource === "import" ? arrivalDate : productionDate} source={productionSource} providerId={producerProviderId} operations={requiredOperations} quantity={quantity} />
+          </fieldset>
+          <fieldset className="field-wide assignment-fieldset"><legend>Transporte</legend>
+            <label>Origen<select value={transportSource} onChange={(event) => setTransportSource(event.target.value as TransportSource)}><option value="internal">Transporte interno</option><option value="external">Transportista externo</option></select></label>
+            {transportSource === "external" && <label>Transportista<select value={transportProviderId} onChange={(event) => setTransportProviderId(event.target.value)} required><option value="" disabled>Seleccionar</option>{transporters.map((provider) => <option key={provider.id} value={provider.id}>{provider.name}</option>)}</select></label>}
+            <CapacityHint date={plannedDate} source={transportSource} providerId={transportProviderId} quantity={quantity} transport />
+          </fieldset>
           {error && <p className="form-error" role="alert">{error}</p>}
           <section className="change-history" aria-labelledby="change-history-title">
             <h3 id="change-history-title">Cambios del pedido</h3>
@@ -603,10 +661,58 @@ function PlanView({ orders, onEdit }: { orders: OperationOrder[]; onEdit: (order
   );
 }
 
-function AddOrderModal({ clientOptions, products, transportOptions, onClose, onCreated }: { clientOptions: string[]; products: Product[]; transportOptions: string[]; onClose: () => void; onCreated: (order: OperationOrder) => void }) {
+function CapacityHint({ date, source, providerId, operations, quantity, transport = false }: { date: string; source: ProductionSource | TransportSource; providerId?: string; operations?: CapacityOperation[]; quantity: number; transport?: boolean }) {
+  const [snapshot, setSnapshot] = useState<CapacitySnapshot | null>(null);
+  const [loadedDate, setLoadedDate] = useState("");
+  useEffect(() => {
+    if (!date) return;
+    let active = true;
+    fetch(`/api/capacity?from=${date}&to=${date}`).then((response) => response.json()).then((payload: { capacity?: CapacitySnapshot }) => { if (active) { setSnapshot(payload.capacity ?? null); setLoadedDate(date); } }).catch(() => { if (active) { setSnapshot(null); setLoadedDate(date); } });
+    return () => { active = false; };
+  }, [date]);
+  if (!date || loadedDate !== date || !snapshot?.days[0] || !Number.isFinite(quantity) || quantity <= 0) return null;
+  const day = snapshot.days[0];
+  let capacity: number | undefined;
+  let used = 0;
+  if (transport) {
+    const entries = day.transport.filter((entry) => entry.source === source && (source === "internal" || entry.providerId === providerId));
+    capacity = entries.reduce((sum, entry) => sum + entry.palletCapacity, 0);
+    used = entries.reduce((sum, entry) => sum + entry.committed, 0);
+  } else if (source === "internal") {
+    const selected = day.internalProduction.filter((entry) => (operations ?? []).includes(entry.operation));
+    const capacities = selected.map((entry) => entry.capacity).filter((value): value is number => value !== undefined);
+    capacity = selected.length > 0 && capacities.length === selected.length ? Math.min(...capacities) : undefined;
+    used = selected.reduce((maximum, entry) => Math.max(maximum, entry.committed), 0);
+  } else if (source === "sawmill") {
+    const entries = day.externalProduction.filter((entry) => entry.providerId === providerId && (operations ?? []).includes(entry.operation));
+    const capacities = entries.map((entry) => entry.palletCapacity).filter((value): value is number => value !== undefined);
+    capacity = entries.length > 0 && capacities.length === entries.length ? Math.min(...capacities) : undefined;
+    used = entries.reduce((maximum, entry) => Math.max(maximum, entry.committed), 0);
+  } else return <div className="capacity-hint neutral">La importación se registra como ingreso previsto y no consume producción.</div>;
+  if (capacity === undefined || capacity === 0) return <div className="capacity-hint warning"><AlertTriangle size={16} />Capacidad sin cargar para esa fecha. El pedido se puede guardar.</div>;
+  const remaining = capacity - used;
+  const overload = quantity > remaining;
+  return <div className={`capacity-hint ${overload ? "danger" : "ok"}`}><strong>Capacidad: {number.format(capacity)}</strong><strong>Utilizada: {number.format(used)}</strong><strong>Restante: {number.format(Math.max(remaining, 0))}</strong>{overload && <p><AlertTriangle size={16} />Supera el límite por {number.format(quantity - remaining)} palets. Se puede guardar igualmente.</p>}</div>;
+}
+
+function AddOrderModal({ clientOptions, products, providers, onClose, onCreated }: { clientOptions: string[]; products: Product[]; providers: Provider[]; onClose: () => void; onCreated: (order: OperationOrder) => void }) {
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
+  const [productId, setProductId] = useState("");
+  const [productionSource, setProductionSource] = useState<ProductionSource>("internal");
+  const [transportSource, setTransportSource] = useState<TransportSource>("internal");
+  const [producerProviderId, setProducerProviderId] = useState("");
+  const [transportProviderId, setTransportProviderId] = useState("");
+  const [productionDate, setProductionDate] = useState("");
+  const [arrivalDate, setArrivalDate] = useState("");
+  const [deliveryDate, setDeliveryDate] = useState("");
+  const [quantity, setQuantity] = useState(0);
+  const [requiredOperations, setRequiredOperations] = useState<CapacityOperation[]>(["assembly"]);
   const clientInputRef = useRef<HTMLSelectElement>(null);
+
+  const selectedProduct = products.find((product) => product.id === productId);
+  const producers = providers.filter((provider) => provider.type === (productionSource === "sawmill" ? "Aserradero" : "Importador"));
+  const transporters = providers.filter((provider) => provider.type === "Transporte");
 
   useEffect(() => {
     clientInputRef.current?.focus();
@@ -627,13 +733,19 @@ function AddOrderModal({ clientOptions, products, transportOptions, onClose, onC
         client: form.get("client"),
         reference: form.get("reference"),
         zetaCode: form.get("zetaCode"),
-        product: form.get("product"),
+        product: selectedProduct ? productOptionLabel(selectedProduct) : "",
         requested: Number(form.get("requested")),
         orderDate: form.get("orderDate"),
         requestedDeliveryDate: form.get("requestedDeliveryDate"),
-        plannedDate: form.get("plannedDate"),
+        plannedDate: deliveryDate,
         stage: form.get("stage"),
-        transport: form.get("transport"),
+        productionSource,
+        producerProviderId: productionSource === "internal" ? undefined : producerProviderId,
+        productionDate: productionSource === "import" ? undefined : productionDate,
+        importArrivalDate: productionSource === "import" ? arrivalDate : undefined,
+        requiredOperations,
+        transportSource,
+        transportProviderId: transportSource === "external" ? transportProviderId : undefined,
         deliveryAddress: form.get("deliveryAddress"),
         notes: form.get("notes"),
       }),
@@ -659,12 +771,23 @@ function AddOrderModal({ clientOptions, products, transportOptions, onClose, onC
           <label>Orden o referencia<input name="reference" placeholder="Ej. Orden 184834" /></label>
           <label>Código Zeta<input name="zetaCode" placeholder="Ej. 184833" /></label>
           <label>Fecha del pedido<input name="orderDate" type="date" required /></label>
-          <label className="field-wide">Producto<select name="product" required defaultValue=""><option value="" disabled>Seleccionar producto</option>{products.map((product) => <option key={product.id} value={productOptionLabel(product)}>{productOptionLabel(product)}</option>)}</select></label>
-          <label>Cantidad<input name="requested" type="number" min="1" step="1" required /></label>
+          <label className="field-wide">Producto<select required value={productId} onChange={(event) => { const nextId = event.target.value; const nextProduct = products.find((product) => product.id === nextId); const suggested: CapacityOperation[] = ["assembly"]; if (nextProduct?.treatment?.includes("Marcado")) suggested.push("marking"); if (nextProduct?.treatment?.includes("HT")) suggested.push("ht"); setProductId(nextId); setRequiredOperations(suggested); }}><option value="" disabled>Seleccionar producto</option>{products.map((product) => <option key={product.id} value={product.id}>{productOptionLabel(product)}</option>)}</select></label>
+          <label>Cantidad<input name="requested" type="number" min="1" step="1" value={quantity || ""} onChange={(event) => setQuantity(Number(event.target.value))} required /></label>
           <label>Fecha solicitada<input name="requestedDeliveryDate" type="date" required /></label>
-          <label>Fecha planificada<input name="plannedDate" type="date" required /></label>
+          <label>Fecha de entrega<input type="date" value={deliveryDate} onChange={(event) => setDeliveryDate(event.target.value)} required /></label>
           <label>Etapa<select name="stage" required defaultValue="negociacion">{editableStages.filter((stage) => stage !== "completado").map((stage) => <option key={stage} value={stage}>{stageLabels[stage]}</option>)}</select></label>
-          <label className="field-wide">Transportista<select name="transport" required defaultValue=""><option value="" disabled>Seleccionar transportista</option>{transportOptions.map((transport) => <option key={transport} value={transport}>{transport}</option>)}</select></label>
+          <fieldset className="field-wide assignment-fieldset"><legend>Producción</legend>
+            <label>Origen de producción<select value={productionSource} onChange={(event) => { setProductionSource(event.target.value as ProductionSource); setProducerProviderId(""); }}><option value="internal">Producción interna</option><option value="sawmill">Otro aserradero</option><option value="import">Importación</option></select></label>
+            {productionSource !== "internal" && <label>{productionSource === "sawmill" ? "Aserradero" : "Importador"}<select value={producerProviderId} onChange={(event) => setProducerProviderId(event.target.value)} required><option value="" disabled>Seleccionar proveedor</option>{producers.map((provider) => <option key={provider.id} value={provider.id}>{provider.name}</option>)}</select></label>}
+            {productionSource === "import" ? <label>Fecha prevista de llegada<input type="date" value={arrivalDate} onChange={(event) => setArrivalDate(event.target.value)} required /></label> : <label>Fecha de producción<input type="date" value={productionDate} onChange={(event) => setProductionDate(event.target.value)} required /></label>}
+            <div className="operation-options"><strong>Operaciones requeridas</strong>{(["assembly", "marking", "ht"] as CapacityOperation[]).map((operation) => <label key={operation}><input type="checkbox" checked={requiredOperations.includes(operation)} onChange={(event) => setRequiredOperations((current) => event.target.checked ? [...new Set([...current, operation])] : current.filter((item) => item !== operation))} />{capacityOperationLabels[operation]}</label>)}</div>
+            <CapacityHint date={productionSource === "import" ? arrivalDate : productionDate} source={productionSource} providerId={producerProviderId} operations={requiredOperations} quantity={quantity} />
+          </fieldset>
+          <fieldset className="field-wide assignment-fieldset"><legend>Transporte</legend>
+            <label>Origen del transporte<select value={transportSource} onChange={(event) => setTransportSource(event.target.value as TransportSource)}><option value="internal">Transporte interno</option><option value="external">Transportista externo</option></select></label>
+            {transportSource === "external" && <label>Transportista<select value={transportProviderId} onChange={(event) => setTransportProviderId(event.target.value)} required><option value="" disabled>Seleccionar transportista</option>{transporters.map((provider) => <option key={provider.id} value={provider.id}>{provider.name}</option>)}</select></label>}
+            <CapacityHint date={deliveryDate} source={transportSource} providerId={transportProviderId} quantity={quantity} transport />
+          </fieldset>
           <label className="field-wide">Dirección de entrega<input name="deliveryAddress" autoComplete="street-address" /></label>
           <label className="field-wide">Observaciones<textarea name="notes" rows={3} /></label>
           {error && <p className="form-error" role="alert">{error}</p>}
@@ -881,6 +1004,7 @@ export default function Dashboard({ initialSection = "pedidos" }: { initialSecti
     plan: "Plan",
     calendario: "Calendario",
     logistica: "Logística",
+    capacidad: "Capacidad",
     clientes: "Clientes",
     productos: "Productos",
     historial: "Historial",
@@ -911,6 +1035,9 @@ export default function Dashboard({ initialSection = "pedidos" }: { initialSecti
             </a>
             <a className={section === "logistica" ? "active" : ""} href="/logistica" aria-current={section === "logistica" ? "page" : undefined}>
               <Truck size={17} aria-hidden="true" /><small>Logística</small>
+            </a>
+            <a className={section === "capacidad" ? "active" : ""} href="/capacidad" aria-current={section === "capacidad" ? "page" : undefined}>
+              <Gauge size={17} aria-hidden="true" /><small>Capacidad</small>
             </a>
             <a className={section === "clientes" ? "active" : ""} href="/clientes" aria-current={section === "clientes" ? "page" : undefined}>
               <Users size={17} aria-hidden="true" /><small>Clientes</small>
@@ -1014,15 +1141,15 @@ export default function Dashboard({ initialSection = "pedidos" }: { initialSecti
             </div>
           </section>
 
-          <OrderTrackingPanel key={selectedOrder?.id ?? "empty"} order={selectedOrder} refreshKey={trackingRevision} onAdd={setUpdatingOrder} />
-        </div> : section === "plan" ? <><PlanView orders={activeOrders} onEdit={setEditingPlanOrder} />{updateError && <p className="plan-error" role="alert">{updateError}</p>}</> : section === "calendario" ? <CalendarView orders={activeOrders} onOpen={openOrder} /> : section === "logistica" ? <LogisticsView orders={activeOrders} onOpen={openOrder} /> : section === "productos" ? <ProductsView products={productRows} onEdit={setEditingProduct} onAdd={() => setShowAddProduct(true)} /> : section === "proveedores" ? <ProvidersView providers={providerRows} /> : <ClientsView clients={clients} onOpen={openClientOrders} onAdd={() => setShowAddClient(true)} />}
+          <OrderTrackingPanel key={selectedOrder?.id ?? "empty"} order={selectedOrder} providers={providerRows} refreshKey={trackingRevision} onAdd={setUpdatingOrder} />
+        </div> : section === "plan" ? <><PlanView orders={activeOrders} onEdit={setEditingPlanOrder} />{updateError && <p className="plan-error" role="alert">{updateError}</p>}</> : section === "calendario" ? <CalendarView orders={activeOrders} onOpen={openOrder} /> : section === "logistica" ? <LogisticsView orders={activeOrders} onOpen={openOrder} /> : section === "capacidad" ? <CapacityView providers={providerRows} /> : section === "productos" ? <ProductsView products={productRows} onEdit={setEditingProduct} onAdd={() => setShowAddProduct(true)} /> : section === "proveedores" ? <ProvidersView providers={providerRows} /> : <ClientsView clients={clients} onOpen={openClientOrders} onAdd={() => setShowAddClient(true)} />}
         </main>
 
       </div>
-      {showAddOrder && <AddOrderModal clientOptions={clients.map((client) => client.name)} products={productRows} transportOptions={providerRows.filter((provider) => provider.type === "Transporte").map((provider) => provider.name)} onClose={() => setShowAddOrder(false)} onCreated={addCreatedOrder} />}
+      {showAddOrder && <AddOrderModal clientOptions={clients.map((client) => client.name)} products={productRows} providers={providerRows} onClose={() => setShowAddOrder(false)} onCreated={addCreatedOrder} />}
       {showAddProduct && <AddProductModal onClose={() => setShowAddProduct(false)} onSave={addProduct} />}
       {showAddClient && <AddClientModal onClose={() => setShowAddClient(false)} onSave={addClient} />}
-      {editingPlanOrder && <EditPlanModal order={editingPlanOrder} transportOptions={providerRows.filter((provider) => provider.type === "Transporte").map((provider) => provider.name)} onClose={() => setEditingPlanOrder(null)} onSave={(changes) => updateOrder(editingPlanOrder.id, changes)} />}
+      {editingPlanOrder && <EditPlanModal order={editingPlanOrder} providers={providerRows} onClose={() => setEditingPlanOrder(null)} onSave={(changes) => updateOrder(editingPlanOrder.id, changes)} />}
       {editingProduct && <EditProductModal product={editingProduct} onClose={() => setEditingProduct(null)} onSave={updateProduct} onDelete={removeProduct} />}
       {updatingOrder && <OrderUpdateModal order={updatingOrder} onClose={() => setUpdatingOrder(null)} onSave={(update) => recordUpdate(updatingOrder.id, update)} />}
     </div>
