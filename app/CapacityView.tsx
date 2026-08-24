@@ -218,7 +218,7 @@ function DayAdjustmentModal({ day, onClose, onSave }: { day: CapacityDay; onClos
 
   return <div className="modal-backdrop capacity-modal-backdrop" role="presentation" onMouseDown={(event) => { if (event.target === event.currentTarget) onClose(); }}>
     <section className="capacity-day-modal" role="dialog" aria-modal="true" aria-labelledby="day-capacity-title">
-      <header><div><small>Ajuste excepcional</small><h2 id="day-capacity-title">{formatDay(day.date)}</h2><p>Sumá o restá palets únicamente para este día.</p></div><button ref={closeRef} type="button" onClick={onClose} aria-label="Cerrar ajustes"><X size={21} /></button></header>
+      <header><div><small>Capacidad del día</small><h2 id="day-capacity-title">{formatDay(day.date)}</h2><p>Usá el cambio solo si este día difiere de la capacidad general: + suma palets y − resta palets.</p></div><button ref={closeRef} type="button" onClick={onClose} aria-label="Cerrar ajustes"><X size={21} /></button></header>
       {day.issues.length > 0 && <div className="capacity-day-alert"><AlertTriangle size={19} /><div><strong>Este día necesita revisión</strong><p>{day.issues.join(" · ")}</p></div></div>}
       <div className="capacity-day-summary" aria-label="Resumen productivo del día">
         <Metric label="Producción asignada" value={`${number.format(day.productionTotals.committed)} palets`} />
@@ -226,15 +226,15 @@ function DayAdjustmentModal({ day, onClose, onSave }: { day: CapacityDay; onClos
         <Metric label={day.productionTotals.missing > 0 ? "Faltan producir" : "Capacidad libre"} value={`${number.format(day.productionTotals.missing > 0 ? day.productionTotals.missing : day.productionTotals.available ?? 0)} palets`} tone={day.productionTotals.missing > 0 ? "danger" : undefined} />
       </div>
 
-      <section className="day-adjustment-section" aria-labelledby="day-internal-title"><h3 id="day-internal-title"><Factory size={18} />Producción interna</h3>
+      <section className="day-adjustment-section day-internal" aria-labelledby="day-internal-title"><h3 id="day-internal-title"><Factory size={18} />Producción interna</h3>
         {day.internalProduction.map((entry) => <AdjustmentRow key={entry.operation} name={capacityOperationLabels[entry.operation]} baseCapacity={entry.baseCapacity} adjustment={entry.adjustment} committed={entry.committed} capacity={entry.capacity} overload={entry.overload} onSave={(palletAdjustment) => onSave("/api/capacity/adjustments", { date: day.date, resourceType: "internal_production", operation: entry.operation, palletAdjustment })} />)}
       </section>
 
-      {day.externalProduction.length > 0 && <section className="day-adjustment-section" aria-labelledby="day-external-title"><h3 id="day-external-title"><Factory size={18} />Producción externa</h3>
+      {day.externalProduction.length > 0 && <section className="day-adjustment-section day-external" aria-labelledby="day-external-title"><h3 id="day-external-title"><Factory size={18} />Producción externa</h3>
         {day.externalProduction.map((entry) => <AdjustmentRow key={`${entry.providerId}-${entry.operation}`} name={`${entry.providerName} · ${capacityOperationLabels[entry.operation]}`} baseCapacity={entry.baseCapacity} adjustment={entry.adjustment} committed={entry.committed} capacity={entry.capacity} overload={entry.overload} onSave={(palletAdjustment) => onSave("/api/capacity/adjustments", { date: day.date, resourceType: "external_production", providerId: entry.providerId, operation: entry.operation, palletAdjustment })} />)}
       </section>}
 
-      <section className="day-adjustment-section" aria-labelledby="day-transport-title"><h3 id="day-transport-title"><Truck size={18} />Transporte</h3>
+      <section className="day-adjustment-section day-transport" aria-labelledby="day-transport-title"><h3 id="day-transport-title"><Truck size={18} />Transporte</h3>
         {day.transport.map((entry) => <AdjustmentRow key={`${entry.source}-${entry.providerId ?? "internal"}`} name={entry.providerName} baseCapacity={entry.baseCapacity} adjustment={entry.adjustment} committed={entry.committed} capacity={entry.capacity} overload={entry.overload} onSave={(palletAdjustment) => onSave("/api/capacity/adjustments", { date: day.date, resourceType: "transport", source: entry.source, providerId: entry.providerId, palletAdjustment })} />)}
       </section>
 
@@ -251,7 +251,7 @@ function AdjustmentRow({ name, baseCapacity, adjustment, committed, capacity, ov
     <Metric label="Comprometidos" value={number.format(committed)} />
     <Metric label={overload > 0 ? "Sobrecarga" : "Capacidad del día"} value={capacity === undefined ? "Sin calcular" : overload > 0 ? number.format(overload) : number.format(capacity)} tone={overload > 0 ? "danger" : undefined} />
     <form onSubmit={async (event) => { event.preventDefault(); setSaving(true); try { await onSave(Number(value)); } finally { setSaving(false); } }}>
-      <label>Ajuste en palets<input type="number" step="1" value={value} onChange={(event) => setValue(event.target.value)} aria-label={`Ajuste para ${name}`} /></label>
+      <label>Cambio de capacidad hoy<input type="number" step="1" placeholder="+ / − palets" value={value} onChange={(event) => setValue(event.target.value)} aria-label={`Cambio de capacidad para ${name}`} /><small>0 = sin cambio</small></label>
       <button type="submit" disabled={saving}><Save size={16} />{saving ? "Guardando" : "Guardar"}</button>
     </form>
   </article>;

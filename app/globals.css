@@ -2347,6 +2347,18 @@ h3 {
 .capacity-day-summary .capacity-metric strong { font-size: 18px; font-variant-numeric: tabular-nums; }
 .day-adjustment-section { display: grid; gap: 0; margin: 20px 22px; overflow: hidden; border: 1px solid var(--line); border-radius: 12px; }
 .day-adjustment-section > h3 { display: flex; align-items: center; gap: 8px; padding: 14px 16px; border-bottom: 1px solid var(--line); background: var(--surface-soft); font-size: 14px; }
+.day-adjustment-section.day-internal { border-color: #b6dbc2; background: #edf8f1; }
+.day-adjustment-section.day-external { border-color: #bfd7eb; background: #eff7ff; }
+.day-adjustment-section.day-transport { border-color: #edd49b; background: #fff8e6; }
+.day-adjustment-section.day-internal > h3 { border-color: #b6dbc2; background: #dff2e6; color: #1f6348; }
+.day-adjustment-section.day-external > h3 { border-color: #bfd7eb; background: #e0f0ff; color: #18629c; }
+.day-adjustment-section.day-transport > h3 { border-color: #edd49b; background: #fff0c9; color: #855600; }
+.day-adjustment-section.day-internal .day-adjustment-row { border-color: #c8e5d0; }
+.day-adjustment-section.day-external .day-adjustment-row { border-color: #cce1f0; }
+.day-adjustment-section.day-transport .day-adjustment-row { border-color: #f0ddb1; }
+.day-adjustment-section.day-internal .capacity-metric,
+.day-adjustment-section.day-external .capacity-metric,
+.day-adjustment-section.day-transport .capacity-metric { background: rgba(255, 255, 255, .72); }
 .day-adjustment-row { display: grid; grid-template-columns: minmax(180px, 1.3fr) 130px 150px minmax(250px, 1.4fr); align-items: end; gap: 10px; padding: 14px 16px; border-bottom: 1px solid var(--line); }
 .day-adjustment-row:last-child { border-bottom: 0; }
 .day-adjustment-row.danger { background: #fffafa; }
@@ -2355,6 +2367,7 @@ h3 {
 .day-adjustment-name small { color: var(--muted); font-size: 9px; }
 .day-adjustment-row form { display: grid; grid-template-columns: 1fr auto; align-items: end; gap: 8px; }
 .day-adjustment-row form label { display: grid; gap: 5px; color: var(--muted); font-size: 9px; font-weight: 750; }
+.day-adjustment-row form label small { color: var(--muted); font-size: 9px; font-weight: 500; }
 .day-adjustment-row form input { width: 100%; min-height: 42px; padding: 0 10px; border: 1px solid var(--line-strong); border-radius: 8px; background: #fff; }
 .day-adjustment-row form button { min-height: 42px; display: flex; align-items: center; gap: 6px; padding: 0 13px; border: 0; border-radius: 8px; background: var(--forest-2); color: #fff; font-size: 10px; font-weight: 750; cursor: pointer; }
 .day-adjustment-row form button:disabled { opacity: .65; cursor: wait; }
