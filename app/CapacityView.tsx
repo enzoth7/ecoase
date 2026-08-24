@@ -126,7 +126,7 @@ export default function CapacityView({ providers }: { providers: Provider[] }) {
       <GeneralTransport capacity={capacity} providers={transporters} onSave={save} />
     </>}
 
-    {selected && capacity && <DayAdjustmentModal day={selected} onClose={() => setOpenDate(null)} onSave={save} />}
+    {selected && capacity && <DayAdjustmentModal day={selected} sawmills={sawmills} transporters={transporters} onClose={() => setOpenDate(null)} onSave={save} />}
   </section>;
 }
 
@@ -207,7 +207,7 @@ function GeneralTransport({ capacity, providers, onSave }: { capacity: CapacityS
   </section>;
 }
 
-function DayAdjustmentModal({ day, onClose, onSave }: { day: CapacityDay; onClose: () => void; onSave: (url: string, body: unknown) => Promise<void> }) {
+function DayAdjustmentModal({ day, sawmills, transporters, onClose, onSave }: { day: CapacityDay; sawmills: Provider[]; transporters: Provider[]; onClose: () => void; onSave: (url: string, body: unknown) => Promise<void> }) {
   const closeRef = useRef<HTMLButtonElement>(null);
   useEffect(() => {
     closeRef.current?.focus();
@@ -218,7 +218,7 @@ function DayAdjustmentModal({ day, onClose, onSave }: { day: CapacityDay; onClos
 
   return <div className="modal-backdrop capacity-modal-backdrop" role="presentation" onMouseDown={(event) => { if (event.target === event.currentTarget) onClose(); }}>
     <section className="capacity-day-modal" role="dialog" aria-modal="true" aria-labelledby="day-capacity-title">
-      <header><div><small>Capacidad del día</small><h2 id="day-capacity-title">{formatDay(day.date)}</h2><p>Usá el cambio solo si este día difiere de la capacidad general: + suma palets y − resta palets.</p></div><button ref={closeRef} type="button" onClick={onClose} aria-label="Cerrar ajustes"><X size={21} /></button></header>
+      <header><div><small>Capacidad del día</small><h2 id="day-capacity-title">{formatDay(day.date)}</h2><p>Las asignaciones de este día deben indicar quién aporta la capacidad. No cambian la capacidad general.</p></div><button ref={closeRef} type="button" onClick={onClose} aria-label="Cerrar ajustes"><X size={21} /></button></header>
       {day.issues.length > 0 && <div className="capacity-day-alert"><AlertTriangle size={19} /><div><strong>Este día necesita revisión</strong><p>{day.issues.join(" · ")}</p></div></div>}
       <div className="capacity-day-summary" aria-label="Resumen productivo del día">
         <Metric label="Producción asignada" value={`${number.format(day.productionTotals.committed)} palets`} />
@@ -227,15 +227,17 @@ function DayAdjustmentModal({ day, onClose, onSave }: { day: CapacityDay; onClos
       </div>
 
       <section className="day-adjustment-section day-internal" aria-labelledby="day-internal-title"><h3 id="day-internal-title"><Factory size={18} />Producción interna</h3>
-        {day.internalProduction.map((entry) => <AdjustmentRow key={entry.operation} name={capacityOperationLabels[entry.operation]} baseCapacity={entry.baseCapacity} adjustment={entry.adjustment} committed={entry.committed} capacity={entry.capacity} overload={entry.overload} onSave={(palletAdjustment) => onSave("/api/capacity/adjustments", { date: day.date, resourceType: "internal_production", operation: entry.operation, palletAdjustment })} />)}
+        {day.internalProduction.map((entry) => <AdjustmentRow key={entry.operation} name={capacityOperationLabels[entry.operation]} sourceName="Equipo Ecoase" responsible={entry.adjustmentResponsible} needsResponsible baseCapacity={entry.baseCapacity} adjustment={entry.adjustment} committed={entry.committed} capacity={entry.capacity} overload={entry.overload} onSave={(palletAdjustment, responsible) => onSave("/api/capacity/adjustments", { date: day.date, resourceType: "internal_production", operation: entry.operation, palletAdjustment, responsible, status: "confirmed" })} />)}
       </section>
 
-      {day.externalProduction.length > 0 && <section className="day-adjustment-section day-external" aria-labelledby="day-external-title"><h3 id="day-external-title"><Factory size={18} />Producción externa</h3>
-        {day.externalProduction.map((entry) => <AdjustmentRow key={`${entry.providerId}-${entry.operation}`} name={`${entry.providerName} · ${capacityOperationLabels[entry.operation]}`} baseCapacity={entry.baseCapacity} adjustment={entry.adjustment} committed={entry.committed} capacity={entry.capacity} overload={entry.overload} onSave={(palletAdjustment) => onSave("/api/capacity/adjustments", { date: day.date, resourceType: "external_production", providerId: entry.providerId, operation: entry.operation, palletAdjustment })} />)}
-      </section>}
+      <section className="day-adjustment-section day-external" aria-labelledby="day-external-title"><h3 id="day-external-title"><Factory size={18} />Producción externa</h3>
+        {day.externalProduction.map((entry) => <AdjustmentRow key={`${entry.providerId}-${entry.operation}`} name={`${entry.providerName} · ${capacityOperationLabels[entry.operation]}`} sourceName={entry.providerName} responsible={entry.adjustmentResponsible} baseCapacity={entry.baseCapacity} adjustment={entry.adjustment} committed={entry.committed} capacity={entry.capacity} overload={entry.overload} onSave={(palletAdjustment, responsible) => onSave("/api/capacity/adjustments", { date: day.date, resourceType: "external_production", providerId: entry.providerId, operation: entry.operation, palletAdjustment, responsible, status: entry.status })} />)}
+        <DailyProviderAssignment date={day.date} kind="production" providers={sawmills} onSave={onSave} />
+      </section>
 
       <section className="day-adjustment-section day-transport" aria-labelledby="day-transport-title"><h3 id="day-transport-title"><Truck size={18} />Transporte</h3>
-        {day.transport.map((entry) => <AdjustmentRow key={`${entry.source}-${entry.providerId ?? "internal"}`} name={entry.providerName} baseCapacity={entry.baseCapacity} adjustment={entry.adjustment} committed={entry.committed} capacity={entry.capacity} overload={entry.overload} onSave={(palletAdjustment) => onSave("/api/capacity/adjustments", { date: day.date, resourceType: "transport", source: entry.source, providerId: entry.providerId, palletAdjustment })} />)}
+        {day.transport.map((entry) => <AdjustmentRow key={`${entry.source}-${entry.providerId ?? "internal"}`} name={entry.providerName} sourceName={entry.providerName} responsible={entry.adjustmentResponsible} baseCapacity={entry.baseCapacity} adjustment={entry.adjustment} committed={entry.committed} capacity={entry.capacity} overload={entry.overload} onSave={(palletAdjustment, responsible) => onSave("/api/capacity/adjustments", { date: day.date, resourceType: "transport", source: entry.source, providerId: entry.providerId, palletAdjustment, responsible, status: entry.status })} />)}
+        <DailyProviderAssignment date={day.date} kind="transport" providers={transporters} onSave={onSave} />
       </section>
 
       {day.imports.length > 0 && <section className="day-adjustment-section imports" aria-labelledby="day-imports-title"><h3 id="day-imports-title">Ingresos por importación</h3>{day.imports.map((entry) => <p key={entry.orderId}><strong>{entry.client}</strong> · {number.format(entry.pallets)} palets</p>)}</section>}
@@ -243,15 +245,47 @@ function DayAdjustmentModal({ day, onClose, onSave }: { day: CapacityDay; onClos
   </div>;
 }
 
-function AdjustmentRow({ name, baseCapacity, adjustment, committed, capacity, overload, onSave }: { name: string; baseCapacity?: number; adjustment: number; committed: number; capacity?: number; overload: number; onSave: (adjustment: number) => Promise<void> }) {
+function DailyProviderAssignment({ date, kind, providers, onSave }: { date: string; kind: "production" | "transport"; providers: Provider[]; onSave: (url: string, body: unknown) => Promise<void> }) {
+  const [providerId, setProviderId] = useState("");
+  const [operation, setOperation] = useState<CapacityOperation>("assembly");
+  const [pallets, setPallets] = useState("");
+  const [status, setStatus] = useState<CapacityStatus>("confirmed");
+  const [saving, setSaving] = useState(false);
+  const label = kind === "production" ? "Asignar aserradero solo para este día" : "Asignar transportista solo para este día";
+  const providerLabel = kind === "production" ? "Aserradero" : "Transportista";
+  const save = async (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    const provider = providers.find((item) => item.id === providerId);
+    if (!provider) return;
+    setSaving(true);
+    try {
+      await onSave("/api/capacity/adjustments", kind === "production"
+        ? { date, resourceType: "external_production", providerId, operation, palletAdjustment: Number(pallets), responsible: provider.name, status }
+        : { date, resourceType: "transport", source: "external", providerId, palletAdjustment: Number(pallets), responsible: provider.name, status });
+      setPallets("");
+    } finally { setSaving(false); }
+  };
+  return <form className="day-provider-assignment" onSubmit={save}>
+    <div><strong>{label}</strong><small>Se guarda como capacidad puntual; no modifica la capacidad general.</small></div>
+    <label>{providerLabel}<select value={providerId} onChange={(event) => setProviderId(event.target.value)} required><option value="" disabled>Seleccionar</option>{providers.map((provider) => <option key={provider.id} value={provider.id}>{provider.name}</option>)}</select></label>
+    {kind === "production" && <label>Operación<select value={operation} onChange={(event) => setOperation(event.target.value as CapacityOperation)}>{operations.map((item) => <option key={item} value={item}>{capacityOperationLabels[item]}</option>)}</select></label>}
+    <label>Palets asignados<input type="number" min="1" step="1" value={pallets} onChange={(event) => setPallets(event.target.value)} required /></label>
+    <label>Estado<select value={status} onChange={(event) => setStatus(event.target.value as CapacityStatus)}><option value="confirmed">Confirmada</option><option value="estimated">Estimada</option></select></label>
+    <button type="submit" disabled={saving}><Save size={16} />{saving ? "Guardando" : "Asignar"}</button>
+  </form>;
+}
+
+function AdjustmentRow({ name, sourceName, responsible, needsResponsible = false, baseCapacity, adjustment, committed, capacity, overload, onSave }: { name: string; sourceName: string; responsible?: string; needsResponsible?: boolean; baseCapacity?: number; adjustment: number; committed: number; capacity?: number; overload: number; onSave: (adjustment: number, responsible: string) => Promise<void> }) {
   const [value, setValue] = useState(String(adjustment));
+  const [responsibleValue, setResponsibleValue] = useState(responsible ?? "");
   const [saving, setSaving] = useState(false);
   return <article className={`day-adjustment-row ${capacity === undefined || overload > 0 ? "danger" : ""}`}>
-    <div className="day-adjustment-name"><strong>{name}</strong><small>Base: {baseCapacity === undefined ? "sin definir" : `${number.format(baseCapacity)} palets`}</small></div>
+    <div className="day-adjustment-name"><strong>{name}</strong><small>Base: {baseCapacity === undefined ? "sin definir" : `${number.format(baseCapacity)} palets`}</small>{responsible && <small>Asignado a: {responsible}</small>}</div>
     <Metric label="Comprometidos" value={number.format(committed)} />
     <Metric label={overload > 0 ? "Sobrecarga" : "Capacidad del día"} value={capacity === undefined ? "Sin calcular" : overload > 0 ? number.format(overload) : number.format(capacity)} tone={overload > 0 ? "danger" : undefined} />
-    <form onSubmit={async (event) => { event.preventDefault(); setSaving(true); try { await onSave(Number(value)); } finally { setSaving(false); } }}>
-      <label>Cambio de capacidad hoy<input type="number" step="1" placeholder="+ / − palets" value={value} onChange={(event) => setValue(event.target.value)} aria-label={`Cambio de capacidad para ${name}`} /><small>0 = sin cambio</small></label>
+    <form onSubmit={async (event) => { event.preventDefault(); setSaving(true); try { await onSave(Number(value), needsResponsible ? responsibleValue.trim() : sourceName); } finally { setSaving(false); } }}>
+      {needsResponsible ? <label>Equipo o responsable<input type="text" value={responsibleValue} onChange={(event) => setResponsibleValue(event.target.value)} placeholder="Ej. Turno extra de armado" required={Number(value) !== 0} /></label> : <p className="adjustment-source"><small>Quién aporta</small><strong>{sourceName}</strong></p>}
+      <label>Capacidad adicional hoy<input type="number" step="1" placeholder="+ / − palets" value={value} onChange={(event) => setValue(event.target.value)} aria-label={`Cambio de capacidad para ${name}`} /><small>0 = sin cambio</small></label>
       <button type="submit" disabled={saving}><Save size={16} />{saving ? "Guardando" : "Guardar"}</button>
     </form>
   </article>;

@@ -2359,18 +2359,30 @@ h3 {
 .day-adjustment-section.day-internal .capacity-metric,
 .day-adjustment-section.day-external .capacity-metric,
 .day-adjustment-section.day-transport .capacity-metric { background: rgba(255, 255, 255, .72); }
-.day-adjustment-row { display: grid; grid-template-columns: minmax(180px, 1.3fr) 130px 150px minmax(250px, 1.4fr); align-items: end; gap: 10px; padding: 14px 16px; border-bottom: 1px solid var(--line); }
+.day-adjustment-row { display: grid; grid-template-columns: minmax(160px, 1.05fr) 120px 145px minmax(390px, 1.7fr); align-items: end; gap: 10px; padding: 14px 16px; border-bottom: 1px solid var(--line); }
 .day-adjustment-row:last-child { border-bottom: 0; }
 .day-adjustment-row.danger { background: #fffafa; }
 .day-adjustment-name { align-self: center; display: grid; gap: 4px; }
 .day-adjustment-name strong { font-size: 12px; }
 .day-adjustment-name small { color: var(--muted); font-size: 9px; }
-.day-adjustment-row form { display: grid; grid-template-columns: 1fr auto; align-items: end; gap: 8px; }
+.day-adjustment-row form { display: grid; grid-template-columns: minmax(120px, 1.3fr) minmax(110px, 1fr) auto; align-items: end; gap: 8px; }
 .day-adjustment-row form label { display: grid; gap: 5px; color: var(--muted); font-size: 9px; font-weight: 750; }
 .day-adjustment-row form label small { color: var(--muted); font-size: 9px; font-weight: 500; }
 .day-adjustment-row form input { width: 100%; min-height: 42px; padding: 0 10px; border: 1px solid var(--line-strong); border-radius: 8px; background: #fff; }
 .day-adjustment-row form button { min-height: 42px; display: flex; align-items: center; gap: 6px; padding: 0 13px; border: 0; border-radius: 8px; background: var(--forest-2); color: #fff; font-size: 10px; font-weight: 750; cursor: pointer; }
 .day-adjustment-row form button:disabled { opacity: .65; cursor: wait; }
+.adjustment-source { display: grid; align-content: center; min-height: 42px; gap: 3px; margin: 0; padding: 7px 10px; border: 1px solid var(--line-strong); border-radius: 8px; background: rgba(255, 255, 255, .72); }
+.adjustment-source small { color: var(--muted); font-size: 9px; font-weight: 750; }
+.adjustment-source strong { font-size: 11px; }
+.day-provider-assignment { display: grid; grid-template-columns: minmax(180px, 1.2fr) minmax(130px, 1fr) minmax(120px, .8fr) minmax(110px, .75fr) minmax(120px, .75fr) auto; align-items: end; gap: 9px; padding: 14px 16px; background: rgba(255, 255, 255, .48); }
+.day-provider-assignment > div { display: grid; gap: 4px; align-self: center; }
+.day-provider-assignment > div strong { font-size: 11px; }
+.day-provider-assignment > div small { color: var(--muted); font-size: 9px; line-height: 1.35; }
+.day-provider-assignment label { display: grid; gap: 5px; color: var(--muted); font-size: 9px; font-weight: 750; }
+.day-provider-assignment select,
+.day-provider-assignment input { width: 100%; min-height: 42px; padding: 0 10px; border: 1px solid var(--line-strong); border-radius: 8px; background: #fff; color: var(--ink); }
+.day-provider-assignment button { min-height: 42px; display: flex; align-items: center; justify-content: center; gap: 6px; padding: 0 13px; border: 0; border-radius: 8px; background: var(--forest-2); color: #fff; font-size: 10px; font-weight: 750; cursor: pointer; }
+.day-provider-assignment button:disabled { opacity: .65; cursor: wait; }
 .day-adjustment-section.imports { padding-bottom: 10px; }
 .day-adjustment-section.imports p { margin: 8px 16px 0; font-size: 11px; }
 .logistics-capacity-strip { display: grid; grid-template-columns: repeat(7, 1fr); border-bottom: 1px solid var(--line); }
@@ -2738,7 +2750,11 @@ h3 {
   .day-adjustment-section { margin: 14px 12px; }
   .day-adjustment-row { grid-template-columns: 1fr 1fr; gap: 9px; padding: 13px; }
   .day-adjustment-name { grid-column: 1 / -1; }
-  .day-adjustment-row form { grid-column: 1 / -1; }
+  .day-adjustment-row form { grid-column: 1 / -1; grid-template-columns: 1fr 1fr; }
+  .day-adjustment-row form button { grid-column: 1 / -1; justify-content: center; }
+  .day-provider-assignment { grid-template-columns: 1fr 1fr; padding: 13px; }
+  .day-provider-assignment > div { grid-column: 1 / -1; }
+  .day-provider-assignment button { grid-column: 1 / -1; }
   .assignment-fieldset { grid-template-columns: 1fr; }
   .assignment-fieldset > label,
   .assignment-fieldset .capacity-hint,

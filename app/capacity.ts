@@ -6,11 +6,11 @@ export type CapacityRule = { operation: CapacityOperation; peopleCount: number; 
 export type InternalProductionDefault = { operation: CapacityOperation; peopleCount: number; manualCapacity?: number };
 export type ExternalProductionDefault = { id?: string; providerId: string; operation: CapacityOperation; palletCapacity: number; status: CapacityStatus };
 export type TransportCapacityDefault = { id?: string; source: TransportSource; providerId?: string; palletCapacity: number; status: CapacityStatus };
-export type CapacityAdjustment = { date: string; resourceType: "internal_production" | "external_production" | "transport"; operation?: CapacityOperation; source?: TransportSource; providerId?: string; palletAdjustment: number };
+export type CapacityAdjustment = { date: string; resourceType: "internal_production" | "external_production" | "transport"; operation?: CapacityOperation; source?: TransportSource; providerId?: string; palletAdjustment: number; responsible?: string; status?: CapacityStatus };
 
-export type CapacityOperationSummary = { operation: CapacityOperation; peopleCount: number; baseCapacity?: number; adjustment: number; capacity?: number; committed: number; available?: number; overload: number };
-export type ExternalCapacitySummary = { providerId: string; providerName: string; operation: CapacityOperation; status: CapacityStatus; baseCapacity?: number; adjustment: number; capacity?: number; committed: number; available?: number; overload: number };
-export type TransportCapacitySummary = { source: TransportSource; providerId?: string; providerName: string; status: CapacityStatus; baseCapacity?: number; adjustment: number; capacity?: number; committed: number; available?: number; overload: number };
+export type CapacityOperationSummary = { operation: CapacityOperation; peopleCount: number; baseCapacity?: number; adjustment: number; adjustmentResponsible?: string; capacity?: number; committed: number; available?: number; overload: number };
+export type ExternalCapacitySummary = { providerId: string; providerName: string; operation: CapacityOperation; status: CapacityStatus; baseCapacity?: number; adjustment: number; adjustmentResponsible?: string; capacity?: number; committed: number; available?: number; overload: number };
+export type TransportCapacitySummary = { source: TransportSource; providerId?: string; providerName: string; status: CapacityStatus; baseCapacity?: number; adjustment: number; adjustmentResponsible?: string; capacity?: number; committed: number; available?: number; overload: number };
 export type CapacityDay = { date: string; internalProduction: CapacityOperationSummary[]; externalProduction: ExternalCapacitySummary[]; imports: Array<{ orderId: string; client: string; pallets: number }>; productionTotals: { committed: number; capacity?: number; available?: number; missing: number }; transport: TransportCapacitySummary[]; transportTotals: { internal: number; externalConfirmed: number; externalEstimated: number; committed: number; missing: number }; issues: string[] };
 export type CapacitySnapshot = { from: string; to: string; rules: CapacityRule[]; internalDefaults: InternalProductionDefault[]; externalDefaults: ExternalProductionDefault[]; transportDefaults: TransportCapacityDefault[]; adjustments: CapacityAdjustment[]; days: CapacityDay[] };
 
@@ -40,22 +40,25 @@ export function buildCapacitySnapshot(input: { from: string; to: string; rules: 
       const defaults = input.internalDefaults.find((item) => item.operation === operation);
       const rule = defaults ? input.rules.find((item) => item.operation === operation && item.peopleCount === defaults.peopleCount) : undefined;
       const baseCapacity = defaults?.manualCapacity ?? rule?.palletCapacity;
-      const adjustment = input.adjustments.find((item) => item.date === date && item.resourceType === "internal_production" && item.operation === operation)?.palletAdjustment ?? 0;
+      const adjustmentEntry = input.adjustments.find((item) => item.date === date && item.resourceType === "internal_production" && item.operation === operation);
+      const adjustment = adjustmentEntry?.palletAdjustment ?? 0;
       const capacity = adjustedCapacity(baseCapacity, adjustment);
       const committed = productionOrders.filter((order) => (order.productionSource ?? "internal") === "internal" && (order.requiredOperations ?? ["assembly"]).includes(operation)).reduce((sum, order) => sum + order.requested, 0);
-      return { operation, peopleCount: defaults?.peopleCount ?? 0, baseCapacity, adjustment, capacity, committed, available: capacity === undefined ? undefined : Math.max(capacity - committed, 0), overload: capacity === undefined ? 0 : Math.max(committed - capacity, 0) };
+      return { operation, peopleCount: defaults?.peopleCount ?? 0, baseCapacity, adjustment, adjustmentResponsible: adjustmentEntry?.responsible, capacity, committed, available: capacity === undefined ? undefined : Math.max(capacity - committed, 0), overload: capacity === undefined ? 0 : Math.max(committed - capacity, 0) };
     });
 
     const externalKeys = new Set(input.externalDefaults.map((item) => `${item.providerId}|${item.operation}`));
     for (const order of productionOrders.filter((item) => item.productionSource === "sawmill" && item.producerProviderId)) for (const operation of order.requiredOperations ?? ["assembly"]) externalKeys.add(`${order.producerProviderId}|${operation}`);
+    for (const adjustment of input.adjustments.filter((item) => item.date === date && item.resourceType === "external_production" && item.providerId && item.operation)) externalKeys.add(`${adjustment.providerId}|${adjustment.operation}`);
     const externalProduction = [...externalKeys].map((key) => {
       const [providerId, operation] = key.split("|") as [string, CapacityOperation];
       const defaults = input.externalDefaults.find((item) => item.providerId === providerId && item.operation === operation);
-      const adjustment = input.adjustments.find((item) => item.date === date && item.resourceType === "external_production" && item.providerId === providerId && item.operation === operation)?.palletAdjustment ?? 0;
+      const adjustmentEntry = input.adjustments.find((item) => item.date === date && item.resourceType === "external_production" && item.providerId === providerId && item.operation === operation);
+      const adjustment = adjustmentEntry?.palletAdjustment ?? 0;
       const baseCapacity = defaults?.palletCapacity;
       const capacity = adjustedCapacity(baseCapacity, adjustment);
       const committed = productionOrders.filter((order) => order.productionSource === "sawmill" && order.producerProviderId === providerId && (order.requiredOperations ?? ["assembly"]).includes(operation)).reduce((sum, order) => sum + order.requested, 0);
-      return { providerId, providerName: providerNames.get(providerId) ?? "Proveedor", operation, status: defaults?.status ?? "estimated", baseCapacity, adjustment, capacity, committed, available: capacity === undefined ? undefined : Math.max(capacity - committed, 0), overload: capacity === undefined ? 0 : Math.max(committed - capacity, 0) };
+      return { providerId, providerName: providerNames.get(providerId) ?? "Proveedor", operation, status: adjustmentEntry?.status ?? defaults?.status ?? "estimated", baseCapacity, adjustment, adjustmentResponsible: adjustmentEntry?.responsible, capacity, committed, available: capacity === undefined ? undefined : Math.max(capacity - committed, 0), overload: capacity === undefined ? 0 : Math.max(committed - capacity, 0) };
     });
 
     const imports = activeOrders.filter((order) => order.productionSource === "import" && order.importArrivalDate === date).map((order) => ({ orderId: order.id, client: order.client, pallets: order.requested }));
@@ -80,15 +83,17 @@ export function buildCapacitySnapshot(input: { from: string; to: string; rules: 
     const productionTotals = { committed: productionCommitted, capacity: hasProductionCapacity ? knownProductionCapacity : undefined, available: productionAvailable, missing: productionMissing + externalProductionMissing };
     const transportKeys = new Set(["internal|internal", ...input.transportDefaults.map((item) => `${item.source}|${item.providerId ?? "internal"}`)]);
     for (const order of deliveryOrders) transportKeys.add(`${order.transportSource ?? "external"}|${order.transportProviderId ?? "internal"}`);
+    for (const adjustment of input.adjustments.filter((item) => item.date === date && item.resourceType === "transport" && item.source)) transportKeys.add(`${adjustment.source}|${adjustment.providerId ?? "internal"}`);
     const transport = [...transportKeys].map((key) => {
       const [source, providerKey] = key.split("|") as [TransportSource, string];
       const providerId = source === "external" && providerKey !== "internal" ? providerKey : undefined;
       const defaults = input.transportDefaults.find((item) => item.source === source && (item.providerId ?? "") === (providerId ?? ""));
-      const adjustment = input.adjustments.find((item) => item.date === date && item.resourceType === "transport" && item.source === source && (item.providerId ?? "") === (providerId ?? ""))?.palletAdjustment ?? 0;
+      const adjustmentEntry = input.adjustments.find((item) => item.date === date && item.resourceType === "transport" && item.source === source && (item.providerId ?? "") === (providerId ?? ""));
+      const adjustment = adjustmentEntry?.palletAdjustment ?? 0;
       const baseCapacity = defaults?.palletCapacity;
       const capacity = adjustedCapacity(baseCapacity, adjustment);
       const committed = deliveryOrders.filter((order) => (order.transportSource ?? "external") === source && (source === "internal" || order.transportProviderId === providerId)).reduce((sum, order) => sum + order.requested, 0);
-      return { source, providerId, providerName: source === "internal" ? "Transporte interno" : providerNames.get(providerId ?? "") ?? "Transportista", status: defaults?.status ?? (source === "internal" ? "confirmed" : "estimated"), baseCapacity, adjustment, capacity, committed, available: capacity === undefined ? undefined : Math.max(capacity - committed, 0), overload: capacity === undefined ? 0 : Math.max(committed - capacity, 0) };
+      return { source, providerId, providerName: source === "internal" ? "Transporte interno" : providerNames.get(providerId ?? "") ?? "Transportista", status: adjustmentEntry?.status ?? defaults?.status ?? (source === "internal" ? "confirmed" : "estimated"), baseCapacity, adjustment, adjustmentResponsible: adjustmentEntry?.responsible, capacity, committed, available: capacity === undefined ? undefined : Math.max(capacity - committed, 0), overload: capacity === undefined ? 0 : Math.max(committed - capacity, 0) };
     });
     const internal = transport.filter((entry) => entry.source === "internal").reduce((sum, entry) => sum + (entry.capacity ?? 0), 0);
     const externalConfirmed = transport.filter((entry) => entry.source === "external" && entry.status === "confirmed").reduce((sum, entry) => sum + (entry.capacity ?? 0), 0);

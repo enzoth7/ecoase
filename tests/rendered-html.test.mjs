@@ -120,13 +120,17 @@ test("administra capacidad general, ajustes diarios y permite sobrecarga", async
   const rule = await request("/api/capacity/rules", { method: "PUT", headers: { "content-type": "application/json" }, body: JSON.stringify({ operation: "assembly", peopleCount: 5, palletCapacity: 30 }) });
   const internal = await request("/api/capacity/internal-production", { method: "PUT", headers: { "content-type": "application/json" }, body: JSON.stringify({ operation: "assembly", peopleCount: 5 }) });
   const transport = await request("/api/capacity/transport", { method: "PUT", headers: { "content-type": "application/json" }, body: JSON.stringify({ source: "internal", palletCapacity: 25, status: "confirmed" }) });
-  const productionAdjustment = await request("/api/capacity/adjustments", { method: "PUT", headers: { "content-type": "application/json" }, body: JSON.stringify({ date: "2026-09-07", resourceType: "internal_production", operation: "assembly", palletAdjustment: 5 }) });
-  const transportAdjustment = await request("/api/capacity/adjustments", { method: "PUT", headers: { "content-type": "application/json" }, body: JSON.stringify({ date: "2026-09-08", resourceType: "transport", source: "internal", palletAdjustment: 10 }) });
+  const productionAdjustment = await request("/api/capacity/adjustments", { method: "PUT", headers: { "content-type": "application/json" }, body: JSON.stringify({ date: "2026-09-07", resourceType: "internal_production", operation: "assembly", palletAdjustment: 5, responsible: "Turno extra de armado" }) });
+  const transportAdjustment = await request("/api/capacity/adjustments", { method: "PUT", headers: { "content-type": "application/json" }, body: JSON.stringify({ date: "2026-09-08", resourceType: "transport", source: "internal", palletAdjustment: 10, responsible: "Flota Ecoase" }) });
+  const externalAssignment = await request("/api/capacity/adjustments", { method: "PUT", headers: { "content-type": "application/json" }, body: JSON.stringify({ date: "2026-09-07", resourceType: "external_production", providerId: "blanc", operation: "assembly", palletAdjustment: 20, responsible: "Blanc", status: "confirmed" }) });
+  const unnamedAdjustment = await request("/api/capacity/adjustments", { method: "PUT", headers: { "content-type": "application/json" }, body: JSON.stringify({ date: "2026-09-07", resourceType: "internal_production", operation: "marking", palletAdjustment: 5 }) });
   assert.equal(rule.status, 200);
   assert.equal(internal.status, 200);
   assert.equal(transport.status, 200);
   assert.equal(productionAdjustment.status, 200);
   assert.equal(transportAdjustment.status, 200);
+  assert.equal(externalAssignment.status, 200);
+  assert.equal(unnamedAdjustment.status, 400);
 
   const created = await request("/api/orders", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({
     client: "Capacidad prueba", product: "Pallet 120 × 100", requested: 40, orderDate: "2026-09-01", requestedDeliveryDate: "2026-09-08", plannedDate: "2026-09-08", stage: "produccion",
@@ -141,10 +145,11 @@ test("administra capacidad general, ajustes diarios y permite sobrecarga", async
   const productionDay = snapshot.days.find((day) => day.date === "2026-09-07");
   const deliveryDay = snapshot.days.find((day) => day.date === "2026-09-08");
   assert.equal(productionDay.internalProduction.find((item) => item.operation === "assembly").capacity, 35);
+  assert.equal(productionDay.externalProduction.find((item) => item.providerId === "blanc" && item.operation === "assembly").capacity, 20);
   assert.equal(productionDay.internalProduction.find((item) => item.operation === "assembly").committed, 40);
   assert.equal(productionDay.internalProduction.find((item) => item.operation === "assembly").overload, 5);
   assert.equal(productionDay.productionTotals.committed, 40);
-  assert.equal(productionDay.productionTotals.capacity, 35);
+  assert.equal(productionDay.productionTotals.capacity, 55);
   assert.equal(productionDay.productionTotals.missing, 5);
   assert.equal(deliveryDay.transportTotals.committed, 40);
   assert.equal(deliveryDay.transportTotals.missing, 5);
