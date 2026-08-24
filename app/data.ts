@@ -29,6 +29,23 @@ export interface OperationOrder {
   source: string;
 }
 
+export type ProviderType = "Aserradero" | "Transporte";
+
+export interface Provider {
+  id: string;
+  name: string;
+  type: ProviderType;
+  supplies: string;
+}
+
+export const providers: Provider[] = [
+  { id: "blanc", name: "Blanc", type: "Aserradero", supplies: "Pallets y mercadería de terceros" },
+  { id: "mirasol", name: "Mirasol", type: "Aserradero", supplies: "Pallets y mercadería de terceros" },
+  { id: "linares", name: "Linares", type: "Transporte", supplies: "Traslado y entrega de pedidos" },
+  { id: "milton", name: "Milton", type: "Transporte", supplies: "Traslado y entrega de pedidos" },
+  { id: "matias", name: "Matías", type: "Transporte", supplies: "Traslado y entrega de pedidos" },
+];
+
 export const orders: OperationOrder[] = [
   {
     id: "frutura-74",

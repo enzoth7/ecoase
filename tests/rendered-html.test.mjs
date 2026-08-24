@@ -55,6 +55,7 @@ test("renderiza pedidos activos e incluye acceso al historial", async () => {
   assert.match(html, /app-sidebar/);
   assert.match(html, /Historial/);
   assert.match(html, /href="\/historial"/i);
+  assert.match(html, /href="\/proveedores"/i);
   assert.match(html, /Preparación y entrega/);
   assert.match(html, /Abastecimiento/);
   assert.match(html, /Logística/);
@@ -78,7 +79,7 @@ test("usa rutas reales sin navegación por hash", async () => {
   assert.equal(rootResponse.status, 307);
   assert.equal(rootResponse.headers.get("location"), "/pedidos");
 
-  for (const path of ["/pedidos", "/historial", "/plan", "/calendario", "/logistica", "/clientes"]) {
+  for (const path of ["/pedidos", "/historial", "/plan", "/calendario", "/logistica", "/clientes", "/proveedores"]) {
     const response = await request(path);
     assert.equal(response.status, 200);
   }
@@ -90,6 +91,21 @@ test("usa rutas reales sin navegación por hash", async () => {
   assert.match(html, /href="\/plan"/i);
   assert.match(html, /href="\/logistica"/i);
   assert.match(html, /href="\/clientes"/i);
+  assert.match(html, /href="\/proveedores"/i);
+});
+
+test("muestra proveedores por tipo y abastecimiento", async () => {
+  const [pageResponse, providersResponse] = await Promise.all([request("/proveedores"), request("/api/providers")]);
+  assert.equal(pageResponse.status, 200);
+  assert.equal(providersResponse.status, 200);
+  const html = await pageResponse.text();
+  assert.match(html, /Tipo de proveedor/);
+  assert.match(html, /Qué provee/);
+  assert.match(html, /Blanc/);
+  assert.match(html, /Aserradero/);
+  assert.match(html, /Linares/);
+  assert.match(html, /Transporte/);
+  assert.equal((await providersResponse.json()).providers.length, 5);
 });
 
 test("expone pedidos activos e historial en endpoints separados", async () => {

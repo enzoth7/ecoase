@@ -8,6 +8,7 @@ import {
   ChevronRight,
   CircleDot,
   ClipboardList,
+  Factory,
   ListChecks,
   PackageCheck,
   Plus,
@@ -20,10 +21,10 @@ import {
   type LucideIcon,
 } from "lucide-react";
 import { useEffect, useMemo, useRef, useState, type FormEvent } from "react";
-import { orders as initialOrders, type OperationOrder, type OrderStatus } from "./data";
+import { orders as initialOrders, providers, type OperationOrder, type OrderStatus, type Provider } from "./data";
 
 const number = new Intl.NumberFormat("es-UY");
-export type DashboardSection = "pedidos" | "plan" | "calendario" | "logistica" | "clientes" | "historial";
+export type DashboardSection = "pedidos" | "plan" | "calendario" | "logistica" | "clientes" | "historial" | "proveedores";
 
 const sectionPaths: Record<DashboardSection, string> = {
   pedidos: "/pedidos",
@@ -32,6 +33,7 @@ const sectionPaths: Record<DashboardSection, string> = {
   logistica: "/logistica",
   clientes: "/clientes",
   historial: "/historial",
+  proveedores: "/proveedores",
 };
 
 const weekDays = [
@@ -198,6 +200,29 @@ function ClientsView({ clients, onOpen }: { clients: ClientSummary[]; onOpen: (c
             <div className={client.pending > 0 ? "client-pending" : "client-complete"}><small>Saldo</small><strong>{number.format(client.pending)}</strong></div>
             <ChevronRight size={19} aria-hidden="true" />
           </button>
+        ))}
+      </div>
+    </section>
+  );
+}
+
+function ProvidersView({ providers }: { providers: Provider[] }) {
+  return (
+    <section className="module-surface providers-surface" aria-labelledby="providers-page-title">
+      <div className="module-toolbar">
+        <div><h2 id="providers-page-title">Proveedores</h2></div>
+        <small>{providers.length} proveedores registrados</small>
+      </div>
+      <div className="providers-board" aria-label="Listado de proveedores">
+        <div className="data-heading providers-heading" aria-hidden="true">
+          <div>Proveedor</div><div>Tipo de proveedor</div><div>Qué provee</div>
+        </div>
+        {providers.map((provider) => (
+          <article className="provider-row" key={provider.id}>
+            <div className="provider-name"><i className={`provider-icon ${provider.type === "Transporte" ? "transport" : ""}`} aria-hidden="true">{provider.type === "Transporte" ? <Truck size={18} /> : <Factory size={18} />}</i><strong>{provider.name}</strong></div>
+            <div><small>Tipo de proveedor</small><strong>{provider.type}</strong></div>
+            <div><small>Qué provee</small><strong>{provider.supplies}</strong></div>
+          </article>
         ))}
       </div>
     </section>
@@ -471,6 +496,7 @@ export default function Dashboard({ initialSection = "pedidos" }: { initialSecti
     logistica: "Logística",
     clientes: "Clientes",
     historial: "Historial",
+    proveedores: "Proveedores",
   };
 
   return (
@@ -500,6 +526,9 @@ export default function Dashboard({ initialSection = "pedidos" }: { initialSecti
             </a>
             <a className={section === "clientes" ? "active" : ""} href="/clientes" aria-current={section === "clientes" ? "page" : undefined}>
               <Users size={17} aria-hidden="true" /><small>Clientes</small>
+            </a>
+            <a className={section === "proveedores" ? "active" : ""} href="/proveedores" aria-current={section === "proveedores" ? "page" : undefined}>
+              <Factory size={17} aria-hidden="true" /><small>Proveedores</small>
             </a>
             <a className={section === "historial" ? "active" : ""} href="/historial" aria-current={section === "historial" ? "page" : undefined}>
               <Archive size={17} aria-hidden="true" /><small>Historial</small><b>{completed}</b>
@@ -603,7 +632,7 @@ export default function Dashboard({ initialSection = "pedidos" }: { initialSecti
           <div ref={detailRef} className="detail-column">
             {selectedOrder ? <OrderDetail order={selectedOrder} /> : <EmptyOrderDetail history={isHistory} />}
           </div>
-        </div> : section === "plan" ? <><PlanView orders={activeOrders} onOpen={openOrder} onUpdate={updateOrder} />{updateError && <p className="plan-error" role="alert">{updateError}</p>}</> : section === "calendario" ? <CalendarView orders={activeOrders} onOpen={openOrder} /> : section === "logistica" ? <LogisticsView orders={activeOrders} onOpen={openOrder} /> : <ClientsView clients={clients} onOpen={openClientOrders} />}
+        </div> : section === "plan" ? <><PlanView orders={activeOrders} onOpen={openOrder} onUpdate={updateOrder} />{updateError && <p className="plan-error" role="alert">{updateError}</p>}</> : section === "calendario" ? <CalendarView orders={activeOrders} onOpen={openOrder} /> : section === "logistica" ? <LogisticsView orders={activeOrders} onOpen={openOrder} /> : section === "proveedores" ? <ProvidersView providers={providers} /> : <ClientsView clients={clients} onOpen={openClientOrders} />}
         </main>
 
       </div>
