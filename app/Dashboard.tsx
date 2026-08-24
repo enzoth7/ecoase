@@ -155,7 +155,7 @@ function ProvidersView({ providers }: { providers: Provider[] }) {
   );
 }
 
-type ProductChanges = Pick<Product, "code" | "name" | "kind"> & {
+type ProductChanges = Pick<Product, "name" | "kind"> & {
   measure?: string;
   treatment?: Product["treatment"];
 };
@@ -167,7 +167,7 @@ function ProductsView({ products, onEdit }: { products: Product[]; onEdit: (prod
     const normalized = productQuery.trim().toLocaleLowerCase("es");
     return products.filter((product) => {
       const kindMatches = !productKind || product.kind === productKind;
-      const queryMatches = !normalized || [product.code, product.name, product.kind, product.measure, product.specification, product.treatment]
+      const queryMatches = !normalized || [product.name, product.kind, product.measure, product.specification, product.treatment]
         .filter((value): value is string => Boolean(value))
         .some((value) => value.toLocaleLowerCase("es").includes(normalized));
       return kindMatches && queryMatches;
@@ -188,7 +188,7 @@ function ProductsView({ products, onEdit }: { products: Product[]; onEdit: (prod
         <div className="data-heading products-heading"><div>Producto</div><label className="table-filter"><i className="sr-only">Filtrar por tipo</i><select value={productKind} onChange={(event) => setProductKind(event.target.value as Product["kind"] | "")} aria-label="Filtrar productos por tipo"><option value="">Tipo</option><option value="Pallet">Pallet</option><option value="Piso">Piso</option><option value="Bin">Bin</option></select></label><div>Medida</div><div>Tratamiento</div><div className="sr-only">Acciones</div></div>
         {visibleProducts.length > 0 ? visibleProducts.map((product) => (
           <article className="product-row" key={product.id}>
-            <div className="product-name"><i className={`product-icon ${product.kind.toLocaleLowerCase("es")}`} aria-hidden="true"><Package size={17} /></i><div><strong>{product.name}</strong><small>{product.code}{product.specification ? ` · ${product.specification}` : ""}</small></div></div>
+            <div className="product-name"><i className={`product-icon ${product.kind.toLocaleLowerCase("es")}`} aria-hidden="true"><Package size={17} /></i><div><strong>{product.name}</strong>{product.specification && <small>{product.specification}</small>}</div></div>
             <div><small className="column-label">Tipo</small><strong>{product.kind}</strong></div>
             <div><small className="column-label">Medida</small><strong>{product.measure ?? "—"}</strong></div>
             <div><small className="column-label">Tratamiento</small><strong>{product.treatment ?? "—"}</strong></div>
@@ -217,7 +217,6 @@ function EditProductModal({ product, onClose, onSave, onDelete }: { product: Pro
     setSaving(true);
     setError("");
     const saved = await onSave(product.id, {
-      code: String(form.get("code") ?? ""),
       name: String(form.get("name") ?? ""),
       kind: String(form.get("kind") ?? "Pallet") as Product["kind"],
       measure: String(form.get("measure") ?? ""),
@@ -239,11 +238,10 @@ function EditProductModal({ product, onClose, onSave, onDelete }: { product: Pro
   return (
     <div className="modal-backdrop" role="presentation" onMouseDown={(event) => { if (event.target === event.currentTarget) onClose(); }}>
       <section className="edit-product-modal" role="dialog" aria-modal="true" aria-labelledby="edit-product-title">
-        <div className="modal-heading"><div><h2 id="edit-product-title">Editar producto</h2><small>{product.code}</small></div><button type="button" onClick={onClose} aria-label="Cerrar"><X size={18} aria-hidden="true" /></button></div>
+        <div className="modal-heading"><div><h2 id="edit-product-title">Editar producto</h2></div><button type="button" onClick={onClose} aria-label="Cerrar"><X size={18} aria-hidden="true" /></button></div>
         <form onSubmit={save}>
-          <label>Código<input name="code" defaultValue={product.code} required /></label>
           <label>Tipo<select name="kind" defaultValue={product.kind}><option value="Pallet">Pallet</option><option value="Piso">Piso</option><option value="Bin">Bin</option></select></label>
-          <label className="field-wide">Producto<input name="name" defaultValue={product.name} required /></label>
+          <label>Producto<input name="name" defaultValue={product.name} required /></label>
           <label>Medida<input name="measure" defaultValue={product.measure ?? ""} /></label>
           <label>Tratamiento<select name="treatment" defaultValue={product.treatment ?? ""}><option value="">Sin tratamiento</option><option value="Marcado">Marcado</option><option value="HT">HT</option></select></label>
           {error && <p className="form-error" role="alert">{error}</p>}
@@ -736,10 +734,12 @@ export default function Dashboard({ initialSection = "pedidos" }: { initialSecti
   };
 
   const updateProduct = async (id: string, changes: ProductChanges) => {
+    const currentProduct = productRows.find((product) => product.id === id);
+    if (!currentProduct) return false;
     const response = await fetch(`/api/products/${id}`, {
       method: "PATCH",
       headers: { "content-type": "application/json" },
-      body: JSON.stringify(changes),
+      body: JSON.stringify({ ...changes, code: currentProduct.code }),
     });
     const payload = (await response.json()) as { product?: Product; error?: string };
     if (!response.ok || !payload.product) return false;
