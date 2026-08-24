@@ -365,6 +365,7 @@ function LogisticsView({ orders, providers, onOpen }: { orders: OperationOrder[]
     const plannedDate = getOrderPlannedDate(order);
     return plannedDate >= dateKey(weekStart) && plannedDate <= dateKey(weekEnd);
   }), [orders, weekEnd, weekStart]);
+  const todayKey = dateKey(new Date());
   const [capacity, setCapacity] = useState<CapacitySnapshot | null>(null);
   const [capacityError, setCapacityError] = useState("");
   useEffect(() => {
@@ -379,7 +380,7 @@ function LogisticsView({ orders, providers, onOpen }: { orders: OperationOrder[]
     <>
     <section className="module-surface logistics-surface" aria-labelledby="logistics-page-title">
       <div className="module-toolbar calendar-toolbar">
-        <div><h2 id="logistics-page-title">Cap. Logística</h2></div>
+        <div><h2 id="logistics-page-title">Cap. Logística semanal</h2><small>Capacidad de transporte por día</small></div>
         <div className="module-toolbar-actions">
           <small>{transports.length} transportes registrados</small>
           <div className="calendar-week-controls">
@@ -390,7 +391,20 @@ function LogisticsView({ orders, providers, onOpen }: { orders: OperationOrder[]
         </div>
       </div>
       {capacity && <div className="logistics-capacity-strip" aria-label="Capacidad logística de la semana">
-        {capacity.days.map((day) => <article key={day.date}><small>{new Intl.DateTimeFormat("es-UY", { weekday: "short", day: "numeric" }).format(new Date(`${day.date}T12:00:00`))}</small><strong>{number.format(day.transportTotals.committed)} a entregar</strong><p>{number.format(day.transportTotals.internal)} interna · {number.format(day.transportTotals.externalConfirmed)} externa</p>{day.transportTotals.missing > 0 && <b>{number.format(day.transportTotals.missing)} faltantes</b>}</article>)}
+        {capacity.days.map((day) => {
+          const deliveryCapacity = day.transportTotals.internal + day.transportTotals.externalConfirmed;
+          const hasIssue = day.transportTotals.missing > 0;
+          const dayDate = new Date(`${day.date}T12:00:00`);
+          return <article key={day.date} className={`${day.date === todayKey ? "today" : ""} ${hasIssue ? "issue" : ""}`}>
+            <small>{new Intl.DateTimeFormat("es-UY", { weekday: "short" }).format(dayDate)}</small>
+            <strong>{dayDate.getDate()}</strong>
+            <div>
+              <em><b>{number.format(day.transportTotals.committed)}</b> a entregar</em>
+              {hasIssue ? <em className="missing"><b>{number.format(day.transportTotals.missing)}</b> faltan</em> : <em><b>{number.format(Math.max(deliveryCapacity - day.transportTotals.committed, 0))}</b> libres</em>}
+            </div>
+            {hasIssue && <mark><AlertTriangle size={12} aria-hidden="true" /> Revisar</mark>}
+          </article>;
+        })}
       </div>}
       <div className="logistics-board">
         <div className="data-heading logistics-heading" aria-hidden="true">

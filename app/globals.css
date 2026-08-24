@@ -2418,13 +2418,21 @@ h3 {
 .day-provider-assignment button:disabled { opacity: .65; cursor: wait; }
 .day-adjustment-section.imports { padding-bottom: 10px; }
 .day-adjustment-section.imports p { margin: 8px 16px 0; font-size: 11px; }
-.logistics-capacity-strip { display: grid; grid-template-columns: repeat(7, 1fr); border-bottom: 1px solid var(--line); }
-.logistics-capacity-strip article { min-width: 0; display: grid; gap: 3px; padding: 11px; border-right: 1px solid var(--line); }
+.logistics-capacity-strip { display: grid; grid-template-columns: repeat(7, 1fr); border-top: 1px solid var(--line); border-bottom: 1px solid var(--line); }
+.logistics-capacity-strip article { min-width: 0; min-height: 126px; display: grid; align-content: center; justify-items: start; gap: 3px; padding: 13px 14px; border-right: 1px solid var(--line); background: #fff; }
 .logistics-capacity-strip article:last-child { border-right: 0; }
-.logistics-capacity-strip small { color: var(--muted); font-size: 9px; font-weight: 750; text-transform: capitalize; }
-.logistics-capacity-strip strong { font-size: 10px; }
-.logistics-capacity-strip p { margin: 0; color: var(--muted); font-size: 8px; }
-.logistics-capacity-strip b { color: var(--red); font-size: 8px; }
+.logistics-capacity-strip article.today { background: #eff6ff; box-shadow: inset 0 -3px 0 #3b82f6; }
+.logistics-capacity-strip article.issue { background: #fff2f0; color: #9f2920; box-shadow: inset 0 -3px 0 var(--red); }
+.logistics-capacity-strip article.today.issue { background: linear-gradient(135deg, #eff6ff 0 48%, #fff2f0 48%); box-shadow: inset 0 -3px 0 var(--red), inset 3px 0 0 #3b82f6; }
+.logistics-capacity-strip small { color: var(--muted); font-size: 9px; font-weight: 800; text-transform: uppercase; }
+.logistics-capacity-strip article > strong { font-size: 23px; }
+.logistics-capacity-strip article > div { display: grid; gap: 2px; margin-top: 3px; }
+.logistics-capacity-strip em { display: flex; align-items: baseline; gap: 4px; color: var(--muted); font-size: 10px; font-style: normal; white-space: nowrap; }
+.logistics-capacity-strip em b { color: var(--ink); font-size: 11px; font-variant-numeric: tabular-nums; }
+.logistics-capacity-strip em.missing,
+.logistics-capacity-strip em.missing b,
+.logistics-capacity-strip mark { color: var(--red); }
+.logistics-capacity-strip mark { display: flex; align-items: center; gap: 4px; margin-top: 3px; padding: 0; background: transparent; font-size: 9px; font-weight: 750; white-space: nowrap; }
 
 @media (max-width: 1180px) {
   .dashboard-kpis {
