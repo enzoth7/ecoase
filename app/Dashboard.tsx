@@ -155,40 +155,102 @@ function ProvidersView({ providers }: { providers: Provider[] }) {
   );
 }
 
-function ProductsView({ products }: { products: Product[] }) {
+type ProductChanges = Pick<Product, "code" | "name" | "kind"> & {
+  measure?: string;
+  treatment?: Product["treatment"];
+};
+
+function ProductsView({ products, onEdit }: { products: Product[]; onEdit: (product: Product) => void }) {
   const [productQuery, setProductQuery] = useState("");
+  const [productKind, setProductKind] = useState<Product["kind"] | "">("");
   const visibleProducts = useMemo(() => {
     const normalized = productQuery.trim().toLocaleLowerCase("es");
-    if (!normalized) return products;
-    return products.filter((product) => [product.code, product.name, product.kind, product.measure, product.assignment, product.specification, product.treatment, product.catalog]
-      .filter((value): value is string => Boolean(value))
-      .some((value) => value.toLocaleLowerCase("es").includes(normalized)));
-  }, [productQuery, products]);
+    return products.filter((product) => {
+      const kindMatches = !productKind || product.kind === productKind;
+      const queryMatches = !normalized || [product.code, product.name, product.kind, product.measure, product.specification, product.treatment]
+        .filter((value): value is string => Boolean(value))
+        .some((value) => value.toLocaleLowerCase("es").includes(normalized));
+      return kindMatches && queryMatches;
+    });
+  }, [productKind, productQuery, products]);
 
   return (
     <section className="module-surface products-surface" aria-labelledby="products-page-title">
       <div className="module-toolbar products-toolbar">
-        <div><h2 id="products-page-title">Productos</h2><small>{products.length} productos de catálogo</small></div>
+        <div><h2 id="products-page-title">Productos</h2><small>{products.length} productos</small></div>
         <label className="search-field">
           <i className="sr-only">Buscar producto</i><Search size={17} aria-hidden="true" />
-          <input type="search" value={productQuery} onChange={(event) => setProductQuery(event.target.value)} placeholder="Buscar producto, medida o cliente" />
+          <input type="search" value={productQuery} onChange={(event) => setProductQuery(event.target.value)} placeholder="Buscar producto o medida" />
           {productQuery && <button type="button" onClick={() => setProductQuery("")} aria-label="Limpiar búsqueda"><X size={15} aria-hidden="true" /></button>}
         </label>
       </div>
       <div className="products-board" aria-label={`${visibleProducts.length} productos`}>
-        <div className="data-heading products-heading" aria-hidden="true"><div>Producto</div><div>Tipo</div><div>Medida</div><div>Cliente / asignación</div><div>Tratamiento</div><div>Catálogo</div></div>
+        <div className="data-heading products-heading"><div>Producto</div><label className="table-filter"><i className="sr-only">Filtrar por tipo</i><select value={productKind} onChange={(event) => setProductKind(event.target.value as Product["kind"] | "")} aria-label="Filtrar productos por tipo"><option value="">Tipo</option><option value="Pallet">Pallet</option><option value="Piso">Piso</option><option value="Bin">Bin</option></select></label><div>Medida</div><div>Tratamiento</div><div className="sr-only">Acciones</div></div>
         {visibleProducts.length > 0 ? visibleProducts.map((product) => (
           <article className="product-row" key={product.id}>
             <div className="product-name"><i className={`product-icon ${product.kind.toLocaleLowerCase("es")}`} aria-hidden="true"><Package size={17} /></i><div><strong>{product.name}</strong><small>{product.code}{product.specification ? ` · ${product.specification}` : ""}</small></div></div>
             <div><small className="column-label">Tipo</small><strong>{product.kind}</strong></div>
             <div><small className="column-label">Medida</small><strong>{product.measure ?? "—"}</strong></div>
-            <div><small className="column-label">Cliente / asignación</small><strong>{product.assignment ?? "—"}</strong></div>
             <div><small className="column-label">Tratamiento</small><strong>{product.treatment ?? "—"}</strong></div>
-            <div><small className="column-label">Catálogo</small><strong>{product.catalog}</strong></div>
+            <button type="button" className="product-edit" onClick={() => onEdit(product)} aria-label={`Editar ${product.name}`}><Pencil size={17} aria-hidden="true" /></button>
           </article>
-        )) : <div className="empty-state"><Package size={28} aria-hidden="true" /><strong>No hay productos para esa búsqueda</strong><button type="button" onClick={() => setProductQuery("")}>Limpiar búsqueda</button></div>}
+        )) : <div className="empty-state"><Package size={28} aria-hidden="true" /><strong>No hay productos para ese filtro</strong><button type="button" onClick={() => { setProductQuery(""); setProductKind(""); }}>Limpiar filtros</button></div>}
       </div>
     </section>
+  );
+}
+
+function EditProductModal({ product, onClose, onSave, onDelete }: { product: Product; onClose: () => void; onSave: (id: string, changes: ProductChanges) => Promise<boolean>; onDelete: (id: string) => Promise<boolean> }) {
+  const [saving, setSaving] = useState(false);
+  const [confirmDelete, setConfirmDelete] = useState(false);
+  const [error, setError] = useState("");
+
+  useEffect(() => {
+    const closeOnEscape = (event: KeyboardEvent) => { if (event.key === "Escape") onClose(); };
+    window.addEventListener("keydown", closeOnEscape);
+    return () => window.removeEventListener("keydown", closeOnEscape);
+  }, [onClose]);
+
+  const save = async (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    const form = new FormData(event.currentTarget);
+    setSaving(true);
+    setError("");
+    const saved = await onSave(product.id, {
+      code: String(form.get("code") ?? ""),
+      name: String(form.get("name") ?? ""),
+      kind: String(form.get("kind") ?? "Pallet") as Product["kind"],
+      measure: String(form.get("measure") ?? ""),
+      treatment: (String(form.get("treatment") ?? "") || undefined) as Product["treatment"],
+    });
+    setSaving(false);
+    if (saved) onClose(); else setError("No se pudo guardar el producto.");
+  };
+
+  const remove = async () => {
+    if (!confirmDelete) { setConfirmDelete(true); return; }
+    setSaving(true);
+    setError("");
+    const deleted = await onDelete(product.id);
+    setSaving(false);
+    if (deleted) onClose(); else setError("No se pudo eliminar el producto.");
+  };
+
+  return (
+    <div className="modal-backdrop" role="presentation" onMouseDown={(event) => { if (event.target === event.currentTarget) onClose(); }}>
+      <section className="edit-product-modal" role="dialog" aria-modal="true" aria-labelledby="edit-product-title">
+        <div className="modal-heading"><div><h2 id="edit-product-title">Editar producto</h2><small>{product.code}</small></div><button type="button" onClick={onClose} aria-label="Cerrar"><X size={18} aria-hidden="true" /></button></div>
+        <form onSubmit={save}>
+          <label>Código<input name="code" defaultValue={product.code} required /></label>
+          <label>Tipo<select name="kind" defaultValue={product.kind}><option value="Pallet">Pallet</option><option value="Piso">Piso</option><option value="Bin">Bin</option></select></label>
+          <label className="field-wide">Producto<input name="name" defaultValue={product.name} required /></label>
+          <label>Medida<input name="measure" defaultValue={product.measure ?? ""} /></label>
+          <label>Tratamiento<select name="treatment" defaultValue={product.treatment ?? ""}><option value="">Sin tratamiento</option><option value="Marcado">Marcado</option><option value="HT">HT</option></select></label>
+          {error && <p className="form-error" role="alert">{error}</p>}
+          <div className="modal-actions"><button type="button" className="delete-button" onClick={remove} disabled={saving}>{confirmDelete ? "Confirmar eliminación" : "Eliminar producto"}</button><div><button type="button" className="secondary-button" onClick={onClose}>Cancelar</button><button type="submit" className="primary-button" disabled={saving}>{saving ? "Guardando…" : "Guardar cambios"}</button></div></div>
+        </form>
+      </section>
+    </div>
   );
 }
 
@@ -538,6 +600,7 @@ export default function Dashboard({ initialSection = "pedidos" }: { initialSecti
   const [selectedId, setSelectedId] = useState(initialOrders[0].id);
   const [showAddOrder, setShowAddOrder] = useState(false);
   const [editingPlanOrder, setEditingPlanOrder] = useState<OperationOrder | null>(null);
+  const [editingProduct, setEditingProduct] = useState<Product | null>(null);
   const [updatingOrder, setUpdatingOrder] = useState<OperationOrder | null>(null);
   const [trackingRevision, setTrackingRevision] = useState(0);
   const [updateError, setUpdateError] = useState("");
@@ -669,6 +732,25 @@ export default function Dashboard({ initialSection = "pedidos" }: { initialSecti
     }
     setOrderRows((current) => current.map((order) => order.id === id ? payload.order! : order));
     setTrackingRevision((current) => current + 1);
+    return true;
+  };
+
+  const updateProduct = async (id: string, changes: ProductChanges) => {
+    const response = await fetch(`/api/products/${id}`, {
+      method: "PATCH",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify(changes),
+    });
+    const payload = (await response.json()) as { product?: Product; error?: string };
+    if (!response.ok || !payload.product) return false;
+    setProductRows((current) => current.map((product) => product.id === id ? payload.product! : product));
+    return true;
+  };
+
+  const removeProduct = async (id: string) => {
+    const response = await fetch(`/api/products/${id}`, { method: "DELETE" });
+    if (!response.ok) return false;
+    setProductRows((current) => current.filter((product) => product.id !== id));
     return true;
   };
 
@@ -819,12 +901,13 @@ export default function Dashboard({ initialSection = "pedidos" }: { initialSecti
           </section>
 
           <OrderTrackingPanel key={selectedOrder?.id ?? "empty"} order={selectedOrder} refreshKey={trackingRevision} onAdd={setUpdatingOrder} />
-        </div> : section === "plan" ? <><PlanView orders={activeOrders} onEdit={setEditingPlanOrder} />{updateError && <p className="plan-error" role="alert">{updateError}</p>}</> : section === "calendario" ? <CalendarView orders={activeOrders} onOpen={openOrder} /> : section === "logistica" ? <LogisticsView orders={activeOrders} onOpen={openOrder} /> : section === "productos" ? <ProductsView products={productRows} /> : section === "proveedores" ? <ProvidersView providers={providerRows} /> : <ClientsView clients={clients} onOpen={openClientOrders} />}
+        </div> : section === "plan" ? <><PlanView orders={activeOrders} onEdit={setEditingPlanOrder} />{updateError && <p className="plan-error" role="alert">{updateError}</p>}</> : section === "calendario" ? <CalendarView orders={activeOrders} onOpen={openOrder} /> : section === "logistica" ? <LogisticsView orders={activeOrders} onOpen={openOrder} /> : section === "productos" ? <ProductsView products={productRows} onEdit={setEditingProduct} /> : section === "proveedores" ? <ProvidersView providers={providerRows} /> : <ClientsView clients={clients} onOpen={openClientOrders} />}
         </main>
 
       </div>
       {showAddOrder && <AddOrderModal transportOptions={providerRows.filter((provider) => provider.type === "Transporte").map((provider) => provider.name)} onClose={() => setShowAddOrder(false)} onCreated={addCreatedOrder} />}
       {editingPlanOrder && <EditPlanModal order={editingPlanOrder} transportOptions={providerRows.filter((provider) => provider.type === "Transporte").map((provider) => provider.name)} onClose={() => setEditingPlanOrder(null)} onSave={(changes) => updateOrder(editingPlanOrder.id, changes)} />}
+      {editingProduct && <EditProductModal product={editingProduct} onClose={() => setEditingProduct(null)} onSave={updateProduct} onDelete={removeProduct} />}
       {updatingOrder && <OrderUpdateModal order={updatingOrder} onClose={() => setUpdatingOrder(null)} onSave={(update) => recordUpdate(updatingOrder.id, update)} />}
     </div>
   );

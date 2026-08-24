@@ -13,6 +13,7 @@ import {
   type OrderStatus,
   type Provider,
   type Product,
+  type ProductKind,
 } from "../data";
 import { supabaseRequest } from "../lib/supabase";
 
@@ -37,6 +38,14 @@ export type RecordOrderUpdateInput = {
   dispatchedAt?: string;
   deliveredAt?: string;
   note?: string;
+};
+
+export type UpdateProductInput = {
+  code: string;
+  name: string;
+  kind: ProductKind;
+  measure?: string;
+  treatment?: Product["treatment"];
 };
 
 type DbLine = { id: string; product: string; quantity: number; preparation: string | null; position: number };
@@ -78,6 +87,7 @@ type DbChange = {
 const useMemoryStore = process.env.ECOASE_DATA_BACKEND === "memory";
 const memoryOrders: OperationOrder[] = structuredClone(seededOrders);
 const memoryHistory = new Map<string, OrderChange[]>();
+const memoryProducts: Product[] = structuredClone(seededProducts);
 const statusLabels: Record<OrderStatus, OperationOrder["statusLabel"]> = {
   bloqueado: "Bloqueado",
   coordinacion: "En coordinación",
@@ -137,12 +147,56 @@ export async function getProviders() {
 }
 
 export async function getProducts() {
-  if (useMemoryStore) return seededProducts;
+  if (useMemoryStore) return memoryProducts;
   const query = new URLSearchParams({
     select: "id,code,name,kind,measure,assignment,specification,treatment,catalog",
     order: "catalog.asc,code.asc",
   });
   return supabaseRequest<Product[]>(`/rest/v1/products?${query}`);
+}
+
+export async function updateProduct(id: string, input: UpdateProductInput) {
+  const code = input.code.trim();
+  const name = input.name.trim();
+  const measure = input.measure?.trim() || undefined;
+  if (!code || !name) throw new Error("El código y el nombre son obligatorios.");
+
+  if (!useMemoryStore) {
+    await supabaseRequest<string>("/rest/v1/rpc/update_catalog_product", {
+      method: "POST",
+      body: JSON.stringify({
+        p_id: id,
+        p_code: code,
+        p_name: name,
+        p_kind: input.kind,
+        p_measure: measure ?? null,
+        p_treatment: input.treatment ?? null,
+      }),
+    });
+    const products = await getProducts();
+    const product = products.find((item) => item.id === id);
+    if (!product) throw new Error("El producto se actualizó pero no pudo recuperarse.");
+    return product;
+  }
+
+  const product = memoryProducts.find((item) => item.id === id);
+  if (!product) throw new Error("Producto no encontrado.");
+  Object.assign(product, { code, name, kind: input.kind, measure, treatment: input.treatment });
+  return product;
+}
+
+export async function deleteProduct(id: string) {
+  if (!useMemoryStore) {
+    await supabaseRequest<string>("/rest/v1/rpc/delete_catalog_product", {
+      method: "POST",
+      body: JSON.stringify({ p_id: id }),
+    });
+    return;
+  }
+
+  const index = memoryProducts.findIndex((item) => item.id === id);
+  if (index === -1) throw new Error("Producto no encontrado.");
+  memoryProducts.splice(index, 1);
 }
 
 export async function createOrder(input: CreateOrderInput) {

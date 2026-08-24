@@ -1311,7 +1311,8 @@ h3 {
 
 .add-order-modal,
 .edit-plan-modal,
-.order-update-modal {
+.order-update-modal,
+.edit-product-modal {
   width: min(560px, 100%);
   max-height: calc(100vh - 40px);
   overflow-y: auto;
@@ -1327,6 +1328,10 @@ h3 {
 
 .order-update-modal {
   width: min(680px, 100%);
+}
+
+.edit-product-modal {
+  width: min(700px, 100%);
 }
 
 .modal-heading {
@@ -1354,7 +1359,8 @@ h3 {
 
 .add-order-modal form,
 .edit-plan-modal form,
-.order-update-modal form {
+.order-update-modal form,
+.edit-product-modal form {
   display: grid;
   grid-template-columns: 1fr 1fr;
   gap: 14px;
@@ -1362,7 +1368,8 @@ h3 {
 
 .add-order-modal label,
 .edit-plan-modal label,
-.order-update-modal label {
+.order-update-modal label,
+.edit-product-modal label {
   display: grid;
   gap: 6px;
   color: #49554f;
@@ -1373,6 +1380,7 @@ h3 {
 .add-order-modal .field-wide,
 .edit-plan-modal .field-wide,
 .order-update-modal .field-wide,
+.edit-product-modal .field-wide,
 .change-history,
 .form-error,
 .modal-actions {
@@ -1385,7 +1393,9 @@ h3 {
 .edit-plan-modal select,
 .order-update-modal input,
 .order-update-modal select,
-.order-update-modal textarea {
+.order-update-modal textarea,
+.edit-product-modal input,
+.edit-product-modal select {
   width: 100%;
   min-height: 44px;
   padding: 0 11px;
@@ -1403,6 +1413,11 @@ h3 {
 .order-update-modal input:focus,
 .order-update-modal select:focus,
 .order-update-modal textarea:focus {
+  border-color: var(--forest-2);
+}
+
+.edit-product-modal input:focus,
+.edit-product-modal select:focus {
   border-color: var(--forest-2);
 }
 
@@ -1470,6 +1485,27 @@ h3 {
   justify-content: flex-end;
   gap: 9px;
   margin-top: 5px;
+}
+
+.modal-actions > div {
+  display: flex;
+  gap: 9px;
+}
+
+.delete-button {
+  min-height: 42px;
+  padding: 0 13px;
+  border: 1px solid #e8b9b4;
+  border-radius: 8px;
+  background: #fff;
+  color: var(--red);
+  font-size: 12px;
+  font-weight: 750;
+  cursor: pointer;
+}
+
+.delete-button:hover {
+  background: var(--red-soft);
 }
 
 .clients-surface,
@@ -1722,7 +1758,36 @@ h3 {
 
 .products-heading,
 .product-row {
-  grid-template-columns: minmax(210px, 1.25fr) 90px 100px minmax(155px, 1fr) 92px 80px;
+  grid-template-columns: minmax(210px, 1.35fr) 112px 120px 112px 42px;
+}
+
+.products-heading {
+  align-items: center;
+}
+
+.table-filter {
+  position: relative;
+  display: block;
+}
+
+.table-filter select {
+  width: 100%;
+  min-height: 30px;
+  padding: 0 18px 0 0;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  cursor: pointer;
+  font: inherit;
+  font-size: 10px;
+  font-weight: 760;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.table-filter select:focus-visible {
+  outline: 2px solid var(--forest-2);
+  outline-offset: 2px;
 }
 
 .product-row {
@@ -1750,6 +1815,24 @@ h3 {
   font-size: 12px;
   line-height: 1.35;
   text-overflow: ellipsis;
+}
+
+.product-edit {
+  width: 34px;
+  height: 34px;
+  display: grid;
+  place-items: center;
+  justify-self: end;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: #fff;
+  color: var(--forest-2);
+  cursor: pointer;
+}
+
+.product-edit:hover {
+  border-color: #acc6bb;
+  background: #edf5f1;
 }
 
 .product-name {
@@ -2012,7 +2095,7 @@ h3 {
 
   .products-heading,
   .product-row {
-    grid-template-columns: minmax(180px, 1.2fr) 76px 88px minmax(130px, .9fr) 80px 70px;
+    grid-template-columns: minmax(180px, 1.2fr) 96px 105px 92px 40px;
     gap: 10px;
   }
 
@@ -2249,13 +2332,13 @@ h3 {
 
   .product-row {
     min-height: 176px;
-    grid-template-columns: 40px minmax(0, 1fr);
+    grid-template-columns: 40px minmax(0, 1fr) 38px;
     gap: 8px 11px;
     padding: 13px 14px;
   }
 
   .product-name {
-    grid-column: 1 / -1;
+    grid-column: 1 / 3;
     grid-template-columns: 40px minmax(0, 1fr);
   }
 
@@ -2268,6 +2351,12 @@ h3 {
     grid-column: 2;
     grid-template-columns: 120px minmax(0, 1fr);
     align-items: baseline;
+  }
+
+  .product-edit {
+    grid-column: 3;
+    grid-row: 1;
+    align-self: start;
   }
 
   .provider-name {
@@ -2378,15 +2467,31 @@ h3 {
   }
 
   .add-order-modal form,
-  .order-update-modal form {
+  .order-update-modal form,
+  .edit-product-modal form {
     grid-template-columns: 1fr;
   }
 
   .add-order-modal label,
   .order-update-modal label,
+  .edit-product-modal label,
   .form-error,
   .modal-actions {
     grid-column: 1;
+  }
+
+  .modal-actions {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .modal-actions > div {
+    width: 100%;
+  }
+
+  .modal-actions > div > button,
+  .delete-button {
+    flex: 1;
   }
 
   .summary-pills > div {

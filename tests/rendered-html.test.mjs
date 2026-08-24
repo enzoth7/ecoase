@@ -108,16 +108,18 @@ test("usa rutas reales sin navegación por hash", async () => {
   assert.match(html, /href="\/productos"/i);
 });
 
-test("muestra el catálogo de productos de Palbin y Pamer", async () => {
+test("muestra el catálogo de productos sin clientes ni catálogos", async () => {
   const [pageResponse, productsResponse] = await Promise.all([request("/productos"), request("/api/products")]);
   assert.equal(pageResponse.status, 200);
   assert.equal(productsResponse.status, 200);
   const html = await pageResponse.text();
   assert.match(html, /Productos/);
-  assert.match(html, /Cliente \/ asignación/);
+  assert.match(html, /Filtrar productos por tipo/);
+  assert.match(html, /Editar Cristal PET/);
+  assert.doesNotMatch(html, /Cliente \/ asignación|Catálogo|Azucarlito|Reparados|Granja Pocha punto rojo/);
   assert.match(html, /Cristal PET/);
   assert.match(html, /216 × 110 simples reforzadas/);
-  assert.equal((await productsResponse.json()).products.length, 61);
+  assert.equal((await productsResponse.json()).products.length, 58);
 });
 
 test("muestra proveedores por tipo y abastecimiento", async () => {
@@ -267,4 +269,22 @@ test("crea pedidos mediante POST /api/orders", async () => {
   const payload = await response.json();
   assert.equal(payload.order.client, "Cliente prueba");
   assert.equal(payload.order.pending, 50);
+});
+
+test("edita y elimina productos mediante endpoints separados", async () => {
+  const editResponse = await request("/api/products/palbin-p05", {
+    method: "PATCH",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ code: "P05", name: "Pallet 122 × 102 reforzado", kind: "Pallet", measure: "122 × 102", treatment: "Marcado" }),
+  });
+  assert.equal(editResponse.status, 200);
+  const edited = await editResponse.json();
+  assert.equal(edited.product.name, "Pallet 122 × 102 reforzado");
+  assert.equal(edited.product.assignment, undefined);
+
+  const deleteResponse = await request("/api/products/palbin-p05", { method: "DELETE" });
+  assert.equal(deleteResponse.status, 200);
+  const products = await (await request("/api/products")).json();
+  assert.equal(products.products.some((product) => product.id === "palbin-p05"), false);
+  assert.equal(products.products.length, 57);
 });
