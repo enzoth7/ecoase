@@ -6,6 +6,51 @@ insert into public.providers (id, name, type, supplies) values
   ('matias', 'Matías', 'Transporte', 'Traslado y entrega de pedidos')
 on conflict (id) do nothing;
 
+-- Datos ficticios para visualizar clientes completos en el entorno de demostración.
+-- Solo completa campos vacíos para no sobrescribir información real.
+with demo(id, address, department) as (
+  values
+    ('cliente-9f536174f0d5', 'Camino Industrial Ficticio 101', 'Canelones'),
+    ('source-aluminos-del-uruguay', 'Avenida Fabril Ficticia 220', 'Montevideo'),
+    ('source-avanti', 'Camino del Parque Ficticio 45', 'San José'),
+    ('source-azucarlito', 'Ruta Ficticia 3 km 190', 'Paysandú'),
+    ('cliente-1da1a2ba9ad8', 'Camino Citrícola Ficticio 312', 'Salto'),
+    ('source-chacra-anaranjado', 'Camino Rural Ficticio 401', 'Salto'),
+    ('source-chacra-azul', 'Camino Rural Ficticio 402', 'Salto'),
+    ('source-chacra-blanco', 'Camino Rural Ficticio 403', 'Paysandú'),
+    ('source-chacra-chapicuy', 'Ruta Ficticia 3 km 455', 'Paysandú'),
+    ('source-chacra-rojo', 'Camino Rural Ficticio 404', 'Río Negro'),
+    ('source-conaprole', 'Avenida Logística Ficticia 510', 'Montevideo'),
+    ('source-cristal-pet', 'Camino de las Industrias Ficticio 620', 'Canelones'),
+    ('cliente-c6c5e600200e', 'Ruta Forestal Ficticia 5 km 78', 'Tacuarembó'),
+    ('source-fricasa', 'Camino Frigorífico Ficticio 730', 'Tacuarembó'),
+    ('cliente-bfd586dd7050', 'Ruta Frutícola Ficticia 2 km 41', 'Río Negro'),
+    ('cliente-04b9246c2858', 'Camino de la Granja Ficticio 815', 'Canelones'),
+    ('source-molinos-san-jose', 'Avenida del Molino Ficticia 920', 'San José'),
+    ('source-noridel', 'Camino Comercial Ficticio 1030', 'Montevideo'),
+    ('cliente-cd2057842651', 'Ruta Industrial Ficticia 12 km 64', 'Soriano'),
+    ('cliente-3c0a1b2929c6', 'Camino Pontevedra Ficticio 1140', 'Canelones'),
+    ('cliente-173a1075f43d', 'Avenida Química Ficticia 1250', 'Montevideo'),
+    ('source-saint-gobain', 'Camino de la Planta Ficticio 1360', 'Canelones'),
+    ('cliente-a4955f8e100e', 'Ruta Citrícola Ficticia 3 km 87', 'Salto')
+)
+update public.clients c
+set
+  address = case
+    when nullif(btrim(coalesce(c.address, '')), '') is null then demo.address
+    else c.address
+  end,
+  department = case
+    when nullif(btrim(coalesce(c.department, '')), '') is null then demo.department
+    else c.department
+  end
+from demo
+where c.id = demo.id
+  and (
+    nullif(btrim(coalesce(c.address, '')), '') is null
+    or nullif(btrim(coalesce(c.department, '')), '') is null
+  );
+
 insert into public.orders (
   id, reference, client, product, requested, delivered, pending, status, status_label, stage,
   planned_date, transport, supply, preparation, logistics, delivery, action, remittance, source

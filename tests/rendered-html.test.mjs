@@ -16,6 +16,25 @@ async function request(path = "/", init = {}) {
   return fetch(`${baseUrl}${path}`, { ...init, redirect: "manual" });
 }
 
+async function createMasterFixture({ name, address, zetaCode, productId = "palbin-p02" }) {
+  const clientResponse = await request("/api/clients", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ name, address, department: "Canelones" }) });
+  assert.equal(clientResponse.status, 201);
+  const client = (await clientResponse.json()).client;
+  const relationResponse = await request(`/api/clients/${client.id}/products`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ productId, zetaCode, operationalName: "Pallet operativo", initialControl: "Revisar clavado y separación" }) });
+  assert.equal(relationResponse.status, 201);
+  let relation = (await relationResponse.json()).product;
+  const form = new FormData();
+  form.set("file", new File(["%PDF-1.4\n%%EOF"], "plano.pdf", { type: "application/pdf" }));
+  form.set("altText", "Plano principal del pallet");
+  form.set("assetType", "plan");
+  form.set("isPrimary", "true");
+  const assetResponse = await request(`/api/client-products/${relation.id}/assets`, { method: "POST", body: form });
+  assert.equal(assetResponse.status, 201);
+  relation = (await (await request(`/api/client-products/${relation.id}`, { method: "PATCH", headers: { "content-type": "application/json" }, body: JSON.stringify({ active: true }) })).json()).product;
+  assert.equal(relation.active, true);
+  return { client, relation };
+}
+
 before(async () => {
   server = spawn(process.execPath, ["node_modules/next/dist/bin/next", "start", "-p", String(port)], {
     cwd: projectRoot,
@@ -61,10 +80,6 @@ test("renderiza pedidos activos e incluye acceso al historial", async () => {
   assert.match(html, /Palets en espera/);
   assert.match(html, /Palets totales/);
   assert.match(html, /Nivel de cumplimiento/);
-  assert.match(html, /Período de los indicadores/);
-  assert.match(html, /Esta semana/);
-  assert.match(html, /Seguimiento del pedido/);
-  assert.match(html, /Agregar actualización/);
   assert.match(html, /Cliente/);
   assert.match(html, /Pedido/);
   assert.match(html, /Fecha de entrega/);
@@ -83,7 +98,7 @@ test("renderiza pedidos activos e incluye acceso al historial", async () => {
 test("publica metadatos del control operativo", async () => {
   const response = await request("/pedidos");
   const html = await response.text();
-  assert.match(html, /<title>Ecoase — Control operativo<\/title>/i);
+  assert.match(html, /<title>Control de operaciones<\/title>/i);
   assert.match(html, /Control de pedidos, preparación, logística y entregas de Ecoase\./i);
   assert.doesNotMatch(html, /Piloto operativo/i);
 });
@@ -91,116 +106,281 @@ test("publica metadatos del control operativo", async () => {
 test("usa rutas reales sin navegación por hash", async () => {
   const rootResponse = await request("/");
   assert.equal(rootResponse.status, 307);
-  assert.equal(rootResponse.headers.get("location"), "/pedidos");
+  assert.equal(rootResponse.headers.get("location"), "/calendario");
 
-  for (const path of ["/pedidos", "/historial", "/plan", "/calendario", "/logistica", "/capacidad", "/clientes", "/productos", "/proveedores"]) {
+  for (const path of ["/pedidos", "/historial", "/calendario", "/logistica", "/produccion", "/produccion?vista=marcado", "/produccion?vista=configuracion", "/stock", "/clientes", "/productos", "/proveedores"]) {
     const response = await request(path);
     assert.equal(response.status, 200);
   }
 
+  const legacyCapacity = await request("/capacidad?fecha=2026-08-30");
+  assert.equal(legacyCapacity.status, 307);
+  assert.equal(legacyCapacity.headers.get("location"), "/produccion?vista=configuracion&fecha=2026-08-30");
+  const legacyTreatment = await request("/tratamiento?fecha=2026-08-30");
+  assert.equal(legacyTreatment.status, 307);
+  assert.equal(legacyTreatment.headers.get("location"), "/produccion?vista=marcado&fecha=2026-08-30");
+  const legacyPlan = await request("/plan?pedido=frutura-74");
+  assert.equal(legacyPlan.status, 307);
+  assert.equal(legacyPlan.headers.get("location"), "/produccion?pedido=frutura-74");
+
   const html = await (await request("/pedidos")).text();
   assert.doesNotMatch(html, /href="#/i);
+  assert.match(html, /Inicio/);
+  assert.match(html, /Operación/);
+  assert.match(html, /Gestión/);
+  assert.match(html, /Auditoría/);
   assert.match(html, /href="\/calendario"/i);
   assert.match(html, /href="\/historial"/i);
-  assert.match(html, /href="\/plan"/i);
+  assert.doesNotMatch(html, /href="\/plan"/i);
   assert.match(html, /href="\/logistica"/i);
   assert.match(html, /href="\/clientes"/i);
   assert.match(html, /href="\/proveedores"/i);
   assert.match(html, /href="\/productos"/i);
-  assert.match(html, /href="\/capacidad"/i);
+  assert.match(html, /href="\/produccion"/i);
+  assert.doesNotMatch(html, /href="\/tratamiento"/i);
+  assert.match(html, /href="\/stock"/i);
+  assert.match(html, /Producción/);
+  assert.match(html, /Stock/);
+  assert.match(html, /aria-controls="app-navigation"/i);
 });
 
-test("administra capacidad general, ajustes diarios y permite sobrecarga", async () => {
-  const capacityPage = await request("/capacidad");
+test("administra capacidad por recurso y producto con confirmación trazable", async () => {
+  const capacityPage = await request("/produccion?vista=configuracion");
   assert.equal(capacityPage.status, 200);
   const html = await capacityPage.text();
-  assert.match(html, /Cap\. Producción semanal/);
-  assert.match(html, /capacidad general se aplica todos los días/i);
-  assert.doesNotMatch(html, /Capacidad diaria habitual en palets/);
+  assert.match(html, /Producción/);
+  assert.match(html, /Marcado/);
+  assert.match(html, /Configuración/);
+  assert.match(html, /Cargando producción/);
+  assert.doesNotMatch(html, /Personas disponibles/);
 
   const logisticsHtml = await (await request("/logistica")).text();
-  assert.match(logisticsHtml, /Cap\. Logística/);
-
-  const rule = await request("/api/capacity/rules", { method: "PUT", headers: { "content-type": "application/json" }, body: JSON.stringify({ operation: "assembly", peopleCount: 5, palletCapacity: 30 }) });
-  const internal = await request("/api/capacity/internal-production", { method: "PUT", headers: { "content-type": "application/json" }, body: JSON.stringify({ operation: "assembly", peopleCount: 5 }) });
-  const team = await request("/api/capacity/team", { method: "PUT", headers: { "content-type": "application/json" }, body: JSON.stringify({ availablePeople: 10 }) });
+  assert.match(logisticsHtml, /Logística/);
   const transport = await request("/api/capacity/transport", { method: "PUT", headers: { "content-type": "application/json" }, body: JSON.stringify({ source: "internal", palletCapacity: 25, status: "confirmed" }) });
-  const productionAdjustment = await request("/api/capacity/adjustments", { method: "PUT", headers: { "content-type": "application/json" }, body: JSON.stringify({ date: "2026-09-07", resourceType: "internal_production", operation: "assembly", palletAdjustment: 5, peopleCount: 5 }) });
-  const excessPeople = await request("/api/capacity/adjustments", { method: "PUT", headers: { "content-type": "application/json" }, body: JSON.stringify({ date: "2026-09-07", resourceType: "internal_production", operation: "assembly", palletAdjustment: 5, peopleCount: 6 }) });
   const transportAdjustment = await request("/api/capacity/adjustments", { method: "PUT", headers: { "content-type": "application/json" }, body: JSON.stringify({ date: "2026-09-08", resourceType: "transport", source: "internal", palletAdjustment: 10, responsible: "Flota Ecoase" }) });
-  const externalAssignment = await request("/api/capacity/adjustments", { method: "PUT", headers: { "content-type": "application/json" }, body: JSON.stringify({ date: "2026-09-07", resourceType: "external_production", providerId: "blanc", operation: "assembly", palletAdjustment: 20, responsible: "Blanc", status: "confirmed" }) });
-  const unnamedAdjustment = await request("/api/capacity/adjustments", { method: "PUT", headers: { "content-type": "application/json" }, body: JSON.stringify({ date: "2026-09-07", resourceType: "internal_production", operation: "marking", palletAdjustment: 5 }) });
-  assert.equal(rule.status, 200);
-  assert.equal(internal.status, 200);
-  assert.equal(team.status, 200);
   assert.equal(transport.status, 200);
-  assert.equal(productionAdjustment.status, 200);
-  assert.equal(excessPeople.status, 400);
   assert.equal(transportAdjustment.status, 200);
-  assert.equal(externalAssignment.status, 200);
-  assert.equal(unnamedAdjustment.status, 400);
 
+  const capacityMaster = await createMasterFixture({ name: "Capacidad prueba", address: "Ruta 5 km 18", zetaCode: "CAP-01" });
   const created = await request("/api/orders", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({
-    client: "Capacidad prueba", product: "Pallet 120 × 100", requested: 40, orderDate: "2026-09-01", requestedDeliveryDate: "2026-09-08", plannedDate: "2026-09-08", stage: "produccion",
+    clientProductId: capacityMaster.relation.id, requested: 40, orderDate: "2026-09-01", requestedDeliveryDate: "2026-09-08", plannedDate: "2026-09-08", stage: "produccion",
     productionSource: "internal", productionDate: "2026-09-07", requiredOperations: ["assembly"], transportSource: "internal",
   }) });
   assert.equal(created.status, 201);
   const createdOrder = (await created.json()).order;
+  const allocation = createdOrder.lines[0].productionAllocations[0];
+  assert.equal(allocation.status, "draft");
 
-  const snapshotResponse = await request("/api/capacity?from=2026-09-07&to=2026-09-08");
-  assert.equal(snapshotResponse.status, 200);
-  const snapshot = (await snapshotResponse.json()).capacity;
-  const productionDay = snapshot.days.find((day) => day.date === "2026-09-07");
-  const deliveryDay = snapshot.days.find((day) => day.date === "2026-09-08");
-  assert.deepEqual(snapshot.internalTeam, { availablePeople: 10 });
-  assert.deepEqual(productionDay.internalTeam, { availablePeople: 10, basePeople: 5, additionalPeople: 5, assignedPeople: 10, freePeople: 0, missingPeople: 0 });
-  assert.equal(productionDay.internalProduction.find((item) => item.operation === "assembly").capacity, 35);
-  assert.equal(productionDay.externalProduction.find((item) => item.providerId === "blanc" && item.operation === "assembly").capacity, 20);
-  assert.equal(productionDay.internalProduction.find((item) => item.operation === "assembly").committed, 40);
-  assert.equal(productionDay.internalProduction.find((item) => item.operation === "assembly").overload, 5);
-  assert.equal(productionDay.productionTotals.committed, 40);
-  assert.equal(productionDay.productionTotals.capacity, 55);
-  assert.equal(productionDay.productionTotals.missing, 5);
-  assert.equal(deliveryDay.transportTotals.committed, 40);
-  assert.equal(deliveryDay.transportTotals.missing, 5);
+  const ruleBody = { resourceId: "internal", productId: "palbin-p02", peopleCount: 2, configurationLabel: "Fábrica ×2", normalUnitsPerDay: 30, maximumUnitsPerDay: 50, validFrom: "2026-09-01", source: "prueba" };
+  const ruleResponse = await request("/api/capacity/rules", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(ruleBody) });
+  assert.equal(ruleResponse.status, 201);
+  const rule = (await ruleResponse.json()).rule;
+  const overlapping = await request("/api/capacity/rules", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ ...ruleBody, configurationLabel: "Solapada" }) });
+  assert.equal(overlapping.status, 400);
 
-  const completed = await request(`/api/orders/${createdOrder.id}`, { method: "PATCH", headers: { "content-type": "application/json" }, body: JSON.stringify({ stage: "completado" }) });
+  const editedRuleResponse = await request("/api/capacity/rules", { method: "PATCH", headers: { "content-type": "application/json" }, body: JSON.stringify({ ...ruleBody, id: rule.id, configurationLabel: "Fábrica ×2 editada", normalUnitsPerDay: 32, maximumUnitsPerDay: 55 }) });
+  assert.equal(editedRuleResponse.status, 200);
+  const editedRule = (await editedRuleResponse.json()).rule;
+  assert.equal(editedRule.configurationLabel, "Fábrica ×2 editada");
+  assert.equal(editedRule.normalUnitsPerDay, 32);
+
+  const before = (await (await request("/api/capacity?from=2026-09-07&to=2026-09-08")).json()).capacity;
+  const factoryBefore = before.production.days[0].resources.find((item) => item.resource.name === "Fábrica");
+  assert.equal(factoryBefore.status, "stretched");
+  assert.equal(factoryBefore.assignments[0].status, "draft");
+  assert.equal(before.days[1].transportTotals.committed, 40);
+
+  const noteRequired = await request(`/api/production-allocations/${allocation.id}/confirm`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ resourceId: "internal", capacityRuleId: rule.id }) });
+  assert.equal(noteRequired.status, 400);
+  const confirmed = await request(`/api/production-allocations/${allocation.id}/confirm`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ resourceId: "internal", capacityRuleId: rule.id, overloadNote: "Pico coordinado" }) });
+  assert.equal(confirmed.status, 200);
+
+  const completionNoteRequired = await request(`/api/production-allocations/${allocation.id}/complete`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ actualQuantity: 35 }) });
+  assert.equal(completionNoteRequired.status, 400);
+  const completed = await request(`/api/production-allocations/${allocation.id}/complete`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ actualQuantity: 35, completionNote: "Quedan cinco para replanificar" }) });
   assert.equal(completed.status, 200);
-  const released = (await (await request("/api/capacity?from=2026-09-07&to=2026-09-08")).json()).capacity;
-  assert.equal(released.days[0].internalProduction.find((item) => item.operation === "assembly").committed, 0);
-  assert.equal(released.days[1].transportTotals.committed, 0);
 
-  const deletedRule = await request("/api/capacity/rules", { method: "DELETE", headers: { "content-type": "application/json" }, body: JSON.stringify({ operation: "assembly", peopleCount: 5 }) });
-  assert.equal(deletedRule.status, 200);
-  const withoutRule = (await (await request("/api/capacity?from=2026-09-07&to=2026-09-07")).json()).capacity;
-  assert.ok(!withoutRule.rules.some((item) => item.operation === "assembly" && item.peopleCount === 5));
+  const referencedDelete = await request(`/api/capacity/rules?id=${rule.id}`, { method: "DELETE" });
+  assert.equal(referencedDelete.status, 409);
+
+  const disposableRuleResponse = await request("/api/capacity/rules", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ resourceId: "blanc", productId: "pamer-p03", configurationLabel: "Regla descartable", normalUnitsPerDay: 20, maximumUnitsPerDay: 30, validFrom: "2030-01-01", source: "prueba" }) });
+  assert.equal(disposableRuleResponse.status, 201);
+  const disposableRule = (await disposableRuleResponse.json()).rule;
+  const disposableDelete = await request(`/api/capacity/rules?id=${disposableRule.id}`, { method: "DELETE" });
+  assert.equal(disposableDelete.status, 200);
+  assert.equal((await disposableDelete.json()).deleted, true);
+
+  const after = (await (await request("/api/capacity?from=2026-09-07&to=2026-09-08")).json()).capacity;
+  const completedAssignment = after.production.days[0].resources.find((item) => item.resource.name === "Fábrica").assignments[0];
+  assert.equal(completedAssignment.status, "completed");
+  assert.equal(completedAssignment.pendingQuantity, 5);
+
+  const override = await request("/api/capacity/daily-overrides", { method: "PUT", headers: { "content-type": "application/json" }, body: JSON.stringify({ date: "2026-09-07", resourceId: "internal", available: false, reason: "Mantenimiento", responsible: "Encargado" }) });
+  assert.equal(override.status, 200);
+  const unavailable = (await (await request("/api/capacity?from=2026-09-07&to=2026-09-07")).json()).capacity;
+  assert.equal(unavailable.production.days[0].resources.find((item) => item.resource.name === "Fábrica").status, "unavailable");
+
+  const crew = await request("/api/capacity/resources", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ name: "Cuadrilla QA", resourceType: "internal_crew", displayOrder: 40 }) });
+  assert.equal(crew.status, 201);
+  const crewResource = (await crew.json()).resource;
+  const deactivated = await request("/api/capacity/resources", { method: "PATCH", headers: { "content-type": "application/json" }, body: JSON.stringify({ id: crewResource.id, active: false }) });
+  assert.equal(deactivated.status, 200);
+
+  const cleanupOrder = await request(`/api/orders/${createdOrder.id}`, { method: "PATCH", headers: { "content-type": "application/json" }, body: JSON.stringify({ stage: "completado" }) });
+  assert.equal(cleanupOrder.status, 200);
 });
 
-test("muestra el calendario por semana con controles de navegación", async () => {
+test("registra, consulta y revierte tratamiento sin alterar el stock físico", async () => {
+  const page = await request("/produccion?vista=marcado");
+  assert.equal(page.status, 200);
+  const html = await page.text();
+  assert.match(html, />Marcado</);
+  assert.doesNotMatch(html, /Tratamiento HT/);
+  assert.doesNotMatch(html, />Tratamiento</);
+  assert.match(html, /Cargando marcado diario/);
+
+  const optionsResponse = await request("/api/treatment/options");
+  assert.equal(optionsResponse.status, 200);
+  const options = (await optionsResponse.json()).options;
+  const product = options.find((item) => item.product.id === "palbin-p02");
+  assert.ok(product);
+  assert.equal(product.pending, 35);
+  assert.equal(product.ready, 0);
+
+  const missingReason = await request("/api/treatment/batches", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ productId: product.product.id, quantity: 10, performedAt: "2026-09-07T14:00:00.000Z", responsible: "Operador QA", controls: [] }) });
+  assert.equal(missingReason.status, 400);
+
+  const postedResponse = await request("/api/treatment/batches", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ productId: product.product.id, quantity: 10, performedAt: "2026-09-07T14:00:00.000Z", responsible: "Operador QA", note: "Lote general de prueba", controls: [] }) });
+  assert.equal(postedResponse.status, 201);
+  const posted = (await postedResponse.json()).result;
+  assert.equal(posted.status, "posted");
+  assert.equal(posted.previousPending, 35);
+  assert.equal(posted.newPending, 25);
+  assert.equal(posted.previousReady, 0);
+  assert.equal(posted.newReady, 10);
+
+  const detailResponse = await request(`/api/treatment/batches/${posted.batchId}`);
+  assert.equal(detailResponse.status, 200);
+  const batch = (await detailResponse.json()).batch;
+  assert.equal(batch.movements.length, 2);
+  assert.equal(batch.movements.reduce((sum, movement) => sum + movement.quantity, 0), 0);
+
+  const insufficient = await request("/api/treatment/batches", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ productId: product.product.id, quantity: 30, performedAt: "2026-09-07T15:00:00.000Z", responsible: "Operador QA", note: "No debe alcanzar", controls: [] }) });
+  assert.equal(insufficient.status, 400);
+
+  const reverseResponse = await request(`/api/treatment/batches/${posted.batchId}/reverse`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ performedAt: "2026-09-07T16:00:00.000Z", responsible: "Encargado QA", note: "Reversión controlada" }) });
+  assert.equal(reverseResponse.status, 201);
+  const reversed = (await reverseResponse.json()).result;
+  assert.equal(reversed.status, "reversal");
+  assert.equal(reversed.newPending, 35);
+  assert.equal(reversed.newReady, 0);
+
+  const duplicateReverse = await request(`/api/treatment/batches/${posted.batchId}/reverse`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ performedAt: "2026-09-07T17:00:00.000Z", responsible: "Encargado QA", note: "No debe duplicarse" }) });
+  assert.equal(duplicateReverse.status, 400);
+
+  const dashboard = (await (await request("/api/treatment?date=2026-09-07")).json()).treatment;
+  assert.equal(dashboard.summary.processed, 10);
+  assert.equal(dashboard.summary.reversed, 10);
+  assert.equal(dashboard.summary.pending + dashboard.summary.ready, 35);
+});
+
+test("registra entradas, ajustes y reversiones en stock", async () => {
+  const page = await request("/stock");
+  assert.equal(page.status, 200);
+  const html = await page.text();
+  assert.match(html, />Stock</);
+  assert.match(html, /Conciliación inicial/);
+
+  const initial = (await (await request("/api/stock/summary")).json()).stock.find((row) => row.product.id === "palbin-p02");
+  const receipt = await request("/api/stock/movements/receipts", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ productId: "palbin-p02", stockState: "ready", quantity: 20, movementType: "supplier_receipt", providerId: "mirasol", occurredAt: "2026-09-08T12:00:00.000Z", responsible: "Recepción QA", sourceReference: "REM-QA" }) });
+  assert.equal(receipt.status, 201);
+  const receiptId = (await receipt.json()).movementId;
+  let current = (await (await request("/api/stock/summary")).json()).stock.find((row) => row.product.id === "palbin-p02");
+  assert.equal(current.ready, initial.ready + 20);
+
+  const adjustment = await request("/api/stock/movements/adjustments", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ productId: "palbin-p02", stockState: "ready", quantityDelta: 5, occurredAt: "2026-09-08T13:00:00.000Z", responsible: "Inventario QA", reason: "Conteo físico" }) });
+  assert.equal(adjustment.status, 201);
+  current = (await (await request("/api/stock/summary")).json()).stock.find((row) => row.product.id === "palbin-p02");
+  assert.equal(current.ready, initial.ready + 25);
+
+  const reversed = await request(`/api/stock/movements/${receiptId}/reverse`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ occurredAt: "2026-09-08T14:00:00.000Z", responsible: "Encargado QA", reason: "Remito anulado" }) });
+  assert.equal(reversed.status, 201);
+  current = (await (await request("/api/stock/summary")).json()).stock.find((row) => row.product.id === "palbin-p02");
+  assert.equal(current.ready, initial.ready + 5);
+
+  const duplicate = await request(`/api/stock/movements/${receiptId}/reverse`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ occurredAt: "2026-09-08T15:00:00.000Z", responsible: "Encargado QA", reason: "No duplicar" }) });
+  assert.equal(duplicate.status, 400);
+});
+
+test("muestra el calendario amplio con vistas semanal y mensual", async () => {
   const html = await (await request("/calendario")).text();
   assert.match(html, /Semana anterior/);
   assert.match(html, /Semana siguiente/);
+  assert.match(html, /Vista del calendario/);
+  assert.match(html, />Semana</);
+  assert.match(html, />Mes</);
+  assert.match(html, /Arrastrá una tarjeta/);
   assert.match(html, /Lun/);
   assert.match(html, /Dom/);
 });
 
-test("muestra el catálogo de productos sin clientes ni catálogos", async () => {
+test("el calendario enlaza la alerta compuesta con el filtro de stock", async () => {
+  const source = await import("node:fs/promises").then(({ readFile }) => readFile(new URL("../app/components/OperationsCalendar.tsx", import.meta.url), "utf8"));
+  assert.match(source, /Alerta de stock/);
+  assert.match(source, /href="\/stock\?riesgo=alerta"/);
+  assert.doesNotMatch(source, /stockRisk\.message/);
+
+  const stockHtml = await (await request("/stock?riesgo=alerta")).text();
+  assert.match(stockHtml, /Con alerta/);
+});
+
+test("reprograma un viaje desde el calendario y actualiza su fecha", async () => {
+  const initialResponse = await request("/api/calendar?from=2026-01-01&to=2026-12-31");
+  assert.equal(initialResponse.status, 200);
+  const initial = (await initialResponse.json()).calendar;
+  const shipment = initial.find((item) => ["planned", "ready"].includes(item.status));
+  assert.ok(shipment);
+  const originalDate = shipment.plannedDate;
+  const target = new Date(`${originalDate}T12:00:00`);
+  target.setDate(target.getDate() + 1);
+  const targetDate = target.toISOString().slice(0, 10);
+
+  const movedResponse = await request(`/api/shipments/${shipment.id}/reschedule`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ newDate: targetDate, reason: "logistics", responsible: "Prueba calendario" }) });
+  assert.equal(movedResponse.status, 200);
+  const moved = await movedResponse.json();
+  assert.equal(moved.shipment.plannedDate, targetDate);
+
+  const calendar = (await (await request(`/api/calendar?from=${targetDate}&to=${targetDate}`)).json()).calendar;
+  assert.ok(calendar.some((item) => String(item.id) === String(shipment.id) && item.plannedDate === targetDate));
+
+  const restoredResponse = await request(`/api/shipments/${shipment.id}/reschedule`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ newDate: originalDate, reason: "client", responsible: "Prueba calendario" }) });
+  assert.equal(restoredResponse.status, 200);
+});
+
+test("muestra el catálogo de productos en columnas separadas", async () => {
   const [pageResponse, productsResponse] = await Promise.all([request("/productos"), request("/api/products")]);
   assert.equal(pageResponse.status, 200);
   assert.equal(productsResponse.status, 200);
   const html = await pageResponse.text();
   assert.match(html, /Productos/);
+  assert.match(html, /Código Zeta/);
+  assert.match(html, />Producto</);
   assert.match(html, /Medida/);
-  assert.match(html, /Tratamiento/);
+  assert.match(html, /Cliente/);
+  assert.match(html, /Marcado/);
   assert.match(html, /Filtrar productos por tipo/);
   assert.match(html, /Editar Pallet 106 × 119/);
-  assert.doesNotMatch(html, /Cliente \/ asignación|Catálogo|Azucarlito|Reparados|Granja Pocha punto rojo/);
+  assert.doesNotMatch(html, /Producto \/ Medida/);
   assert.match(html, /216 × 110/);
   assert.doesNotMatch(html, /abiertas|cerradas|reforzadas|Mercosur liviano/i);
   const apiProducts = (await productsResponse.json()).products;
+  const internalCodeNumbers = apiProducts.map((product) => Number(product.sourceCode?.match(/\d+/)?.[0] ?? Number.POSITIVE_INFINITY));
+  assert.deepEqual(internalCodeNumbers, [...internalCodeNumbers].sort((left, right) => left - right));
+  assert.equal(new Set(apiProducts.map((product) => product.sourceCode?.trim().toLocaleUpperCase("es"))).size, apiProducts.length);
   const measureKeys = apiProducts.map((product) => `${product.kind}|${product.measure ?? "sin medida"}`);
   assert.equal(new Set(measureKeys).size, measureKeys.length);
-  assert.ok(apiProducts.every((product) => Object.keys(product).every((field) => ["id", "kind", "measure", "treatment"].includes(field))));
+  assert.ok(apiProducts.every((product) => Array.isArray(product.clientNames)));
+  assert.ok(apiProducts.every((product) => Object.keys(product).every((field) => ["id", "kind", "measure", "treatment", "requiresTreatment", "stockName", "sourceCatalog", "sourceCode", "zetaCode", "stockActive", "clientNames"].includes(field))));
 });
 
 test("muestra proveedores por tipo y abastecimiento", async () => {
@@ -312,15 +492,10 @@ test("registra entregas y cambios de dirección en el seguimiento del pedido", a
   assert.equal(history.history[1].changes.some((change) => change.field === "Cantidad entregada"), true);
 });
 
-test("muestra el plan simplificado con edición por lápiz", async () => {
-  const html = await (await request("/plan")).text();
-  assert.match(html, /Cliente/);
-  assert.match(html, /Cantidad de pallets/);
-  assert.match(html, /Fecha planificada/);
-  assert.match(html, /Etapa/);
-  assert.match(html, /Transportista/);
-  assert.match(html, /aria-label="Editar pedido de Frutura"/i);
-  assert.doesNotMatch(html, /aria-label="Estado de Frutura"/i);
+test("redirige el plan anterior a producción sin perder parámetros", async () => {
+  const response = await request("/plan?pedido=frutura-74&fecha=2026-08-24");
+  assert.equal(response.status, 307);
+  assert.equal(response.headers.get("location"), "/produccion?pedido=frutura-74&fecha=2026-08-24");
 });
 
 test("crea pedidos mediante POST /api/orders", async () => {
@@ -331,12 +506,15 @@ test("crea pedidos mediante POST /api/orders", async () => {
   });
   assert.equal(invalidTransport.status, 400);
 
+  const master = await createMasterFixture({ name: "Cliente prueba", address: "Ruta 5 km 18", zetaCode: "Z-08" });
+
   const response = await request("/api/orders", {
     method: "POST",
     headers: { "content-type": "application/json" },
     body: JSON.stringify({
-      client: "Cliente prueba",
-      product: "Pallet prueba",
+      clientProductId: master.relation.id,
+      client: "Nombre falsificado",
+      product: "Producto falsificado",
       requested: 50,
       orderDate: "2026-08-01",
       requestedDeliveryDate: "2026-08-10",
@@ -347,26 +525,117 @@ test("crea pedidos mediante POST /api/orders", async () => {
       zetaCode: "Z-08",
       deliveryAddress: "Ruta 5 km 18",
       notes: "Descargar por el acceso norte.",
+      productionSource: "internal",
+      productionDate: "2026-08-09",
+      requiredOperations: ["assembly"],
+      transportSource: "external",
+      transportProviderId: "matias",
     }),
   });
 
   assert.equal(response.status, 201);
   const payload = await response.json();
   assert.equal(payload.order.client, "Cliente prueba");
+  assert.equal(payload.order.product, "Pallet operativo");
   assert.equal(payload.order.pending, 50);
   assert.equal(payload.order.orderDate, "2026-08-01");
   assert.equal(payload.order.requestedDeliveryDate, "2026-08-10");
   assert.equal(payload.order.stage, "reorganizando");
-  assert.equal(payload.order.zetaCode, "Z-08");
+  assert.equal(payload.order.zetaCode, "P02");
   assert.equal(payload.order.deliveryAddress, "Ruta 5 km 18");
   assert.equal(payload.order.notes, "Descargar por el acceso norte.");
+});
+
+test("gestiona el maestro cliente-producto, filtra opciones y protege los datos automáticos", async () => {
+  const first = await createMasterFixture({ name: "Maestro Uno", address: "Camino Uno 123", zetaCode: "MASTER-1", productId: "palbin-p01" });
+  const second = await createMasterFixture({ name: "Maestro Dos", address: "Camino Dos 456", zetaCode: "MASTER-2", productId: "palbin-p04" });
+  const clientPage = await request(`/clientes/${first.client.id}`);
+  assert.equal(clientPage.status, 200);
+  const clientHtml = await clientPage.text();
+  assert.match(clientHtml, /Ubicación en clientes/);
+  assert.match(clientHtml, /href="\/clientes"/);
+  assert.match(clientHtml, /Ficha del cliente/);
+  const options = (await (await request(`/api/clients/${first.client.id}/products?active=true`)).json()).products;
+  assert.equal(options.length, 1);
+  assert.equal(options[0].id, first.relation.id);
+  assert.equal(options[0].zetaCode, "P01");
+  assert.equal(options[0].clientAddress, "Camino Uno 123");
+  assert.ok(!options.some((option) => option.id === second.relation.id));
+
+  const additionalProduct = await request(`/api/clients/${first.client.id}/products`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ productId: "palbin-p04", zetaCode: "MASTER-1", initialControl: "Control adicional" }) });
+  assert.equal(additionalProduct.status, 201);
+  assert.equal((await additionalProduct.json()).product.zetaCode, "P04");
+
+  const invalidFile = new FormData();
+  invalidFile.set("file", new File(["no válido"], "plano.txt", { type: "text/plain" }));
+  invalidFile.set("altText", "Archivo inválido");
+  const invalidUpload = await request(`/api/client-products/${first.relation.id}/assets`, { method: "POST", body: invalidFile });
+  assert.equal(invalidUpload.status, 400);
+
+  const detail = await request(`/api/clients/${first.client.id}`);
+  assert.equal(detail.status, 200);
+  assert.equal((await detail.json()).products[0].assets[0].isPrimary, true);
+  const signed = await request(`/api/client-product-assets/${first.relation.assets[0]?.id ?? 0}/signed-url`, { method: "POST" });
+  assert.equal(signed.status, 200);
+  const signedUrl = (await signed.json()).url;
+  assert.match(signedUrl, /\/api\/client-product-assets\/\d+\/content$/);
+  assert.equal((await request(signedUrl)).headers.get("content-type"), "application/pdf");
+});
+
+test("permite crear pedidos sin dirección, controles ni foto", async () => {
+  const clientResponse = await request("/api/clients", {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ name: "Cliente opcional" }),
+  });
+  assert.equal(clientResponse.status, 201);
+  const client = (await clientResponse.json()).client;
+  assert.equal(client.active, true);
+  assert.equal(client.address, undefined);
+
+  const relationResponse = await request(`/api/clients/${client.id}/products`, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ productId: "palbin-p02", operationalName: "Pallet sin referencias" }),
+  });
+  assert.equal(relationResponse.status, 201);
+  const relation = (await relationResponse.json()).product;
+  assert.equal(relation.active, true);
+  assert.deepEqual(relation.controls, []);
+  assert.deepEqual(relation.assets, []);
+
+  const options = (await (await request(`/api/clients/${client.id}/products?active=true`)).json()).products;
+  assert.equal(options.length, 1);
+  assert.equal(options[0].clientAddress, undefined);
+
+  const orderResponse = await request("/api/orders", {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({
+      lines: [{ clientProductId: relation.id, quantity: 25 }],
+      reference: "Opcionales 1",
+      orderDate: "2026-08-30",
+      requestedDeliveryDate: "2026-09-03",
+      plannedDate: "2026-09-03",
+      productionSource: "internal",
+      productionDate: "2026-09-01",
+      requiredOperations: ["assembly"],
+      transportSource: "internal",
+      stage: "negociacion",
+    }),
+  });
+  assert.equal(orderResponse.status, 201);
+  const order = (await orderResponse.json()).order;
+  assert.equal(order.client, "Cliente opcional");
+  assert.equal(order.deliveryAddress, undefined);
+  await request(`/api/orders/${order.id}`, { method: "PATCH", headers: { "content-type": "application/json" }, body: JSON.stringify({ stage: "completado" }) });
 });
 
 test("agrega productos y clientes mediante sus endpoints", async () => {
   const productResponse = await request("/api/products", {
     method: "POST",
     headers: { "content-type": "application/json" },
-    body: JSON.stringify({ kind: "Pallet", measure: "123 × 99", treatment: "HT" }),
+    body: JSON.stringify({ kind: "Pallet", measure: "123 × 99", requiresTreatment: true, zetaCode: "Z-NEW-123" }),
   });
   assert.equal(productResponse.status, 201);
   assert.deepEqual((await productResponse.json()).product.kind, "Pallet");
@@ -386,17 +655,24 @@ test("agrega productos y clientes mediante sus endpoints", async () => {
   assert.ok(clients.some((client) => client.name === "Cliente nuevo" && client.orders === 0 && client.activeOrders === 0 && client.activePallets === 0));
 });
 
-test("edita y elimina productos mediante endpoints separados", async () => {
+test("edita, asigna cliente y elimina productos mediante endpoints separados", async () => {
   const before = (await (await request("/api/products")).json()).products;
+  const clients = (await (await request("/api/clients")).json()).clients;
+  const pamer = clients.find((client) => client.name === "Pamer");
+  assert.ok(pamer?.id);
   const editResponse = await request("/api/products/palbin-p05", {
     method: "PATCH",
     headers: { "content-type": "application/json" },
-    body: JSON.stringify({ kind: "Pallet", measure: "122 × 102", treatment: "Marcado" }),
+    body: JSON.stringify({ kind: "Pallet", measure: "122 × 102", stockName: "Pallet especial", zetaCode: "Z-P62", requiresTreatment: true, clientId: pamer.id }),
   });
   assert.equal(editResponse.status, 200);
   const edited = await editResponse.json();
   assert.equal(edited.product.measure, "122 × 102");
-  assert.deepEqual(Object.keys(edited.product).sort(), ["id", "kind", "measure", "treatment"]);
+  assert.equal(edited.product.stockName, "Pallet especial");
+  assert.equal(edited.product.sourceCode, "P05");
+  assert.equal(edited.product.zetaCode, "Z-P62");
+  assert.deepEqual(edited.product.clientNames, ["Pamer"]);
+  assert.deepEqual(Object.keys(edited.product).sort(), ["clientNames", "id", "kind", "measure", "requiresTreatment", "sourceCatalog", "sourceCode", "stockActive", "stockName", "treatment", "zetaCode"]);
 
   const deleteResponse = await request("/api/products/palbin-p05", { method: "DELETE" });
   assert.equal(deleteResponse.status, 200);

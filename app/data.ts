@@ -3,21 +3,98 @@ export type DeliveryStatus = "programada" | "en_transito" | "parcial" | "complet
 export type OrderUpdateKind = "cambio" | "entrega" | "direccion" | "despacho" | "incidencia";
 export type ProductionSource = "internal" | "sawmill" | "import";
 export type TransportSource = "internal" | "external";
-export type CapacityOperation = "assembly" | "marking" | "ht";
+export type CapacityOperation = "assembly" | "treatment" | "marking" | "ht";
 export type CapacityStatus = "estimated" | "confirmed";
+export type ProductionAllocationStatus = "draft" | "confirmed" | "completed" | "cancelled";
+export type ShipmentStatus = "planned" | "ready" | "loaded" | "dispatched" | "delivered" | "cancelled";
+export type RescheduleReason = "production" | "logistics" | "client" | "weather" | "other";
+
+export interface ProductionAllocation {
+  id: number | string;
+  orderLineId: string;
+  resourceId?: string;
+  productionResourceId?: number | string;
+  capacityRuleId?: number | string;
+  plannedDate: string;
+  plannedQuantity: number;
+  actualQuantity?: number;
+  status: ProductionAllocationStatus;
+  note?: string;
+  completedAt?: string;
+  completionNote?: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface ShipmentLine {
+  id: number | string;
+  shipmentId: number | string;
+  orderLineId: string;
+  product: string;
+  treatment?: ProductTreatment;
+  plannedQuantity: number;
+  deliveredQuantity: number;
+}
+
+export interface ShipmentEvent {
+  id: number | string;
+  shipmentId: number | string;
+  eventType: "created" | "transition" | "rescheduled" | "incident" | "remittance_corrected";
+  previousStatus?: ShipmentStatus;
+  nextStatus?: ShipmentStatus;
+  previousDate?: string;
+  nextDate?: string;
+  reason?: RescheduleReason;
+  note?: string;
+  previousRemittance?: string;
+  nextRemittance?: string;
+  responsible: string;
+  createdAt: string;
+}
+
+export interface Shipment {
+  id: number | string;
+  orderId: string;
+  plannedDate: string;
+  status: ShipmentStatus;
+  transportSource: TransportSource;
+  transportProviderId?: string;
+  transportLabel: string;
+  remittance?: string;
+  sharedRemittanceReason?: string;
+  deliveryAddressSnapshot?: string;
+  loadedAt?: string;
+  dispatchedAt?: string;
+  deliveredAt?: string;
+  createdAt: string;
+  updatedAt: string;
+  lines: ShipmentLine[];
+  events: ShipmentEvent[];
+}
 
 export interface OrderLine {
   id: string;
   product: string;
+  productId?: string;
+  clientProductId?: number | string;
   quantity: number;
   preparation?: string;
+  treatment?: ProductTreatment;
+  treatedQuantity?: number;
+  treatmentPendingQuantity?: number;
+  readyReservedQuantity?: number;
+  stockRisk?: import("./stock").StockRiskIndicator;
+  productionAllocations?: ProductionAllocation[];
 }
 
 export interface OperationOrder {
   id: string;
   reference: string;
   client: string;
+  clientId?: string;
   product: string;
+  productId?: string;
+  clientProductId?: number | string;
   requested: number;
   delivered: number;
   pending: number;
@@ -48,6 +125,7 @@ export interface OperationOrder {
   dispatchedAt?: string;
   deliveredAt?: string;
   lines: OrderLine[];
+  shipments?: Shipment[];
   source: string;
 }
 
@@ -106,6 +184,8 @@ export interface Client {
   name: string;
   address?: string;
   department?: string;
+  active?: boolean;
+  updatedAt?: string;
 }
 
 export type ProductKind = "Pallet" | "Piso" | "Bin";
@@ -117,9 +197,33 @@ export interface Product {
   kind: ProductKind;
   measure?: string;
   treatment?: ProductTreatment;
+  requiresTreatment: boolean;
+  stockName?: string;
+  sourceCatalog?: "Palbin" | "Pamer" | "Manual";
+  sourceCode?: string;
+  zetaCode?: string;
+  stockActive?: boolean;
+  clientNames?: string[];
 }
 
-type ProductSeed = Product & {
+/** Ordena P01, P02, P10 por su valor numérico, no por el texto del código. */
+export function compareProductsByInternalCode(left: Pick<Product, "sourceCode" | "zetaCode" | "stockName" | "id">, right: Pick<Product, "sourceCode" | "zetaCode" | "stockName" | "id">) {
+  const codeNumber = (code?: string) => {
+    const match = code?.match(/\d+/);
+    return match ? Number(match[0]) : Number.POSITIVE_INFINITY;
+  };
+  const leftCode = left.zetaCode ?? left.sourceCode;
+  const rightCode = right.zetaCode ?? right.sourceCode;
+  const leftNumber = codeNumber(leftCode);
+  const rightNumber = codeNumber(rightCode);
+  if (leftNumber !== rightNumber) return leftNumber - rightNumber;
+
+  return (leftCode ?? "").localeCompare(rightCode ?? "", "es", { numeric: true, sensitivity: "base" })
+    || (left.stockName ?? "").localeCompare(right.stockName ?? "", "es", { sensitivity: "base" })
+    || left.id.localeCompare(right.id, "es", { sensitivity: "base" });
+}
+
+type ProductSeed = Omit<Product, "requiresTreatment"> & {
   code: string;
   name: string;
   assignment?: string;
@@ -172,44 +276,54 @@ const productSeeds = [
   { id: "palbin-p37", code: "P37", name: "Bins Chacra Chapicuy", kind: "Bin", assignment: "Frutos del Chapicuy", catalog: "Palbin" },
   { id: "palbin-p38", code: "P38", name: "Pallet MSJ", kind: "Pallet", measure: "220 × 120", assignment: "Molinos San José", treatment: "Marcado", catalog: "Palbin" },
   { id: "palbin-p39", code: "P39", name: "Avanti", kind: "Pallet", measure: "120 × 100", assignment: "Avanti", treatment: "Marcado", catalog: "Palbin" },
-  { id: "pamer-p01", code: "P01", name: "Pallet", kind: "Pallet", measure: "100 × 80", treatment: "HT", catalog: "Pamer" },
-  { id: "pamer-p02", code: "P02", name: "Pallet", kind: "Pallet", measure: "100 × 100", treatment: "HT", catalog: "Pamer" },
-  { id: "pamer-p03", code: "P03", name: "Pallet", kind: "Pallet", measure: "100 × 120", treatment: "HT", catalog: "Pamer" },
-  { id: "pamer-p04", code: "P04", name: "Pallet", kind: "Pallet", measure: "120 × 100", treatment: "HT", catalog: "Pamer" },
-  { id: "pamer-p05", code: "P05", name: "Pallet", kind: "Pallet", measure: "120 × 80", treatment: "HT", catalog: "Pamer" },
-  { id: "pamer-p06", code: "P06", name: "Pallet", kind: "Pallet", measure: "120 × 80", treatment: "HT", catalog: "Pamer" },
-  { id: "pamer-p07", code: "P07", name: "Pallet", kind: "Pallet", measure: "120 × 90", treatment: "HT", catalog: "Pamer" },
-  { id: "pamer-p08", code: "P08", name: "Pallet", kind: "Pallet", measure: "120 × 100", treatment: "HT", catalog: "Pamer" },
-  { id: "pamer-p09", code: "P09", name: "Pallet", kind: "Pallet", measure: "120 × 100", treatment: "HT", catalog: "Pamer" },
-  { id: "pamer-p10", code: "P10", name: "Pallet", kind: "Pallet", measure: "120 × 120", treatment: "HT", catalog: "Pamer" },
-  { id: "pamer-p11", code: "P11", name: "Pallet", kind: "Pallet", measure: "120 × 120", treatment: "HT", catalog: "Pamer" },
-  { id: "pamer-p12", code: "P12", name: "Pallet", kind: "Pallet", measure: "130 × 90", treatment: "HT", catalog: "Pamer" },
-  { id: "pamer-p13", code: "P13", name: "Pallet", kind: "Pallet", measure: "140 × 120", treatment: "HT", catalog: "Pamer" },
-  { id: "pamer-p14", code: "P14", name: "Pallet", kind: "Pallet", measure: "140 × 120", treatment: "HT", catalog: "Pamer" },
-  { id: "pamer-p15", code: "P15", name: "Pallet", kind: "Pallet", measure: "145 × 80", treatment: "HT", catalog: "Pamer" },
-  { id: "pamer-p16", code: "P16", name: "Pallet", kind: "Pallet", measure: "145 × 100", treatment: "HT", catalog: "Pamer" },
-  { id: "pamer-p17", code: "P17", name: "Pallet", kind: "Pallet", measure: "145 × 100", treatment: "HT", catalog: "Pamer" },
-  { id: "pamer-p18", code: "P18", name: "Pallet", kind: "Pallet", measure: "155 × 70", treatment: "HT", catalog: "Pamer" },
-  { id: "pamer-p19", code: "P19", name: "Pallet", kind: "Pallet", measure: "160 × 80", treatment: "HT", catalog: "Pamer" },
-  { id: "pamer-p20", code: "P20", name: "Pallet", kind: "Pallet", measure: "160 × 110", treatment: "HT", catalog: "Pamer" },
-  { id: "pamer-p21", code: "P21", name: "Pallet", kind: "Pallet", measure: "216 × 110", treatment: "HT", catalog: "Pamer" },
-  { id: "pamer-p22", code: "P22", name: "Pallet", kind: "Pallet", measure: "130 × 120", catalog: "Pamer" },
+  { id: "pamer-p01", code: "P40", name: "Pallet", kind: "Pallet", measure: "100 × 80", treatment: "HT", catalog: "Pamer" },
+  { id: "pamer-p02", code: "P41", name: "Pallet", kind: "Pallet", measure: "100 × 100", treatment: "HT", catalog: "Pamer" },
+  { id: "pamer-p03", code: "P42", name: "Pallet", kind: "Pallet", measure: "100 × 120", treatment: "HT", catalog: "Pamer" },
+  { id: "pamer-p04", code: "P43", name: "Pallet", kind: "Pallet", measure: "120 × 100", treatment: "HT", catalog: "Pamer" },
+  { id: "pamer-p05", code: "P44", name: "Pallet", kind: "Pallet", measure: "120 × 80", treatment: "HT", catalog: "Pamer" },
+  { id: "pamer-p06", code: "P45", name: "Pallet", kind: "Pallet", measure: "120 × 80", treatment: "HT", catalog: "Pamer" },
+  { id: "pamer-p07", code: "P46", name: "Pallet", kind: "Pallet", measure: "120 × 90", treatment: "HT", catalog: "Pamer" },
+  { id: "pamer-p08", code: "P47", name: "Pallet", kind: "Pallet", measure: "120 × 100", treatment: "HT", catalog: "Pamer" },
+  { id: "pamer-p09", code: "P48", name: "Pallet", kind: "Pallet", measure: "120 × 100", treatment: "HT", catalog: "Pamer" },
+  { id: "pamer-p10", code: "P49", name: "Pallet", kind: "Pallet", measure: "120 × 120", treatment: "HT", catalog: "Pamer" },
+  { id: "pamer-p11", code: "P50", name: "Pallet", kind: "Pallet", measure: "120 × 120", treatment: "HT", catalog: "Pamer" },
+  { id: "pamer-p12", code: "P51", name: "Pallet", kind: "Pallet", measure: "130 × 90", treatment: "HT", catalog: "Pamer" },
+  { id: "pamer-p13", code: "P52", name: "Pallet", kind: "Pallet", measure: "140 × 120", treatment: "HT", catalog: "Pamer" },
+  { id: "pamer-p14", code: "P53", name: "Pallet", kind: "Pallet", measure: "140 × 120", treatment: "HT", catalog: "Pamer" },
+  { id: "pamer-p15", code: "P54", name: "Pallet", kind: "Pallet", measure: "145 × 80", treatment: "HT", catalog: "Pamer" },
+  { id: "pamer-p16", code: "P55", name: "Pallet", kind: "Pallet", measure: "145 × 100", treatment: "HT", catalog: "Pamer" },
+  { id: "pamer-p17", code: "P56", name: "Pallet", kind: "Pallet", measure: "145 × 100", treatment: "HT", catalog: "Pamer" },
+  { id: "pamer-p18", code: "P57", name: "Pallet", kind: "Pallet", measure: "155 × 70", treatment: "HT", catalog: "Pamer" },
+  { id: "pamer-p19", code: "P58", name: "Pallet", kind: "Pallet", measure: "160 × 80", treatment: "HT", catalog: "Pamer" },
+  { id: "pamer-p20", code: "P59", name: "Pallet", kind: "Pallet", measure: "160 × 110", treatment: "HT", catalog: "Pamer" },
+  { id: "pamer-p21", code: "P60", name: "Pallet", kind: "Pallet", measure: "216 × 110", treatment: "HT", catalog: "Pamer" },
+  { id: "pamer-p22", code: "P61", name: "Pallet", kind: "Pallet", measure: "130 × 120", catalog: "Pamer" },
 ] satisfies ProductSeed[];
 
 function combineTreatment(current?: ProductTreatment, next?: ProductTreatment) {
-  if (!current) return next;
-  if (!next || current === next || current === "Marcado y HT") return current;
-  return "Marcado y HT";
+  return current || next ? "Marcado" : undefined;
 }
 
 export const products: Product[] = productSeeds.reduce<Product[]>((unique, product) => {
   const existing = unique.find((item) => item.kind === product.kind && item.measure === product.measure);
   if (existing) {
     existing.treatment = combineTreatment(existing.treatment, product.treatment);
+    existing.requiresTreatment = Boolean(existing.treatment);
     return unique;
   }
 
-  unique.push({ id: product.id, kind: product.kind, measure: product.measure, treatment: product.treatment });
+  unique.push({
+    id: product.id,
+    kind: product.kind,
+    measure: product.measure,
+    treatment: combineTreatment(undefined, product.treatment),
+    requiresTreatment: Boolean(product.treatment),
+    stockName: product.name,
+    sourceCatalog: product.catalog,
+    sourceCode: product.code,
+    zetaCode: product.code,
+    stockActive: true,
+  });
   return unique;
 }, []);
 

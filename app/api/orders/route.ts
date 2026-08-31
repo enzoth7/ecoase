@@ -3,7 +3,7 @@ import { getOrderStage } from "../../data";
 import type { CapacityOperation, OperationStage, ProductionSource, TransportSource } from "../../data";
 
 const isoDate = /^\d{4}-\d{2}-\d{2}$/;
-const operations: CapacityOperation[] = ["assembly", "marking", "ht"];
+const operations: CapacityOperation[] = ["assembly", "treatment"];
 const creationStages: Exclude<OperationStage, "completado">[] = ["negociacion", "produccion", "logistica", "atrasado", "pospuesto", "cancelado", "reorganizando"];
 
 export async function GET() {
@@ -11,10 +11,12 @@ export async function GET() {
 }
 
 export async function POST(request: Request) {
-  const payload = (await request.json()) as Partial<CreateOrderInput>;
-  const client = payload.client?.trim() ?? "";
-  const product = payload.product?.trim() ?? "";
-  const requested = Number(payload.requested);
+  const payload = (await request.json()) as Partial<CreateOrderInput> & { clientProductId?: number | string; requested?: number };
+  const lines = Array.isArray(payload.lines)
+    ? payload.lines.map((line) => ({ clientProductId: line.clientProductId, quantity: Number(line.quantity) })).filter((line) => (typeof line.clientProductId === "number" || typeof line.clientProductId === "string") && Number.isInteger(line.quantity) && line.quantity > 0)
+    : (typeof payload.clientProductId === "number" || typeof payload.clientProductId === "string") && Number.isInteger(Number(payload.requested)) && Number(payload.requested) > 0
+      ? [{ clientProductId: payload.clientProductId, quantity: Number(payload.requested) }]
+      : [];
   const orderDate = typeof payload.orderDate === "string" && isoDate.test(payload.orderDate) ? payload.orderDate : "";
   const requestedDeliveryDate = typeof payload.requestedDeliveryDate === "string" && isoDate.test(payload.requestedDeliveryDate) ? payload.requestedDeliveryDate : "";
   const plannedDate = typeof payload.plannedDate === "string" && isoDate.test(payload.plannedDate) ? payload.plannedDate : "";
@@ -25,8 +27,8 @@ export async function POST(request: Request) {
   const requiredOperations: CapacityOperation[] = Array.isArray(payload.requiredOperations) ? payload.requiredOperations.filter((item): item is CapacityOperation => operations.includes(item as CapacityOperation)) : ["assembly"];
   const stage = creationStages.includes(payload.stage as Exclude<OperationStage, "completado">) ? payload.stage as Exclude<OperationStage, "completado"> : "";
 
-  if (!client || !product || !orderDate || !requestedDeliveryDate || !plannedDate || !stage || !productionSource || !transportSource || requiredOperations.length === 0 || !Number.isInteger(requested) || requested <= 0) {
-    return Response.json({ error: "Cliente, producto, cantidad, fechas, etapa, operaciones y orígenes son obligatorios." }, { status: 400 });
+  if (!lines.length || !orderDate || !requestedDeliveryDate || !plannedDate || !stage || !productionSource || !transportSource || requiredOperations.length === 0) {
+    return Response.json({ error: "Cliente, al menos un producto con cantidad, fechas, etapa, operaciones y orígenes son obligatorios." }, { status: 400 });
   }
   const providers = await getProviders();
   const producer = providers.find((provider) => provider.id === payload.producerProviderId);
@@ -39,17 +41,13 @@ export async function POST(request: Request) {
 
   try {
     const order = await createOrder({
-      client,
-      product,
-      requested,
+      lines,
       orderDate,
       requestedDeliveryDate,
       plannedDate,
       transport,
       stage,
       reference: payload.reference,
-      zetaCode: payload.zetaCode,
-      deliveryAddress: payload.deliveryAddress,
       notes: payload.notes,
       productionSource,
       producerProviderId: producer?.id,

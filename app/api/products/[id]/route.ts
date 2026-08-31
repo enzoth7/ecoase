@@ -1,25 +1,24 @@
 import { deleteProduct, updateProduct } from "../../store";
 
 const productKinds = new Set(["Pallet", "Piso", "Bin"]);
-const treatments = new Set(["", "Marcado", "HT", "Marcado y HT"]);
 
 export async function PATCH(request: Request, { params }: { params: Promise<{ id: string }> }) {
   try {
     const { id } = await params;
-    const body = await request.json() as { kind?: unknown; measure?: unknown; treatment?: unknown };
+    const body = await request.json() as { kind?: unknown; measure?: unknown; requiresTreatment?: unknown; stockName?: unknown; zetaCode?: unknown; clientId?: unknown };
     const kind = typeof body.kind === "string" ? body.kind : "";
     const measure = typeof body.measure === "string" ? body.measure : "";
-    const treatment = typeof body.treatment === "string" ? body.treatment : "";
     if (!productKinds.has(kind)) {
       return Response.json({ error: "El tipo indicado no es válido." }, { status: 400 });
     }
-    if (!treatments.has(treatment)) {
-      return Response.json({ error: "El tratamiento indicado no es válido." }, { status: 400 });
-    }
+    if (typeof body.requiresTreatment !== "boolean") return Response.json({ error: "Indique si el producto requiere marcado." }, { status: 400 });
     const product = await updateProduct(id, {
       kind: kind as "Pallet" | "Piso" | "Bin",
       measure,
-      treatment: treatment ? treatment as "Marcado" | "HT" | "Marcado y HT" : undefined,
+      requiresTreatment: body.requiresTreatment,
+      stockName: typeof body.stockName === "string" ? body.stockName : undefined,
+      zetaCode: typeof body.zetaCode === "string" ? body.zetaCode : undefined,
+      clientId: typeof body.clientId === "string" && body.clientId ? body.clientId : undefined,
     });
     return Response.json({ product });
   } catch (error) {

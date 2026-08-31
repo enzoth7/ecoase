@@ -10,21 +10,23 @@
     "build": "next build",
     "start": "next start",
     "test": "npm run test:data && npm run build && node --test tests/rendered-html.test.mjs",
-    "test:data": "node --test tests/data-invariants.test.mjs",
+    "test:data": "node --test tests/data-invariants.test.mjs tests/ui-foundations.test.mjs tests/stage03-invariants.test.mjs tests/stage04-invariants.test.mjs tests/stage05-invariants.test.mjs tests/stage06-invariants.test.mjs",
     "lint": "eslint . --ignore-pattern dist --ignore-pattern .next",
     "db:generate": "drizzle-kit generate"
   },
   "dependencies": {
+    "@tanstack/react-table": "9.2.4",
     "@vercel/analytics": "^2.0.1",
     "drizzle-orm": "0.45.2",
     "lucide-react": "^1.33.0",
-    "next": "16.2.0",
+    "next": "16.3.3",
     "react": "19.2.6",
-    "react-dom": "19.2.6"
+    "react-dom": "19.2.6",
+    "recharts": "3.10.1"
   },
   "devDependencies": {
     "@eslint/js": "9.39.4",
-    "@next/eslint-plugin-next": "16.2.6",
+    "@next/eslint-plugin-next": "16.3.3",
     "@tailwindcss/postcss": "4.2.1",
     "@types/node": "22.19.19",
     "@types/react": "19.2.14",

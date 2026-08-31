@@ -1,7 +1,12 @@
-import { getProviders, updateOrder } from "../../store";
+import { getOrderDetail, getProviders, updateOrder } from "../../store";
 import type { CapacityOperation, OperationStage, ProductionSource, TransportSource } from "../../../data";
 
 const validStages = new Set<OperationStage>(["negociacion", "produccion", "logistica", "atrasado", "pospuesto", "cancelado", "reorganizando", "completado"]);
+
+export async function GET(_request: Request, context: { params: Promise<{ id: string }> }) {
+  const order = await getOrderDetail((await context.params).id);
+  return order ? Response.json({ order }) : Response.json({ error: "Pedido no encontrado." }, { status: 404 });
+}
 
 export async function PATCH(request: Request, context: { params: Promise<{ id: string }> }) {
   const { id } = await context.params;
@@ -24,7 +29,7 @@ export async function PATCH(request: Request, context: { params: Promise<{ id: s
   const transportProviderId = typeof payload.transportProviderId === "string" ? payload.transportProviderId : undefined;
   const productionDate = typeof payload.productionDate === "string" && /^\d{4}-\d{2}-\d{2}$/.test(payload.productionDate) ? payload.productionDate : undefined;
   const importArrivalDate = typeof payload.importArrivalDate === "string" && /^\d{4}-\d{2}-\d{2}$/.test(payload.importArrivalDate) ? payload.importArrivalDate : undefined;
-  const requiredOperations = Array.isArray(payload.requiredOperations) ? payload.requiredOperations.filter((value): value is CapacityOperation => ["assembly", "marking", "ht"].includes(String(value))) : undefined;
+  const requiredOperations = Array.isArray(payload.requiredOperations) ? payload.requiredOperations.filter((value): value is CapacityOperation => ["assembly", "treatment"].includes(String(value))) : undefined;
   const transporter = providers.find((provider) => provider.id === transportProviderId) ?? providers.find((provider) => provider.type === "Transporte" && provider.name === transportCandidate);
   const producer = providers.find((provider) => provider.id === producerProviderId);
   if (productionSource === "sawmill" && producer?.type !== "Aserradero") return Response.json({ error: "Seleccione un aserradero registrado." }, { status: 400 });

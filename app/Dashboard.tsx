@@ -3,25 +3,23 @@
 import {
   Archive,
   AlertTriangle,
-  CalendarDays,
   CheckCircle2,
-  ChevronLeft,
   ChevronRight,
-  ClipboardList,
   Factory,
-  Gauge,
   Package,
-  ListChecks,
   MapPin,
   Pencil,
   Plus,
   Search,
   Truck,
-  Users,
   X,
 } from "lucide-react";
 import { useEffect, useMemo, useRef, useState, type FormEvent } from "react";
+import AppNavigation, { MobileNavigationButton } from "./components/AppNavigation";
+import type { ProductionWorkspaceView } from "./components/ProductionTabs";
+import { AsyncButton, ConfirmDialog, EmptyState, FieldError, ModalShell, StatusBadge, WeekNavigator } from "./components/ui";
 import {
+  compareProductsByInternalCode,
   getOrderStage,
   getOrderPlannedDate,
   orders as initialOrders,
@@ -32,23 +30,40 @@ import {
   type OrderChange,
   type OrderUpdateKind,
   type OperationStage,
+  type OrderLine,
   type Provider,
   type Product,
+  type Shipment,
 } from "./data";
 import type { CapacityOperation, ProductionSource, TransportSource } from "./data";
 import type { CapacitySnapshot } from "./capacity";
 import { capacityOperationLabels } from "./capacity";
 import CapacityView, { DayLogisticsAdjustmentModal, GeneralTransport } from "./CapacityView";
+import TreatmentView from "./TreatmentView";
+import StockView from "./StockView";
+import ClientMasterView, { type ClientSummary } from "./components/ClientMasterView";
+import { OperationsCalendarView, OperationsLogisticsView } from "./components/OperationsCalendar";
+import type { ClientProductOption } from "./master-data";
+import { uruguayDepartments } from "./uruguay-departments";
 
 const number = new Intl.NumberFormat("es-UY");
-export type DashboardSection = "pedidos" | "plan" | "calendario" | "logistica" | "capacidad" | "clientes" | "historial" | "proveedores" | "productos";
+const shipmentStatusLabels: Record<Shipment["status"], string> = {
+  planned: "Planificado",
+  ready: "Pronto",
+  loaded: "Cargado",
+  dispatched: "En viaje",
+  delivered: "Entregado",
+  cancelled: "Cancelado",
+};
+export type DashboardSection = "pedidos" | "plan" | "calendario" | "logistica" | "produccion" | "stock" | "clientes" | "historial" | "proveedores" | "productos";
 
 const sectionPaths: Record<DashboardSection, string> = {
   pedidos: "/pedidos",
   plan: "/plan",
   calendario: "/calendario",
   logistica: "/logistica",
-  capacidad: "/capacidad",
+  produccion: "/produccion",
+  stock: "/stock",
   clientes: "/clientes",
   historial: "/historial",
   proveedores: "/proveedores",
@@ -57,10 +72,6 @@ const sectionPaths: Record<DashboardSection, string> = {
 
 function visibleReference(order: OperationOrder) {
   return order.reference.startsWith("Plan ") ? "" : order.reference;
-}
-
-function productOptionLabel(product: Product) {
-  return [product.kind, product.measure ?? "Sin medida", product.treatment ?? "Sin tratamiento"].join(" · ");
 }
 
 function formatOrderDate(date?: string) {
@@ -109,47 +120,6 @@ function formatCalendarRange(weekStart: Date) {
   return `${formatter.format(weekStart)} – ${formatter.format(weekEnd)}`;
 }
 
-type ClientSummary = {
-  name: string;
-  address?: string;
-  department?: string;
-  orders: number;
-  requested: number;
-  delivered: number;
-  pending: number;
-  activeOrders: number;
-  activePallets: number;
-};
-
-function ClientsView({ clients, onOpen, onAdd }: { clients: ClientSummary[]; onOpen: (client: string) => void; onAdd: () => void }) {
-  return (
-    <section className="clients-surface" aria-labelledby="clients-title">
-      <div className="clients-toolbar">
-        <div>
-          <h2 id="clients-title">Clientes</h2>
-        </div>
-        <div className="module-toolbar-actions"><small>{clients.length} clientes</small><button type="button" className="add-order-button" onClick={onAdd}><Plus size={17} aria-hidden="true" />Agregar cliente</button></div>
-      </div>
-      <div className="client-list">
-        <div className="data-heading client-heading" aria-hidden="true">
-          <div /><div>Cliente</div><div>Dirección</div><div>Departamento</div><div>Histórico de palets</div><div>Pedidos activos</div><div />
-        </div>
-        {clients.map((client) => (
-          <button type="button" className="client-row" key={client.name} onClick={() => onOpen(client.name)}>
-            <i className="client-avatar" aria-hidden="true">{client.name.slice(0, 1)}</i>
-            <div className="client-name"><strong>{client.name}</strong></div>
-            <div><strong>{client.address ?? "—"}</strong></div>
-            <div><strong>{client.department ?? "—"}</strong></div>
-            <div><strong>{number.format(client.delivered)}</strong></div>
-            <div className={client.activeOrders > 0 ? "client-pending" : "client-complete"}><strong>{client.activeOrders > 0 ? `${client.activeOrders} (${number.format(client.activePallets)})` : "0 (0)"}</strong></div>
-            <ChevronRight size={19} aria-hidden="true" />
-          </button>
-        ))}
-      </div>
-    </section>
-  );
-}
-
 function ProvidersView({ providers }: { providers: Provider[] }) {
   return (
     <section className="module-surface providers-surface" aria-labelledby="providers-page-title">
@@ -175,8 +145,25 @@ function ProvidersView({ providers }: { providers: Provider[] }) {
 
 type ProductChanges = Pick<Product, "kind"> & {
   measure?: string;
-  treatment?: Product["treatment"];
+  requiresTreatment: boolean;
+  zetaCode: string;
+  stockName?: string;
+  clientId?: string;
 };
+
+function productDisplayName(product: Product) {
+  let label = product.stockName?.trim() || product.kind;
+  for (const clientName of [...(product.clientNames ?? [])].sort((a, b) => b.length - a.length)) {
+    const escaped = clientName.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+    label = label.replace(new RegExp(escaped, "giu"), " ");
+  }
+  label = label
+    .replace(/\(?\b\d+(?:[.,]\d+)?\s*[x×]\s*\d+(?:[.,]\d+)?\b\)?/giu, " ")
+    .replace(/\s+/g, " ")
+    .replace(/^[\s·—–(),-]+|[\s·—–(),-]+$/g, "")
+    .trim();
+  return label || product.kind;
+}
 
 function ProductsView({ products, onEdit, onAdd }: { products: Product[]; onEdit: (product: Product) => void; onAdd: () => void }) {
   const [productQuery, setProductQuery] = useState("");
@@ -185,11 +172,11 @@ function ProductsView({ products, onEdit, onAdd }: { products: Product[]; onEdit
     const normalized = productQuery.trim().toLocaleLowerCase("es");
     return products.filter((product) => {
       const kindMatches = !productKind || product.kind === productKind;
-      const queryMatches = !normalized || [product.kind, product.measure, product.treatment]
+      const queryMatches = !normalized || [product.stockName, product.zetaCode, product.kind, product.measure, ...(product.clientNames ?? []), product.requiresTreatment ? "Marcado" : "Sin marcado"]
         .filter((value): value is string => Boolean(value))
         .some((value) => value.toLocaleLowerCase("es").includes(normalized));
       return kindMatches && queryMatches;
-    });
+    }).sort(compareProductsByInternalCode);
   }, [productKind, productQuery, products]);
 
   return (
@@ -197,36 +184,36 @@ function ProductsView({ products, onEdit, onAdd }: { products: Product[]; onEdit
       <div className="module-toolbar products-toolbar">
         <div><h2 id="products-page-title">Productos</h2><small>{products.length} productos</small></div>
         <div className="module-toolbar-actions"><label className="search-field">
-          <i className="sr-only">Buscar por medida, tipo o tratamiento</i><Search size={17} aria-hidden="true" />
-          <input type="search" value={productQuery} onChange={(event) => setProductQuery(event.target.value)} placeholder="Buscar medida, tipo o tratamiento" />
+          <i className="sr-only">Buscar por producto, medida, tipo, cliente o marcado</i><Search size={17} aria-hidden="true" />
+          <input type="search" value={productQuery} onChange={(event) => setProductQuery(event.target.value)} placeholder="Buscar producto, medida, cliente…" />
           {productQuery && <button type="button" onClick={() => setProductQuery("")} aria-label="Limpiar búsqueda"><X size={15} aria-hidden="true" /></button>}
         </label><button type="button" className="add-order-button" onClick={onAdd}><Plus size={17} aria-hidden="true" />Agregar producto</button></div>
       </div>
       <div className="products-board" aria-label={`${visibleProducts.length} productos`}>
-        <div className="data-heading products-heading"><div>Medida</div><label className="table-filter"><i className="sr-only">Filtrar por tipo</i><select value={productKind} onChange={(event) => setProductKind(event.target.value as Product["kind"] | "")} aria-label="Filtrar productos por tipo"><option value="">Tipo</option><option value="Pallet">Pallet</option><option value="Piso">Piso</option><option value="Bin">Bin</option></select></label><div>Tratamiento</div><div className="sr-only">Acciones</div></div>
+        <div className="data-heading products-heading"><div>Código Zeta</div><div>Producto</div><div>Medida</div><label className="table-filter"><i className="sr-only">Filtrar por tipo</i><select value={productKind} onChange={(event) => setProductKind(event.target.value as Product["kind"] | "")} aria-label="Filtrar productos por tipo"><option value="">Tipo</option><option value="Pallet">Pallet</option><option value="Piso">Piso</option><option value="Bin">Bin</option></select></label><div>Cliente</div><div>Marcado</div><div className="sr-only">Acciones</div></div>
         {visibleProducts.length > 0 ? visibleProducts.map((product) => (
           <article className="product-row" key={product.id}>
-            <div><small className="column-label">Medida</small><strong>{product.measure ?? "—"}</strong></div>
+            <div><small className="column-label">Código Zeta</small><strong className="product-code">{product.zetaCode ?? "—"}</strong></div>
+            <div><small className="column-label">Producto</small><strong>{productDisplayName(product)}</strong></div>
+            <div><small className="column-label">Medida</small><strong>{product.measure ?? "Sin medida"}</strong></div>
             <div><small className="column-label">Tipo</small><strong>{product.kind}</strong></div>
-            <div><small className="column-label">Tratamiento</small><strong>{product.treatment ?? "—"}</strong></div>
+            <div><small className="column-label">Cliente</small><strong className={product.clientNames?.length ? "product-client-names" : "product-client-empty"}>{product.clientNames?.length ? product.clientNames.join(", ") : "Sin cliente asignado"}</strong></div>
+            <div><small className="column-label">Marcado</small><strong>{product.requiresTreatment ? "Requiere" : "No requiere"}</strong></div>
             <button type="button" className="product-edit" onClick={() => onEdit(product)} aria-label={`Editar ${product.kind}${product.measure ? ` ${product.measure}` : ""}`}><Pencil size={17} aria-hidden="true" /></button>
           </article>
-        )) : <div className="empty-state"><Package size={28} aria-hidden="true" /><strong>No hay productos para ese filtro</strong><button type="button" onClick={() => { setProductQuery(""); setProductKind(""); }}>Limpiar filtros</button></div>}
+        )) : <EmptyState icon={Package} title="No hay productos para ese filtro" action={<button type="button" onClick={() => { setProductQuery(""); setProductKind(""); }}>Limpiar filtros</button>} />}
       </div>
     </section>
   );
 }
 
-function EditProductModal({ product, onClose, onSave, onDelete }: { product: Product; onClose: () => void; onSave: (id: string, changes: ProductChanges) => Promise<boolean>; onDelete: (id: string) => Promise<boolean> }) {
+function EditProductModal({ product, clients, onClose, onSave, onDelete }: { product: Product; clients: Array<Pick<ClientSummary, "id" | "name">>; onClose: () => void; onSave: (id: string, changes: ProductChanges) => Promise<boolean>; onDelete: (id: string) => Promise<boolean> }) {
   const [saving, setSaving] = useState(false);
   const [confirmDelete, setConfirmDelete] = useState(false);
   const [error, setError] = useState("");
-
-  useEffect(() => {
-    const closeOnEscape = (event: KeyboardEvent) => { if (event.key === "Escape") onClose(); };
-    window.addEventListener("keydown", closeOnEscape);
-    return () => window.removeEventListener("keydown", closeOnEscape);
-  }, [onClose]);
+  const [dirty, setDirty] = useState(false);
+  const inputRef = useRef<HTMLInputElement>(null);
+  const availableClients = clients.filter((client) => client.id && !(product.clientNames ?? []).includes(client.name));
 
   const save = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
@@ -236,14 +223,16 @@ function EditProductModal({ product, onClose, onSave, onDelete }: { product: Pro
     const saved = await onSave(product.id, {
       kind: String(form.get("kind") ?? "Pallet") as Product["kind"],
       measure: String(form.get("measure") ?? ""),
-      treatment: (String(form.get("treatment") ?? "") || undefined) as Product["treatment"],
+      requiresTreatment: form.has("requiresTreatment"),
+      zetaCode: String(form.get("zetaCode") ?? ""),
+      stockName: String(form.get("stockName") ?? ""),
+      clientId: String(form.get("clientId") ?? "") || undefined,
     });
     setSaving(false);
-    if (saved) onClose(); else setError("No se pudo guardar el producto.");
+    if (saved) { setDirty(false); onClose(); } else setError("No se pudo guardar el producto.");
   };
 
   const remove = async () => {
-    if (!confirmDelete) { setConfirmDelete(true); return; }
     setSaving(true);
     setError("");
     const deleted = await onDelete(product.id);
@@ -252,54 +241,56 @@ function EditProductModal({ product, onClose, onSave, onDelete }: { product: Pro
   };
 
   return (
-    <div className="modal-backdrop" role="presentation" onMouseDown={(event) => { if (event.target === event.currentTarget) onClose(); }}>
-      <section className="edit-product-modal" role="dialog" aria-modal="true" aria-labelledby="edit-product-title">
-        <div className="modal-heading"><div><h2 id="edit-product-title">Editar producto</h2></div><button type="button" onClick={onClose} aria-label="Cerrar"><X size={18} aria-hidden="true" /></button></div>
-        <form onSubmit={save}>
+    <ModalShell title="Editar producto" className="edit-product-modal" onClose={onClose} initialFocusRef={inputRef} dirty={dirty && !saving}>
+        <form onSubmit={save} onChange={() => setDirty(true)}>
+          <label>Código Zeta<input name="zetaCode" required defaultValue={product.zetaCode ?? ""} /><small className="field-help">Se comparte automáticamente con cada cliente que use este producto.</small></label>
+          <label>Nombre del producto<input ref={inputRef} name="stockName" required defaultValue={product.stockName ?? productDisplayName(product)} /><small className="field-help">Escribí sólo el producto, sin cliente ni medida.</small></label>
           <label>Tipo<select name="kind" defaultValue={product.kind}><option value="Pallet">Pallet</option><option value="Piso">Piso</option><option value="Bin">Bin</option></select></label>
           <label>Medida<input name="measure" defaultValue={product.measure ?? ""} /></label>
-          <label>Tratamiento<select name="treatment" defaultValue={product.treatment ?? ""}><option value="">Sin tratamiento</option><option value="Marcado">Marcado</option><option value="HT">HT</option><option value="Marcado y HT">Marcado y HT</option></select></label>
-          {error && <p className="form-error" role="alert">{error}</p>}
-          <div className="modal-actions"><button type="button" className="delete-button" onClick={remove} disabled={saving}>{confirmDelete ? "Confirmar eliminación" : "Eliminar producto"}</button><div><button type="button" className="secondary-button" onClick={onClose}>Cancelar</button><button type="submit" className="primary-button" disabled={saving}>{saving ? "Guardando…" : "Guardar cambios"}</button></div></div>
+          <label className="field-wide">Clientes asignados<output className="readonly-value">{product.clientNames?.length ? product.clientNames.join(" · ") : "Ninguno"}</output></label>
+          <label className="field-wide">Asignar otro cliente<select name="clientId" defaultValue="" disabled={!availableClients.length}><option value="">{availableClients.length ? "No agregar otro cliente" : "Todos los clientes ya están asignados"}</option>{availableClients.map((client) => <option key={client.id} value={client.id}>{client.name}</option>)}</select><small className="field-help">El cliente recibe el Código Zeta del producto y sólo debe completar sus controles operativos.</small></label>
+          <label className="product-treatment-toggle"><input aria-label="Requiere Marcado" type="checkbox" name="requiresTreatment" defaultChecked={product.requiresTreatment} /><span><strong>Requiere Marcado</strong><small>Las unidades producidas quedarán pendientes hasta registrar el marcado.</small></span></label>
+          <FieldError id="edit-product-error">{error}</FieldError>
+          <div className="modal-actions"><button type="button" className="delete-button" onClick={() => setConfirmDelete(true)} disabled={saving}>Eliminar producto</button><div><button type="button" className="secondary-button" onClick={onClose}>Cancelar</button><AsyncButton type="submit" className="primary-button" loading={saving} error={Boolean(error)}>Guardar cambios</AsyncButton></div></div>
         </form>
-      </section>
-    </div>
+        {confirmDelete && <ConfirmDialog title="¿Eliminar este producto?" description="La acción no se puede deshacer." confirmLabel="Eliminar" destructive onCancel={() => setConfirmDelete(false)} onConfirm={() => void remove()} />}
+    </ModalShell>
   );
 }
 
 function AddProductModal({ onClose, onSave }: { onClose: () => void; onSave: (changes: ProductChanges) => Promise<boolean> }) {
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
+  const [dirty, setDirty] = useState(false);
   const inputRef = useRef<HTMLSelectElement>(null);
-  useEffect(() => { inputRef.current?.focus(); }, []);
   const submit = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
     const form = new FormData(event.currentTarget);
     setSaving(true); setError("");
-    const saved = await onSave({ kind: String(form.get("kind")) as Product["kind"], measure: String(form.get("measure") ?? ""), treatment: (String(form.get("treatment") ?? "") || undefined) as Product["treatment"] });
+    const saved = await onSave({ kind: String(form.get("kind")) as Product["kind"], measure: String(form.get("measure") ?? ""), requiresTreatment: form.has("requiresTreatment"), zetaCode: String(form.get("zetaCode") ?? "") });
     setSaving(false);
-    if (saved) onClose(); else setError("No se pudo agregar el producto.");
+    if (saved) { setDirty(false); onClose(); } else setError("No se pudo agregar el producto.");
   };
-  return <div className="modal-backdrop" role="presentation" onMouseDown={(event) => { if (event.target === event.currentTarget) onClose(); }}><section className="edit-product-modal" role="dialog" aria-modal="true" aria-labelledby="add-product-title"><div className="modal-heading"><div><h2 id="add-product-title">Agregar producto</h2></div><button type="button" onClick={onClose} aria-label="Cerrar"><X size={18} aria-hidden="true" /></button></div><form onSubmit={submit}><label>Tipo<select ref={inputRef} name="kind" defaultValue="Pallet"><option value="Pallet">Pallet</option><option value="Piso">Piso</option><option value="Bin">Bin</option></select></label><label>Medida<input name="measure" placeholder="Ej. 120 × 100" /></label><label>Tratamiento<select name="treatment" defaultValue=""><option value="">Sin tratamiento</option><option value="Marcado">Marcado</option><option value="HT">HT</option><option value="Marcado y HT">Marcado y HT</option></select></label>{error && <p className="form-error" role="alert">{error}</p>}<div className="modal-actions"><button type="button" className="secondary-button" onClick={onClose}>Cancelar</button><button type="submit" className="primary-button" disabled={saving}>{saving ? "Guardando…" : "Agregar producto"}</button></div></form></section></div>;
+  return <ModalShell title="Agregar producto" className="edit-product-modal" onClose={onClose} initialFocusRef={inputRef} dirty={dirty && !saving}><form onSubmit={submit} onChange={() => setDirty(true)}><label>Tipo<select ref={inputRef} name="kind" defaultValue="Pallet"><option value="Pallet">Pallet</option><option value="Piso">Piso</option><option value="Bin">Bin</option></select></label><label>Medida<input name="measure" placeholder="Ej. 120 × 100" /></label><label>Código Zeta<input name="zetaCode" required placeholder="Ej. X" /></label><label className="product-treatment-toggle"><input aria-label="Requiere Marcado" type="checkbox" name="requiresTreatment" /><span><strong>Requiere Marcado</strong><small>Las unidades quedarán pendientes hasta registrar el marcado.</small></span></label><FieldError id="add-product-error">{error}</FieldError><div className="modal-actions"><button type="button" className="secondary-button" onClick={onClose}>Cancelar</button><AsyncButton type="submit" className="primary-button" loading={saving} error={Boolean(error)}>Agregar producto</AsyncButton></div></form></ModalShell>;
 }
 
 function AddClientModal({ onClose, onSave }: { onClose: () => void; onSave: (input: { name: string; address: string; department: string }) => Promise<boolean> }) {
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
+  const [dirty, setDirty] = useState(false);
   const inputRef = useRef<HTMLInputElement>(null);
-  useEffect(() => { inputRef.current?.focus(); }, []);
   const submit = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
     setSaving(true); setError("");
     const form = new FormData(event.currentTarget);
     const saved = await onSave({ name: String(form.get("name") ?? ""), address: String(form.get("address") ?? ""), department: String(form.get("department") ?? "") });
     setSaving(false);
-    if (saved) onClose(); else setError("No se pudo agregar el cliente.");
+    if (saved) { setDirty(false); onClose(); } else setError("No se pudo agregar el cliente.");
   };
-  return <div className="modal-backdrop" role="presentation" onMouseDown={(event) => { if (event.target === event.currentTarget) onClose(); }}><section className="add-client-modal" role="dialog" aria-modal="true" aria-labelledby="add-client-title"><div className="modal-heading"><div><h2 id="add-client-title">Agregar cliente</h2></div><button type="button" onClick={onClose} aria-label="Cerrar"><X size={18} aria-hidden="true" /></button></div><form onSubmit={submit}><label className="field-wide">Nombre de la empresa<input ref={inputRef} name="name" required /></label><label>Dirección<input name="address" autoComplete="street-address" /></label><label>Departamento<input name="department" /></label>{error && <p className="form-error" role="alert">{error}</p>}<div className="modal-actions"><button type="button" className="secondary-button" onClick={onClose}>Cancelar</button><button type="submit" className="primary-button" disabled={saving}>{saving ? "Guardando…" : "Agregar cliente"}</button></div></form></section></div>;
+  return <ModalShell title="Agregar cliente" className="add-client-modal" onClose={onClose} initialFocusRef={inputRef} dirty={dirty && !saving}><form onSubmit={submit} onChange={() => setDirty(true)}><label className="field-wide">Nombre de la empresa <span aria-hidden="true">*</span><input ref={inputRef} name="name" required aria-required="true" /></label><label>Dirección<input name="address" autoComplete="street-address" /></label><label>Departamento<select name="department" defaultValue=""><option value="">Seleccionar departamento</option>{uruguayDepartments.map((department) => <option key={department} value={department}>{department}</option>)}</select></label><FieldError id="add-client-error">{error}</FieldError><div className="modal-actions"><button type="button" className="secondary-button" onClick={onClose}>Cancelar</button><AsyncButton type="submit" className="primary-button" loading={saving} error={Boolean(error)}>Agregar cliente</AsyncButton></div></form></ModalShell>;
 }
 
-function CalendarView({ orders, onOpen }: { orders: OperationOrder[]; onOpen: (id: string) => void }) {
+export function CalendarView({ orders, onOpen }: { orders: OperationOrder[]; onOpen: (id: string) => void }) {
   const [weekStart, setWeekStart] = useState(() => startOfWeek(new Date()));
   const todayKey = useMemo(() => dateKey(new Date()), []);
   const weekDays = useMemo(() => Array.from({ length: 7 }, (_, index) => {
@@ -325,11 +316,7 @@ function CalendarView({ orders, onOpen }: { orders: OperationOrder[]; onOpen: (i
     <section className="module-surface" aria-labelledby="calendar-page-title">
       <div className="module-toolbar calendar-toolbar">
         <div><h2 id="calendar-page-title">Calendario</h2></div>
-        <div className="calendar-week-controls">
-          <button type="button" onClick={() => moveWeek(-1)} aria-label="Semana anterior"><ChevronLeft size={18} aria-hidden="true" /></button>
-          <strong aria-live="polite">{formatCalendarRange(weekStart)}</strong>
-          <button type="button" onClick={() => moveWeek(1)} aria-label="Semana siguiente"><ChevronRight size={18} aria-hidden="true" /></button>
-        </div>
+        <WeekNavigator label={formatCalendarRange(weekStart)} onPrevious={() => moveWeek(-1)} onNext={() => moveWeek(1)} />
       </div>
       <div className="calendar-board">
         {weekDays.map((day) => {
@@ -353,7 +340,7 @@ function CalendarView({ orders, onOpen }: { orders: OperationOrder[]; onOpen: (i
   );
 }
 
-function LogisticsView({ orders, providers, onOpen }: { orders: OperationOrder[]; providers: Provider[]; onOpen: (id: string) => void }) {
+export function LogisticsView({ orders, providers, onOpen }: { orders: OperationOrder[]; providers: Provider[]; onOpen: (id: string) => void }) {
   const transports = [...new Set(orders.map((order) => order.transport))];
   const [weekStart, setWeekStart] = useState(() => startOfWeek(new Date()));
   const weekEnd = useMemo(() => {
@@ -394,11 +381,7 @@ function LogisticsView({ orders, providers, onOpen }: { orders: OperationOrder[]
         <div><h2 id="logistics-page-title">Cap. Logística semanal</h2><small>Capacidad de transporte por día</small></div>
         <div className="module-toolbar-actions">
           <small>{transports.length} transportes registrados</small>
-          <div className="calendar-week-controls">
-            <button type="button" onClick={() => moveWeek(-1)} aria-label="Semana anterior"><ChevronLeft size={18} aria-hidden="true" /></button>
-            <strong aria-live="polite">{formatCalendarRange(weekStart)}</strong>
-            <button type="button" onClick={() => moveWeek(1)} aria-label="Semana siguiente"><ChevronRight size={18} aria-hidden="true" /></button>
-          </div>
+          <WeekNavigator label={formatCalendarRange(weekStart)} onPrevious={() => moveWeek(-1)} onNext={() => moveWeek(1)} />
         </div>
       </div>
       {capacity && <div className="logistics-capacity-strip" aria-label="Capacidad logística de la semana">
@@ -443,7 +426,7 @@ function LogisticsView({ orders, providers, onOpen }: { orders: OperationOrder[]
 }
 
 function StageBadge({ stage }: { stage: OperationStage }) {
-  return <small className={`stage-badge ${stage}`}>{stageLabels[stage]}</small>;
+  return <StatusBadge label={stageLabels[stage]} tone={stage} />;
 }
 
 const editableStages: OperationStage[] = ["negociacion", "produccion", "logistica", "atrasado", "pospuesto", "cancelado", "reorganizando", "completado"];
@@ -471,9 +454,40 @@ type TrackingUpdate = {
   note?: string;
 };
 
-function OrderTrackingPanel({ order, providers, refreshKey, onAdd }: { order?: OperationOrder; providers: Provider[]; refreshKey: number; onAdd: (order: OperationOrder) => void }) {
+function ProductionAllocationModal({ line, providers, onClose, onSaved }: { line: OrderLine; providers: Provider[]; onClose: () => void; onSaved: () => Promise<void> }) {
+  const editable = (line.productionAllocations ?? []).filter((item) => item.status === "draft");
+  const [rows, setRows] = useState(() => editable.length ? editable.map((item) => ({ plannedDate: item.plannedDate, plannedQuantity: item.plannedQuantity, resourceId: item.resourceId ?? "internal", status: item.status === "confirmed" ? "confirmed" as const : "draft" as const, note: item.note ?? "" })) : [{ plannedDate: "", plannedQuantity: line.quantity, resourceId: "internal", status: "draft" as const, note: "" }]);
+  const [saving, setSaving] = useState(false); const [error, setError] = useState("");
+  const resources = [{ id: "internal", name: "Fábrica / cuadrillas" }, ...providers.filter((provider) => provider.type === "Aserradero").map((provider) => ({ id: provider.id, name: provider.name }))];
+  const total = rows.reduce((sum, row) => sum + (row.plannedQuantity || 0), 0);
+  const submit = async (event: FormEvent) => { event.preventDefault(); setSaving(true); setError(""); const response = await fetch(`/api/order-lines/${line.id}/production-allocations`, { method: "PUT", headers: { "content-type": "application/json" }, body: JSON.stringify({ allocations: rows }) }); const body = await response.json() as { error?: string }; setSaving(false); if (!response.ok) return setError(body.error ?? "No se pudo guardar la distribución."); await onSaved(); onClose(); };
+  return <ModalShell title="Distribuir producción" description={`${line.product} · ${number.format(line.quantity)} palets`} className="order-operation-modal allocation-modal" onClose={onClose}><form className="order-operation-form allocation-modal-form" onSubmit={submit}>
+    <p className="allocation-draft-note">Las nuevas asignaciones se guardan en borrador. La confirmación se realiza desde Capacidad cuando exista una regla vigente.</p>
+    <fieldset className="order-dialog-section allocation-days"><legend>Planificación por día</legend><div className="allocation-editor">{rows.map((row, index) => <div key={index}>
+        <label>Fecha<input type="date" required value={row.plannedDate} onChange={(event) => setRows((current) => current.map((item, position) => position === index ? { ...item, plannedDate: event.target.value } : item))} /></label>
+        <label>Cantidad<input type="number" min="1" step="1" required value={row.plannedQuantity || ""} onChange={(event) => setRows((current) => current.map((item, position) => position === index ? { ...item, plannedQuantity: Number(event.target.value) } : item))} /></label>
+        <label>Recurso<select value={row.resourceId} onChange={(event) => setRows((current) => current.map((item, position) => position === index ? { ...item, resourceId: event.target.value } : item))}>{resources.map((resource) => <option key={resource.id} value={resource.id}>{resource.name}</option>)}</select></label>
+        {rows.length > 1 && <button type="button" className="icon-button allocation-remove" onClick={() => setRows((current) => current.filter((_, position) => position !== index))} aria-label="Quitar día"><X size={16} /></button>}
+      </div>)}</div><div className="allocation-footer"><button type="button" className="secondary-button" onClick={() => setRows((current) => [...current, { plannedDate: "", plannedQuantity: 0, resourceId: "internal", status: "draft", note: "" }])}><Plus size={16} />Agregar otro día</button><output className={`allocation-total ${total > line.quantity ? "danger" : ""}`}><span>Asignado</span><strong>{number.format(total)} de {number.format(line.quantity)}</strong></output></div></fieldset>
+    <FieldError id="allocation-error">{error}</FieldError><div className="modal-actions"><button type="button" className="secondary-button" onClick={onClose}>Cancelar</button><AsyncButton type="submit" className="primary-button" loading={saving} disabled={total > line.quantity || total <= 0}>Guardar distribución</AsyncButton></div>
+  </form></ModalShell>;
+}
+
+function ShipmentEditorModal({ order, shipment, providers, onClose, onSaved }: { order: OperationOrder; shipment?: Shipment; providers: Provider[]; onClose: () => void; onSaved: () => Promise<void> }) {
+  const [date, setDate] = useState(shipment?.plannedDate ?? getOrderPlannedDate(order)); const [source, setSource] = useState<TransportSource>(shipment?.transportSource ?? "internal"); const [providerId, setProviderId] = useState(shipment?.transportProviderId ?? ""); const [quantities, setQuantities] = useState<Record<string, number>>(() => Object.fromEntries(order.lines.map((line) => [line.id, shipment?.lines.find((item) => item.orderLineId === line.id)?.plannedQuantity ?? 0]))); const [saving, setSaving] = useState(false); const [error, setError] = useState("");
+  const transporters = providers.filter((provider) => provider.type === "Transporte");
+  const maxFor = (line: OrderLine) => line.quantity - (order.shipments ?? []).filter((item) => item.status !== "cancelled" && String(item.id) !== String(shipment?.id)).flatMap((item) => item.lines).filter((item) => item.orderLineId === line.id).reduce((sum, item) => sum + item.plannedQuantity, 0);
+  const submit = async (event: FormEvent) => { event.preventDefault(); const lines = order.lines.map((line) => ({ orderLineId: line.id, plannedQuantity: quantities[line.id] || 0 })).filter((line) => line.plannedQuantity > 0); setSaving(true); setError(""); const response = await fetch(shipment ? `/api/shipments/${shipment.id}` : `/api/orders/${order.id}/shipments`, { method: shipment ? "PATCH" : "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ plannedDate: date, transportSource: source, transportProviderId: source === "external" ? providerId : undefined, lines, responsible: "Detalle del pedido" }) }); const body = await response.json() as { error?: string }; setSaving(false); if (!response.ok) return setError(body.error ?? "No se pudo guardar el viaje."); await onSaved(); onClose(); };
+  return <ModalShell title={shipment ? "Editar viaje" : "Agregar viaje"} description={`${order.client} · ${number.format(order.requested)} palets`} className="order-operation-modal shipment-editor-modal" onClose={onClose}><form className="order-operation-form shipment-editor-form" onSubmit={submit}><div className="order-dialog-fields"><label>Fecha de entrega<input type="date" value={date} onChange={(event) => setDate(event.target.value)} required /></label><label>Transporte<select value={source} onChange={(event) => setSource(event.target.value as TransportSource)}><option value="internal">Transporte interno</option><option value="external">Transportista externo</option></select></label>{source === "external" && <label className="field-wide">Transportista<select value={providerId} onChange={(event) => setProviderId(event.target.value)} required><option value="" disabled>Seleccionar</option>{transporters.map((provider) => <option key={provider.id} value={provider.id}>{provider.name}</option>)}</select></label>}</div><fieldset className="order-dialog-section delivered-lines"><legend>Productos del viaje</legend>{order.lines.map((line) => <label key={line.id}><span><strong>{line.product}</strong><small>{number.format(maxFor(line))} disponibles</small></span><input aria-label={`Cantidad de ${line.product}`} type="number" min="0" max={maxFor(line)} value={quantities[line.id] || ""} onChange={(event) => setQuantities((current) => ({ ...current, [line.id]: Number(event.target.value) }))} /></label>)}</fieldset><FieldError id="shipment-editor-error">{error}</FieldError><div className="modal-actions"><button type="button" className="secondary-button" onClick={onClose}>Cancelar</button><AsyncButton type="submit" className="primary-button" loading={saving}>{shipment ? "Guardar cambios" : "Guardar viaje"}</AsyncButton></div></form></ModalShell>;
+}
+
+function OrderTrackingPanel({ order, providers, refreshKey, onAdd, onChanged, onClose }: { order?: OperationOrder; providers: Provider[]; refreshKey: number; onAdd: (order: OperationOrder) => void; onChanged: (id: string) => Promise<void>; onClose: () => void }) {
   const [history, setHistory] = useState<OrderChange[]>([]);
   const [loading, setLoading] = useState(true);
+  const [tab, setTab] = useState<"summary" | "production" | "shipments">("summary");
+  const [allocationLine, setAllocationLine] = useState<OrderLine | null>(null);
+  const [shipmentEditor, setShipmentEditor] = useState<Shipment | "new" | null>(null);
+  const panelRef = useRef<HTMLElement>(null);
   const orderId = order?.id;
 
   useEffect(() => {
@@ -485,24 +499,34 @@ function OrderTrackingPanel({ order, providers, refreshKey, onAdd }: { order?: O
       .finally(() => setLoading(false));
   }, [orderId, refreshKey]);
 
+  useEffect(() => {
+    if (!orderId) return;
+    const frame = window.requestAnimationFrame(() => panelRef.current?.focus({ preventScroll: true }));
+    return () => window.cancelAnimationFrame(frame);
+  }, [orderId]);
+
   if (!order) {
     return <aside className="detail-column order-tracking-panel empty-order-detail" aria-label="Seguimiento del pedido"><strong>Seleccione un pedido</strong></aside>;
   }
   const productionSourceLabel = order.productionSource === "sawmill" ? "Otro aserradero" : order.productionSource === "import" ? "Importación" : "Producción interna";
   const producer = order.productionSource === "internal" ? "Ecoase" : providers.find((provider) => provider.id === order.producerProviderId)?.name ?? "—";
   const transportOrigin = order.transportSource === "internal" ? "Interno" : "Externo";
+  const stockAlerts = order.lines.filter((line) => line.stockRisk && ["red", "orange", "yellow"].includes(line.stockRisk.level));
 
   return (
-    <aside className="detail-column order-tracking-panel" aria-labelledby="tracking-title">
+    <aside ref={panelRef} className="detail-column order-tracking-panel" aria-labelledby="tracking-title" tabIndex={-1}>
       <div className="tracking-heading">
         <div><small>Seguimiento del pedido</small><h2 id="tracking-title">{order.client}</h2><p>{order.product}</p></div>
-        <StageBadge stage={getOrderStage(order)} />
+        <div className="tracking-heading-actions"><StageBadge stage={getOrderStage(order)} /><button type="button" className="tracking-close-button" onClick={onClose} aria-label="Cerrar seguimiento del pedido" title="Cerrar detalle"><X size={18} aria-hidden="true" /></button></div>
       </div>
+      <nav className="tracking-tabs" aria-label="Secciones del pedido"><button type="button" className={tab === "summary" ? "active" : ""} onClick={() => setTab("summary")}>Resumen</button><button type="button" className={tab === "production" ? "active" : ""} onClick={() => setTab("production")}>Producción</button><button type="button" className={tab === "shipments" ? "active" : ""} onClick={() => setTab("shipments")}>Viajes <span>{order.shipments?.length ?? 0}</span></button></nav>
+      {tab === "summary" && <>
       <div className="tracking-summary" aria-label="Resumen de cantidades">
         <div><small>Pedido</small><strong>{number.format(order.requested)}</strong></div>
         <div><small>Entregado</small><strong>{number.format(order.delivered)}</strong></div>
         <div><small>Saldo</small><strong>{number.format(order.pending)}</strong></div>
       </div>
+      {stockAlerts.length > 0 && <section className="order-stock-alerts" aria-label="Alertas de stock"><AlertTriangle size={17} /><div><strong>{stockAlerts.length === 1 ? "1 producto con riesgo de stock" : `${stockAlerts.length} productos con riesgo de stock`}</strong>{stockAlerts.map((line) => <span key={line.id}>{line.product}: {number.format(line.stockRisk!.available)} disponibles{line.stockRisk!.daysToBreak === undefined ? " · sin consumo informado" : ` · ${number.format(line.stockRisk!.daysToBreak)} días de cobertura`}</span>)}</div><a href="/stock">Ver stock</a></section>}
       <section className="tracking-order-data" aria-label="Datos del pedido">
         <div><small>Referencia</small><strong>{visibleReference(order) || "—"}</strong></div>
         <div><small>Código Zeta</small><strong>{order.zetaCode ?? "—"}</strong></div>
@@ -532,6 +556,11 @@ function OrderTrackingPanel({ order, providers, refreshKey, onAdd }: { order?: O
           </article>
         )) : <p className="tracking-empty">Todavía no hay actualizaciones registradas.</p>}
       </section>
+      </>}
+      {tab === "production" && <section className="tracking-operation-list production-table-panel" aria-labelledby="production-allocations-title"><header><div><h3 id="production-allocations-title">Plan de producción</h3><small>Una fila por producto</small></div></header><div className="production-table-wrap"><table className="production-tracking-table"><thead><tr><th scope="col">Producto del pedido</th><th scope="col">Total palets</th><th scope="col">Marcados</th><th scope="col">Pend. marcado</th><th scope="col">Listo</th><th scope="col">Planificación</th><th scope="col"><span className="sr-only">Acción</span></th></tr></thead><tbody>{order.lines.map((line) => { const requiresTreatment = order.requiredOperations?.includes("treatment"); const allocations = line.productionAllocations ?? []; return <tr key={line.id}><th scope="row">{line.product}</th><td className="numeric-cell">{number.format(line.quantity)}</td><td className="numeric-cell">{requiresTreatment ? number.format(line.treatedQuantity ?? 0) : "—"}</td><td className="numeric-cell">{requiresTreatment ? number.format(line.treatmentPendingQuantity ?? line.quantity) : "—"}</td><td className="numeric-cell">{requiresTreatment ? number.format(line.readyReservedQuantity ?? 0) : "—"}</td><td>{allocations.length ? <div className="production-table-allocations">{allocations.map((allocation) => <span key={allocation.id}><strong>{formatOrderDate(allocation.plannedDate)}</strong><small>{number.format(allocation.plannedQuantity)} · {allocation.resourceId ?? "Sin recurso"} · {allocation.status === "confirmed" ? "Confirmado" : allocation.status === "completed" ? "Completado" : "Borrador"}</small></span>)}</div> : <span className="production-unplanned">Sin distribuir</span>}</td><td className="production-table-action"><button type="button" className="secondary-button" onClick={() => setAllocationLine(line)}>Distribuir</button></td></tr>; })}</tbody></table></div></section>}
+      {tab === "shipments" && <section className="tracking-operation-list shipment-table-panel" aria-labelledby="tracking-shipments-title"><header><div><h3 id="tracking-shipments-title">Viajes del pedido</h3><small>Entregas parciales y remitos</small></div><button type="button" className="secondary-button" onClick={() => setShipmentEditor("new")}><Plus size={15} />Agregar viaje</button></header>{(order.shipments ?? []).length ? <div className="production-table-wrap shipment-table-wrap"><table className="production-tracking-table shipment-tracking-table"><thead><tr><th scope="col">Entrega</th><th scope="col">Transporte</th><th scope="col">Palets</th><th scope="col">Entregados</th><th scope="col">Estado</th><th scope="col">Productos</th><th scope="col">Remito</th><th scope="col"><span className="sr-only">Acción</span></th></tr></thead><tbody>{(order.shipments ?? []).map((shipment) => { const products = Array.from(new Set(shipment.lines.map((line) => line.product))); return <tr key={shipment.id}><th scope="row">{formatOrderDate(shipment.plannedDate)}</th><td>{shipment.transportLabel}</td><td className="numeric-cell">{number.format(shipment.lines.reduce((sum, line) => sum + line.plannedQuantity, 0))}</td><td className="numeric-cell">{number.format(shipment.lines.reduce((sum, line) => sum + line.deliveredQuantity, 0))}</td><td><span className={`shipment-table-status ${shipment.status}`}>{shipmentStatusLabels[shipment.status]}</span></td><td><div className="shipment-table-products">{products.map((product) => <strong key={product}>{product}</strong>)}</div></td><td><span className={shipment.remittance ? undefined : "shipment-remittance-pending"}>{shipment.remittance || "Pendiente"}</span></td><td className="production-table-action">{shipment.status === "planned" ? <button type="button" className="secondary-button" onClick={() => setShipmentEditor(shipment)}>Editar</button> : <span aria-hidden="true">—</span>}</td></tr>; })}</tbody></table></div> : <p className="tracking-empty">Todavía no hay viajes.</p>}</section>}
+      {allocationLine && <ProductionAllocationModal line={allocationLine} providers={providers} onClose={() => setAllocationLine(null)} onSaved={() => onChanged(order.id)} />}
+      {shipmentEditor && <ShipmentEditorModal order={order} shipment={shipmentEditor === "new" ? undefined : shipmentEditor} providers={providers} onClose={() => setShipmentEditor(null)} onSaved={() => onChanged(order.id)} />}
     </aside>
   );
 }
@@ -573,7 +602,7 @@ function OrderUpdateModal({ order, onClose, onSave }: { order: OperationOrder; o
         <form onSubmit={submit}>
           <label className="field-wide">Tipo de actualización<select value={kind} onChange={(event) => setKind(event.target.value as TrackingUpdate["kind"])}><option value="entrega">Entrega</option><option value="despacho">Despacho</option><option value="direccion">Dirección de entrega</option><option value="incidencia">Incidencia</option></select></label>
           {kind === "entrega" && <><label>Cantidad entregada<input name="deliveredQuantity" type="number" min="1" max={order.pending} step="1" required /></label><label>Fecha de entrega<input name="deliveredAt" type="datetime-local" /></label></>}
-          {kind === "despacho" && <><label>Fecha y hora de salida<input name="dispatchedAt" type="datetime-local" /></label><label>Remito<input name="remittance" defaultValue={order.remittance ?? ""} placeholder="Ej. 603" /></label></>}
+          {kind === "despacho" && <><label>Fecha y hora de salida<input name="dispatchedAt" type="datetime-local" /></label><label>Remito<input name="remittance" defaultValue={order.remittance ?? ""} placeholder="Ej. 603" required /></label></>}
           {kind === "direccion" && <label className="field-wide">Dirección de entrega<input name="deliveryAddress" defaultValue={order.deliveryAddress ?? ""} required /></label>}
           {kind === "incidencia" && <label className="field-wide">Detalle de la incidencia<textarea name="note" rows={4} required /></label>}
           {error && <p className="form-error" role="alert">{error}</p>}
@@ -669,7 +698,7 @@ function EditPlanModal({ order, providers, onClose, onSave }: {
             <label>Origen<select value={productionSource} onChange={(event) => { setProductionSource(event.target.value as ProductionSource); setProducerProviderId(""); }}><option value="internal">Producción interna</option><option value="sawmill">Otro aserradero</option><option value="import">Importación</option></select></label>
             {productionSource !== "internal" && <label>{productionSource === "sawmill" ? "Aserradero" : "Importador"}<select value={producerProviderId} onChange={(event) => setProducerProviderId(event.target.value)} required><option value="" disabled>Seleccionar</option>{producers.map((provider) => <option key={provider.id} value={provider.id}>{provider.name}</option>)}</select></label>}
             {productionSource === "import" ? <label>Fecha prevista de llegada<input type="date" value={arrivalDate} onChange={(event) => setArrivalDate(event.target.value)} required /></label> : <label>Fecha de producción<input type="date" value={productionDate} onChange={(event) => setProductionDate(event.target.value)} required /></label>}
-            <div className="operation-options"><strong>Operaciones requeridas</strong>{(["assembly", "marking", "ht"] as CapacityOperation[]).map((operation) => <label key={operation}><input type="checkbox" checked={requiredOperations.includes(operation)} onChange={(event) => setRequiredOperations((current) => event.target.checked ? [...new Set([...current, operation])] : current.filter((item) => item !== operation))} />{capacityOperationLabels[operation]}</label>)}</div>
+            <div className="operation-options"><strong>Operaciones requeridas</strong>{(["assembly", "treatment"] as CapacityOperation[]).map((operation) => <label key={operation}><input type="checkbox" checked={requiredOperations.includes(operation)} onChange={(event) => setRequiredOperations((current) => event.target.checked ? [...new Set([...current, operation])] : current.filter((item) => item !== operation))} />{capacityOperationLabels[operation]}</label>)}</div>
             <CapacityHint date={productionSource === "import" ? arrivalDate : productionDate} source={productionSource} providerId={producerProviderId} operations={requiredOperations} quantity={quantity} />
           </fieldset>
           <fieldset className="field-wide assignment-fieldset"><legend>Transporte</legend>
@@ -749,22 +778,25 @@ function CapacityHint({ date, source, providerId, operations, quantity, transpor
   return <div className={`capacity-hint ${overload ? "danger" : "ok"}`}><strong>Capacidad: {number.format(capacity)}</strong><strong>Utilizada: {number.format(used)}</strong><strong>Restante: {number.format(Math.max(remaining, 0))}</strong>{overload && <p><AlertTriangle size={16} />Supera el límite por {number.format(quantity - remaining)} palets. Se puede guardar igualmente.</p>}</div>;
 }
 
-function AddOrderModal({ clientOptions, products, providers, onClose, onCreated }: { clientOptions: string[]; products: Product[]; providers: Provider[]; onClose: () => void; onCreated: (order: OperationOrder) => void }) {
+function AddOrderModal({ clientOptions, products, providers, initialDeliveryDate, onClose, onCreated }: { clientOptions: ClientSummary[]; products: Product[]; providers: Provider[]; initialDeliveryDate?: string; onClose: () => void; onCreated: (order: OperationOrder) => void }) {
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
-  const [productId, setProductId] = useState("");
+  const [clientId, setClientId] = useState("");
+  const [clientProducts, setClientProducts] = useState<ClientProductOption[]>([]);
+  const [loadingProducts, setLoadingProducts] = useState(false);
+  const [orderLines, setOrderLines] = useState<Array<{ clientProductId: string; quantity: number }>>([{ clientProductId: "", quantity: 0 }]);
   const [productionSource, setProductionSource] = useState<ProductionSource>("internal");
   const [transportSource, setTransportSource] = useState<TransportSource>("internal");
   const [producerProviderId, setProducerProviderId] = useState("");
   const [transportProviderId, setTransportProviderId] = useState("");
   const [productionDate, setProductionDate] = useState("");
   const [arrivalDate, setArrivalDate] = useState("");
-  const [deliveryDate, setDeliveryDate] = useState("");
-  const [quantity, setQuantity] = useState(0);
+  const [deliveryDate, setDeliveryDate] = useState(initialDeliveryDate ?? "");
   const [requiredOperations, setRequiredOperations] = useState<CapacityOperation[]>(["assembly"]);
   const clientInputRef = useRef<HTMLSelectElement>(null);
 
-  const selectedProduct = products.find((product) => product.id === productId);
+  const selectedClientProduct = clientProducts.find((product) => String(product.id) === orderLines[0]?.clientProductId);
+  const quantity = orderLines.reduce((sum, line) => sum + (Number.isFinite(line.quantity) ? line.quantity : 0), 0);
   const producers = providers.filter((provider) => provider.type === (productionSource === "sawmill" ? "Aserradero" : "Importador"));
   const transporters = providers.filter((provider) => provider.type === "Transporte");
 
@@ -775,6 +807,25 @@ function AddOrderModal({ clientOptions, products, providers, onClose, onCreated 
     return () => window.removeEventListener("keydown", closeOnEscape);
   }, [onClose]);
 
+  useEffect(() => {
+    if (!clientId) return;
+    const controller = new AbortController();
+    fetch(`/api/clients/${clientId}/products?active=true`, { signal: controller.signal }).then(async (response) => {
+      const payload = await response.json() as { products?: ClientProductOption[]; error?: string };
+      if (!response.ok) throw new Error(payload.error ?? "No se pudieron cargar los productos.");
+      const options = payload.products ?? [];
+      setClientProducts(options);
+      if (options.length === 1) {
+        setOrderLines([{ clientProductId: String(options[0].id), quantity: 0 }]);
+        const product = products.find((item) => item.id === options[0].productId);
+        const suggested: CapacityOperation[] = ["assembly"];
+        if (product?.requiresTreatment) suggested.push("treatment");
+        setRequiredOperations(suggested);
+      }
+    }).catch((caught) => { if (caught.name !== "AbortError") setError(caught.message); }).finally(() => setLoadingProducts(false));
+    return () => controller.abort();
+  }, [clientId, products]);
+
   const submit = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
     setSaving(true);
@@ -784,11 +835,8 @@ function AddOrderModal({ clientOptions, products, providers, onClose, onCreated 
       method: "POST",
       headers: { "content-type": "application/json" },
       body: JSON.stringify({
-        client: form.get("client"),
+        lines: orderLines,
         reference: form.get("reference"),
-        zetaCode: form.get("zetaCode"),
-        product: selectedProduct ? productOptionLabel(selectedProduct) : "",
-        requested: Number(form.get("requested")),
         orderDate: form.get("orderDate"),
         requestedDeliveryDate: form.get("requestedDeliveryDate"),
         plannedDate: deliveryDate,
@@ -800,7 +848,6 @@ function AddOrderModal({ clientOptions, products, providers, onClose, onCreated 
         requiredOperations,
         transportSource,
         transportProviderId: transportSource === "external" ? transportProviderId : undefined,
-        deliveryAddress: form.get("deliveryAddress"),
         notes: form.get("notes"),
       }),
     });
@@ -821,20 +868,28 @@ function AddOrderModal({ clientOptions, products, providers, onClose, onCreated 
           <button type="button" onClick={onClose} aria-label="Cerrar"><X size={18} aria-hidden="true" /></button>
         </div>
         <form onSubmit={submit}>
-          <label>Cliente<select ref={clientInputRef} name="client" required defaultValue=""><option value="" disabled>Seleccionar cliente</option>{clientOptions.map((client) => <option key={client} value={client}>{client}</option>)}</select></label>
+          <label>Cliente<select ref={clientInputRef} required value={clientId} onChange={(event) => { setClientId(event.target.value); setClientProducts([]); setOrderLines([{ clientProductId: "", quantity: 0 }]); setLoadingProducts(true); setError(""); }}><option value="" disabled>Seleccionar cliente</option>{clientOptions.map((client) => <option key={client.id} value={client.id}>{client.name}</option>)}</select></label>
           <label>Orden o referencia<input name="reference" placeholder="Ej. Orden 184834" /></label>
-          <label>Código Zeta<input name="zetaCode" placeholder="Ej. 184833" /></label>
+          <label>Códigos Zeta<output className="readonly-value">{orderLines.map((line) => clientProducts.find((item) => String(item.id) === line.clientProductId)?.zetaCode).filter(Boolean).join(" · ") || "Se completan al elegir los productos"}</output></label>
           <label>Fecha del pedido<input name="orderDate" type="date" required /></label>
-          <label className="field-wide">Producto<select required value={productId} onChange={(event) => { const nextId = event.target.value; const nextProduct = products.find((product) => product.id === nextId); const suggested: CapacityOperation[] = ["assembly"]; if (nextProduct?.treatment?.includes("Marcado")) suggested.push("marking"); if (nextProduct?.treatment?.includes("HT")) suggested.push("ht"); setProductId(nextId); setRequiredOperations(suggested); }}><option value="" disabled>Seleccionar producto</option>{products.map((product) => <option key={product.id} value={product.id}>{productOptionLabel(product)}</option>)}</select></label>
-          <label>Cantidad<input name="requested" type="number" min="1" step="1" value={quantity || ""} onChange={(event) => setQuantity(Number(event.target.value))} required /></label>
-          <label>Fecha solicitada<input name="requestedDeliveryDate" type="date" required /></label>
+          <fieldset className="field-wide order-lines-fieldset"><legend>Productos y cantidades</legend>
+            {orderLines.map((line, index) => <div className="order-line-editor" key={index}>
+              <label>Producto habilitado<select required disabled={!clientId || loadingProducts} value={line.clientProductId} onChange={(event) => { const next = [...orderLines]; next[index] = { ...next[index], clientProductId: event.target.value }; setOrderLines(next); const selected = clientProducts.filter((item) => next.some((entry) => entry.clientProductId === String(item.id))); const suggested: CapacityOperation[] = ["assembly"]; if (selected.some((item) => products.find((product) => product.id === item.productId)?.requiresTreatment)) suggested.push("treatment"); setRequiredOperations(suggested); }}><option value="" disabled>{loadingProducts ? "Cargando…" : "Seleccionar producto"}</option>{clientProducts.filter((item) => !orderLines.some((entry, position) => position !== index && entry.clientProductId === String(item.id))).map((product) => <option key={product.id} value={String(product.id)}>{product.label}</option>)}</select></label>
+              <label>Cantidad<input type="number" min="1" step="1" value={line.quantity || ""} onChange={(event) => { const next = [...orderLines]; next[index] = { ...next[index], quantity: Number(event.target.value) }; setOrderLines(next); }} required /></label>
+              {orderLines.length > 1 && <button type="button" className="icon-button" onClick={() => setOrderLines((current) => current.filter((_, position) => position !== index))} aria-label="Quitar producto"><X size={16} /></button>}
+            </div>)}
+            {clientId && orderLines.length < clientProducts.length && <button type="button" className="secondary-button add-order-line" onClick={() => setOrderLines((current) => [...current, { clientProductId: "", quantity: 0 }])}><Plus size={16} />Agregar otro producto</button>}
+            {clientId && !loadingProducts && clientProducts.length === 0 && <small className="field-help">Este cliente no tiene productos disponibles.</small>}
+            <output className="order-lines-total">Total del pedido: <strong>{number.format(quantity)} palets</strong></output>
+          </fieldset>
+          <label>Fecha solicitada<input name="requestedDeliveryDate" type="date" defaultValue={initialDeliveryDate} required /></label>
           <label>Fecha de entrega<input type="date" value={deliveryDate} onChange={(event) => setDeliveryDate(event.target.value)} required /></label>
           <label>Etapa<select name="stage" required defaultValue="negociacion">{editableStages.filter((stage) => stage !== "completado").map((stage) => <option key={stage} value={stage}>{stageLabels[stage]}</option>)}</select></label>
           <fieldset className="field-wide assignment-fieldset"><legend>Producción</legend>
             <label>Origen de producción<select value={productionSource} onChange={(event) => { setProductionSource(event.target.value as ProductionSource); setProducerProviderId(""); }}><option value="internal">Producción interna</option><option value="sawmill">Otro aserradero</option><option value="import">Importación</option></select></label>
             {productionSource !== "internal" && <label>{productionSource === "sawmill" ? "Aserradero" : "Importador"}<select value={producerProviderId} onChange={(event) => setProducerProviderId(event.target.value)} required><option value="" disabled>Seleccionar proveedor</option>{producers.map((provider) => <option key={provider.id} value={provider.id}>{provider.name}</option>)}</select></label>}
             {productionSource === "import" ? <label>Fecha prevista de llegada<input type="date" value={arrivalDate} onChange={(event) => setArrivalDate(event.target.value)} required /></label> : <label>Fecha de producción<input type="date" value={productionDate} onChange={(event) => setProductionDate(event.target.value)} required /></label>}
-            <div className="operation-options"><strong>Operaciones requeridas</strong>{(["assembly", "marking", "ht"] as CapacityOperation[]).map((operation) => <label key={operation}><input type="checkbox" checked={requiredOperations.includes(operation)} onChange={(event) => setRequiredOperations((current) => event.target.checked ? [...new Set([...current, operation])] : current.filter((item) => item !== operation))} />{capacityOperationLabels[operation]}</label>)}</div>
+            <div className="operation-options"><strong>Operaciones requeridas</strong>{(["assembly", "treatment"] as CapacityOperation[]).map((operation) => <label key={operation}><input type="checkbox" checked={requiredOperations.includes(operation)} onChange={(event) => setRequiredOperations((current) => event.target.checked ? [...new Set([...current, operation])] : current.filter((item) => item !== operation))} />{capacityOperationLabels[operation]}</label>)}</div>
             <CapacityHint date={productionSource === "import" ? arrivalDate : productionDate} source={productionSource} providerId={producerProviderId} operations={requiredOperations} quantity={quantity} />
           </fieldset>
           <fieldset className="field-wide assignment-fieldset"><legend>Transporte</legend>
@@ -842,7 +897,7 @@ function AddOrderModal({ clientOptions, products, providers, onClose, onCreated 
             {transportSource === "external" && <label>Transportista<select value={transportProviderId} onChange={(event) => setTransportProviderId(event.target.value)} required><option value="" disabled>Seleccionar transportista</option>{transporters.map((provider) => <option key={provider.id} value={provider.id}>{provider.name}</option>)}</select></label>}
             <CapacityHint date={deliveryDate} source={transportSource} providerId={transportProviderId} quantity={quantity} transport />
           </fieldset>
-          <label className="field-wide">Dirección de entrega<input name="deliveryAddress" autoComplete="street-address" /></label>
+          <label className="field-wide">Dirección de entrega<output className="readonly-value">{selectedClientProduct?.clientAddress || "—"}</output></label>
           <label className="field-wide">Observaciones<textarea name="notes" rows={3} /></label>
           {error && <p className="form-error" role="alert">{error}</p>}
           <div className="modal-actions">
@@ -855,16 +910,20 @@ function AddOrderModal({ clientOptions, products, providers, onClose, onCreated 
   );
 }
 
-export default function Dashboard({ initialSection = "pedidos" }: { initialSection?: DashboardSection }) {
+export default function Dashboard({ initialSection = "calendario", initialClientId, initialProductionView = "production", initialProductionDate, initialStockRiskFilter }: { initialSection?: DashboardSection; initialClientId?: string; initialProductionView?: ProductionWorkspaceView; initialProductionDate?: string; initialStockRiskFilter?: "alert" }) {
   const [section, setSection] = useState<DashboardSection>(initialSection);
+  const [mobileNavOpen, setMobileNavOpen] = useState(false);
   const [query, setQuery] = useState("");
-  const [kpiPeriod, setKpiPeriod] = useState<KpiPeriod>("week");
+  const [orderKpiFilter, setOrderKpiFilter] = useState<"in-progress" | "waiting" | "total" | "compliance" | "">("");
+  const kpiPeriod: KpiPeriod = "week";
   const [orderRows, setOrderRows] = useState<OperationOrder[]>(initialOrders);
   const [providerRows, setProviderRows] = useState<Provider[]>(initialProviders);
-  const [productRows, setProductRows] = useState<Product[]>(initialProducts);
-  const [registeredClients, setRegisteredClients] = useState<Array<Pick<ClientSummary, "name" | "address" | "department">>>([]);
-  const [selectedId, setSelectedId] = useState(initialOrders[0].id);
+  const [productRows, setProductRows] = useState<Product[]>(() => [...initialProducts].sort(compareProductsByInternalCode));
+  const [registeredClients, setRegisteredClients] = useState<Array<Pick<ClientSummary, "id" | "name" | "address" | "department" | "active">>>([]);
+  const [selectedId, setSelectedId] = useState("");
   const [showAddOrder, setShowAddOrder] = useState(false);
+  const [addOrderDate, setAddOrderDate] = useState<string | undefined>();
+  const [calendarRevision, setCalendarRevision] = useState(0);
   const [showAddProduct, setShowAddProduct] = useState(false);
   const [showAddClient, setShowAddClient] = useState(false);
   const [editingPlanOrder, setEditingPlanOrder] = useState<OperationOrder | null>(null);
@@ -894,8 +953,8 @@ export default function Dashboard({ initialSection = "pedidos" }: { initialSecti
       .then(({ orders, providers, products, clients }) => {
         setOrderRows(orders);
         setProviderRows(providers);
-        setProductRows(products);
-        setRegisteredClients(clients.map((client) => ({ name: client.name, address: client.address, department: client.department })));
+        setProductRows([...products].sort(compareProductsByInternalCode));
+        setRegisteredClients(clients.map((client) => ({ id: client.id, name: client.name, address: client.address, department: client.department, active: client.active })));
       })
       .catch(() => undefined);
   }, []);
@@ -906,19 +965,32 @@ export default function Dashboard({ initialSection = "pedidos" }: { initialSecti
     }
   }, [initialSection]);
 
+  useEffect(() => {
+    const closeOnEscape = (event: KeyboardEvent) => { if (event.key === "Escape") setMobileNavOpen(false); };
+    window.addEventListener("keydown", closeOnEscape);
+    return () => window.removeEventListener("keydown", closeOnEscape);
+  }, []);
+
   const activeOrders = useMemo(() => orderRows.filter((order) => getOrderStage(order) !== "completado"), [orderRows]);
   const historyOrders = useMemo(() => orderRows.filter((order) => getOrderStage(order) === "completado"), [orderRows]);
   const isHistory = section === "historial";
   const visibleOrders = useMemo(() => {
     const normalized = query.trim().toLocaleLowerCase("es");
     return (isHistory ? historyOrders : activeOrders).filter((order) => {
+      if (!isHistory && orderKpiFilter) {
+        if (!isOrderInPeriod(order, kpiPeriod, today)) return false;
+        const stage = getOrderStage(order);
+        if (orderKpiFilter === "in-progress" && !["produccion", "logistica"].includes(stage)) return false;
+        if (orderKpiFilter === "waiting" && stage !== "negociacion") return false;
+        if (orderKpiFilter === "compliance" && order.delivered <= 0) return false;
+      }
       if (!normalized) return true;
       return [order.client, order.reference, order.product, order.transport]
         .some((value) => value.toLocaleLowerCase("es").includes(normalized));
     });
-  }, [activeOrders, historyOrders, isHistory, query]);
+  }, [activeOrders, historyOrders, isHistory, kpiPeriod, orderKpiFilter, query, today]);
 
-  const selectedOrder = visibleOrders.find((order) => order.id === selectedId) ?? visibleOrders[0];
+  const selectedOrder = visibleOrders.find((order) => order.id === selectedId);
   const completed = historyOrders.length;
   const kpiOrders = useMemo(() => orderRows.filter((order) => isOrderInPeriod(order, kpiPeriod, today)), [kpiPeriod, orderRows, today]);
   const kpiActiveOrders = kpiOrders.filter((order) => getOrderStage(order) !== "completado");
@@ -932,10 +1004,14 @@ export default function Dashboard({ initialSection = "pedidos" }: { initialSecti
   const periodRequested = kpiOrders.reduce((sum, order) => sum + order.requested, 0);
   const periodDelivered = kpiOrders.reduce((sum, order) => sum + order.delivered, 0);
   const deliveryRate = periodRequested ? Math.round(periodDelivered / periodRequested * 100) : 0;
+  const toggleOrderKpiFilter = (filter: Exclude<typeof orderKpiFilter, "">) => {
+    setOrderKpiFilter((current) => current === filter ? "" : filter);
+    setSelectedId("");
+  };
   const clients = useMemo<ClientSummary[]>(() => {
     const summaries = new Map<string, ClientSummary>();
     orderRows.forEach((order) => {
-      const current = summaries.get(order.client) ?? { name: order.client, orders: 0, requested: 0, delivered: 0, pending: 0, activeOrders: 0, activePallets: 0 };
+      const current = summaries.get(order.client) ?? { id: order.clientId, name: order.client, orders: 0, requested: 0, delivered: 0, pending: 0, activeOrders: 0, activePallets: 0 };
       current.orders += 1;
       current.requested += order.requested;
       current.delivered += order.delivered;
@@ -945,7 +1021,7 @@ export default function Dashboard({ initialSection = "pedidos" }: { initialSecti
     });
     registeredClients.forEach((client) => {
       const current = summaries.get(client.name);
-      if (current) Object.assign(current, { address: client.address, department: client.department });
+      if (current) Object.assign(current, { id: client.id, address: client.address, department: client.department, active: client.active });
       else summaries.set(client.name, { ...client, orders: 0, requested: 0, delivered: 0, pending: 0, activeOrders: 0, activePallets: 0 });
     });
     return [...summaries.values()].sort((a, b) => b.pending - a.pending || a.name.localeCompare(b.name, "es"));
@@ -953,16 +1029,6 @@ export default function Dashboard({ initialSection = "pedidos" }: { initialSecti
 
   const selectOrder = (id: string) => {
     setSelectedId(id);
-  };
-
-  const openClientOrders = (client: string) => {
-    const clientOrders = orderRows.filter((order) => order.client === client);
-    const firstActiveOrder = clientOrders.find((order) => getOrderStage(order) !== "completado");
-    const nextSection: DashboardSection = firstActiveOrder ? "pedidos" : "historial";
-    setSection(nextSection);
-    window.history.pushState({}, "", sectionPaths[nextSection]);
-    setQuery(client);
-    setSelectedId(firstActiveOrder?.id ?? clientOrders[0]?.id ?? activeOrders[0]?.id ?? historyOrders[0]?.id ?? "");
   };
 
   const openOrder = (id: string) => {
@@ -974,10 +1040,22 @@ export default function Dashboard({ initialSection = "pedidos" }: { initialSecti
     setSelectedId(id);
   };
 
+  const refreshOrder = async (id: string) => {
+    const response = await fetch(`/api/orders/${id}`);
+    const payload = await response.json() as { order?: OperationOrder };
+    if (response.ok && payload.order) setOrderRows((current) => current.map((order) => order.id === id ? payload.order! : order));
+  };
+
   const addCreatedOrder = (order: OperationOrder) => {
     setOrderRows((current) => [order, ...current.filter((item) => item.id !== order.id)]);
     setSelectedId(order.id);
     setQuery("");
+    if (addOrderDate) {
+      setShowAddOrder(false);
+      setAddOrderDate(undefined);
+      setCalendarRevision((current) => current + 1);
+      return;
+    }
     setSection("pedidos");
     window.history.replaceState({}, "", sectionPaths.pedidos);
     setShowAddOrder(false);
@@ -1026,7 +1104,7 @@ export default function Dashboard({ initialSection = "pedidos" }: { initialSecti
     });
     const payload = (await response.json()) as { product?: Product; error?: string };
     if (!response.ok || !payload.product) return false;
-    setProductRows((current) => current.map((product) => product.id === id ? payload.product! : product));
+    setProductRows((current) => current.map((product) => product.id === id ? payload.product! : product).sort(compareProductsByInternalCode));
     return true;
   };
 
@@ -1041,13 +1119,13 @@ export default function Dashboard({ initialSection = "pedidos" }: { initialSecti
     const response = await fetch("/api/products", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(changes) });
     const payload = (await response.json()) as { product?: Product };
     if (!response.ok || !payload.product) return false;
-    setProductRows((current) => [...current, payload.product!].sort((a, b) => productOptionLabel(a).localeCompare(productOptionLabel(b), "es")));
+    setProductRows((current) => [...current, payload.product!].sort(compareProductsByInternalCode));
     return true;
   };
 
   const addClient = async (input: { name: string; address: string; department: string }) => {
     const response = await fetch("/api/clients", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(input) });
-    const payload = (await response.json()) as { client?: { name: string; address?: string; department?: string } };
+    const payload = (await response.json()) as { client?: { id?: string; name: string; address?: string; department?: string; active?: boolean } };
     if (!response.ok || !payload.client) return false;
     setRegisteredClients((current) => [...current.filter((client) => client.name !== payload.client!.name), payload.client!].sort((a, b) => a.name.localeCompare(b.name, "es")));
     return true;
@@ -1058,7 +1136,8 @@ export default function Dashboard({ initialSection = "pedidos" }: { initialSecti
     plan: "Plan",
     calendario: "Calendario",
     logistica: "Cap. Logística",
-    capacidad: "Cap. Producción",
+    produccion: "Producción",
+    stock: "Stock",
     clientes: "Clientes",
     productos: "Productos",
     historial: "Historial",
@@ -1069,70 +1148,22 @@ export default function Dashboard({ initialSection = "pedidos" }: { initialSecti
     <div className="dashboard-shell">
       <button className="skip-link" type="button" onClick={() => document.getElementById("main-content")?.focus()}>Saltar al contenido</button>
 
-      <aside className="app-sidebar" aria-label="Navegación principal">
-        <div className="brand" aria-label="Ecoase">
-          <i className="brand-mark" aria-hidden="true">E</i>
-          <div><strong>Ecoase</strong><small>Control operativo</small></div>
-        </div>
-
-        <div className="sidebar-section">
-          <p>Principal</p>
-          <nav aria-label="Secciones principales">
-            <a className={section === "pedidos" ? "active" : ""} href="/pedidos" aria-current={section === "pedidos" ? "page" : undefined}>
-              <ClipboardList size={17} aria-hidden="true" /><small>Pedidos</small>
-            </a>
-            <a className={section === "plan" ? "active" : ""} href="/plan" aria-current={section === "plan" ? "page" : undefined}>
-              <ListChecks size={17} aria-hidden="true" /><small>Plan</small>
-            </a>
-            <a className={section === "calendario" ? "active" : ""} href="/calendario" aria-current={section === "calendario" ? "page" : undefined}>
-              <CalendarDays size={17} aria-hidden="true" /><small>Calendario</small>
-            </a>
-            <a className={section === "logistica" ? "active" : ""} href="/logistica" aria-current={section === "logistica" ? "page" : undefined}>
-              <Truck size={17} aria-hidden="true" /><small>Cap. Logística</small>
-            </a>
-            <a className={section === "capacidad" ? "active" : ""} href="/capacidad" aria-current={section === "capacidad" ? "page" : undefined}>
-              <Gauge size={17} aria-hidden="true" /><small>Cap. Producción</small>
-            </a>
-            <a className={section === "clientes" ? "active" : ""} href="/clientes" aria-current={section === "clientes" ? "page" : undefined}>
-              <Users size={17} aria-hidden="true" /><small>Clientes</small>
-            </a>
-            <a className={section === "productos" ? "active" : ""} href="/productos" aria-current={section === "productos" ? "page" : undefined}>
-              <Package size={17} aria-hidden="true" /><small>Productos</small>
-            </a>
-            <a className={section === "proveedores" ? "active" : ""} href="/proveedores" aria-current={section === "proveedores" ? "page" : undefined}>
-              <Factory size={17} aria-hidden="true" /><small>Proveedores</small>
-            </a>
-            <a className={section === "historial" ? "active" : ""} href="/historial" aria-current={section === "historial" ? "page" : undefined}>
-              <Archive size={17} aria-hidden="true" /><small>Historial</small><b>{completed}</b>
-            </a>
-          </nav>
-        </div>
-
-        <div className="sidebar-week">
-          <CalendarDays size={17} aria-hidden="true" />
-          <div><small>Plan semanal</small><strong>10–15 agosto 2026</strong></div>
-        </div>
-      </aside>
+      <AppNavigation section={section} completed={completed} open={mobileNavOpen} onClose={() => setMobileNavOpen(false)} />
 
       <div className="workspace">
+        <div className="mobile-header"><MobileNavigationButton open={mobileNavOpen} onClick={() => setMobileNavOpen((current) => !current)} /><div><strong>Ecoase</strong><small>{sectionCopy[section]}</small></div></div>
         <main id="main-content" className="dashboard-main" tabIndex={-1}>
-        <section className="dashboard-heading" aria-labelledby="page-title">
-          <div>
-            <h1 id="page-title">{sectionCopy[section]}</h1>
-          </div>
-          {section === "pedidos" && <label className="kpi-period-filter">Período<select value={kpiPeriod} onChange={(event) => setKpiPeriod(event.target.value as KpiPeriod)} aria-label="Período de los indicadores"><option value="today">Hoy</option><option value="week">Esta semana</option></select></label>}
-        </section>
 
         {section === "pedidos" && (
-          <section className="dashboard-kpis" aria-label="Indicadores de pedidos">
-            <article className="kpi-card kpi-yellow"><strong>{number.format(palletsInProgress)}</strong><small>Palets en marcha</small></article>
-            <article className="kpi-card kpi-red"><strong>{number.format(palletsWaiting)}</strong><small>Palets en espera</small></article>
-            <article className="kpi-card kpi-blue"><strong>{number.format(totalPallets)}</strong><small>Palets totales</small></article>
-            <article className="kpi-card kpi-green"><strong>{deliveryRate}%</strong><small>Nivel de cumplimiento</small></article>
+          <section className="dashboard-kpis" aria-label="Filtros rápidos de pedidos">
+            <button type="button" className="kpi-card kpi-yellow" aria-pressed={orderKpiFilter === "in-progress"} onClick={() => toggleOrderKpiFilter("in-progress")}><strong>{number.format(palletsInProgress)}</strong><small>Palets en marcha</small></button>
+            <button type="button" className="kpi-card kpi-red" aria-pressed={orderKpiFilter === "waiting"} onClick={() => toggleOrderKpiFilter("waiting")}><strong>{number.format(palletsWaiting)}</strong><small>Palets en espera</small></button>
+            <button type="button" className="kpi-card kpi-blue" aria-pressed={orderKpiFilter === "total"} onClick={() => toggleOrderKpiFilter("total")}><strong>{number.format(totalPallets)}</strong><small>Palets totales</small></button>
+            <button type="button" className="kpi-card kpi-green" aria-pressed={orderKpiFilter === "compliance"} onClick={() => toggleOrderKpiFilter("compliance")}><strong>{deliveryRate}%</strong><small>Nivel de cumplimiento</small></button>
           </section>
         )}
 
-        {(section === "pedidos" || section === "historial") ? <div className="operations-layout">
+        {(section === "pedidos" || section === "historial") ? <div className={`operations-layout ${selectedOrder ? "detail-open" : ""}`}>
           <section className="orders-surface" aria-labelledby="orders-title">
             <div className="orders-toolbar">
               <div>
@@ -1154,7 +1185,7 @@ export default function Dashboard({ initialSection = "pedidos" }: { initialSecti
                   </button>
                 )}
               </label>
-              {!isHistory && <button type="button" className="add-order-button" onClick={() => setShowAddOrder(true)}><Plus size={17} aria-hidden="true" />Agregar pedido</button>}
+              {!isHistory && <button type="button" className="add-order-button" onClick={() => { setAddOrderDate(undefined); setShowAddOrder(true); }}><Plus size={17} aria-hidden="true" />Agregar pedido</button>}
               </div>
             </div>
 
@@ -1195,16 +1226,16 @@ export default function Dashboard({ initialSection = "pedidos" }: { initialSecti
             </div>
           </section>
 
-          <OrderTrackingPanel key={selectedOrder?.id ?? "empty"} order={selectedOrder} providers={providerRows} refreshKey={trackingRevision} onAdd={setUpdatingOrder} />
-        </div> : section === "plan" ? <><PlanView orders={activeOrders} onEdit={setEditingPlanOrder} />{updateError && <p className="plan-error" role="alert">{updateError}</p>}</> : section === "calendario" ? <CalendarView orders={activeOrders} onOpen={openOrder} /> : section === "logistica" ? <LogisticsView orders={activeOrders} providers={providerRows} onOpen={openOrder} /> : section === "capacidad" ? <CapacityView providers={providerRows} /> : section === "productos" ? <ProductsView products={productRows} onEdit={setEditingProduct} onAdd={() => setShowAddProduct(true)} /> : section === "proveedores" ? <ProvidersView providers={providerRows} /> : <ClientsView clients={clients} onOpen={openClientOrders} onAdd={() => setShowAddClient(true)} />}
+          <div className={`order-detail-slot ${selectedOrder ? "open" : ""}`} aria-hidden={!selectedOrder}>{selectedOrder && <OrderTrackingPanel key={selectedOrder.id} order={selectedOrder} providers={providerRows} refreshKey={trackingRevision} onAdd={setUpdatingOrder} onChanged={refreshOrder} onClose={() => setSelectedId("")} />}</div>
+        </div> : section === "plan" ? <><PlanView orders={activeOrders} onEdit={setEditingPlanOrder} />{updateError && <p className="plan-error" role="alert">{updateError}</p>}</> : section === "calendario" ? <OperationsCalendarView key={calendarRevision} onOpen={openOrder} onAdd={(date) => { setAddOrderDate(date); setShowAddOrder(true); }} onChanged={refreshOrder} /> : section === "logistica" ? <OperationsLogisticsView onOpen={openOrder} onChanged={refreshOrder} /> : section === "produccion" ? initialProductionView === "marking" ? <TreatmentView /> : <CapacityView providers={providerRows} view={initialProductionView} initialDate={initialProductionDate} /> : section === "stock" ? <StockView initialRiskFilter={initialStockRiskFilter} /> : section === "productos" ? <ProductsView products={productRows} onEdit={setEditingProduct} onAdd={() => setShowAddProduct(true)} /> : section === "proveedores" ? <ProvidersView providers={providerRows} /> : <ClientMasterView clients={clients} products={productRows} initialClientId={initialClientId} onAdd={() => setShowAddClient(true)} />}
         </main>
 
       </div>
-      {showAddOrder && <AddOrderModal clientOptions={clients.map((client) => client.name)} products={productRows} providers={providerRows} onClose={() => setShowAddOrder(false)} onCreated={addCreatedOrder} />}
+      {showAddOrder && <AddOrderModal clientOptions={clients.filter((client) => client.id && client.active)} products={productRows} providers={providerRows} initialDeliveryDate={addOrderDate} onClose={() => { setShowAddOrder(false); setAddOrderDate(undefined); }} onCreated={addCreatedOrder} />}
       {showAddProduct && <AddProductModal onClose={() => setShowAddProduct(false)} onSave={addProduct} />}
       {showAddClient && <AddClientModal onClose={() => setShowAddClient(false)} onSave={addClient} />}
       {editingPlanOrder && <EditPlanModal order={editingPlanOrder} providers={providerRows} onClose={() => setEditingPlanOrder(null)} onSave={(changes) => updateOrder(editingPlanOrder.id, changes)} />}
-      {editingProduct && <EditProductModal product={editingProduct} onClose={() => setEditingProduct(null)} onSave={updateProduct} onDelete={removeProduct} />}
+      {editingProduct && <EditProductModal product={editingProduct} clients={clients} onClose={() => setEditingProduct(null)} onSave={updateProduct} onDelete={removeProduct} />}
       {updatingOrder && <OrderUpdateModal order={updatingOrder} onClose={() => setUpdatingOrder(null)} onSave={(update) => recordUpdate(updatingOrder.id, update)} />}
     </div>
   );

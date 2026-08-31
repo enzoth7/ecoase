@@ -22,8 +22,10 @@ test("distingue proveedores de aserradero y transporte", () => {
 test("conserva una sola fila por medida y tipo", () => {
   const productKeys = products.map((product) => `${product.kind}|${product.measure ?? "sin medida"}`);
   assert.equal(new Set(productKeys).size, products.length);
-  assert.ok(products.some((product) => product.measure === "120 × 100" && product.treatment === "Marcado y HT"));
-  assert.ok(products.every((product) => Object.keys(product).every((field) => ["id", "kind", "measure", "treatment"].includes(field))));
+  assert.ok(products.some((product) => product.measure === "120 × 100" && product.treatment === "Marcado"));
+  assert.ok(products.every((product) => !product.treatment || product.treatment === "Marcado"));
+  assert.ok(products.every((product) => Object.keys(product).every((field) => ["id", "kind", "measure", "treatment", "requiresTreatment", "stockName", "sourceCatalog", "sourceCode", "zetaCode", "stockActive"].includes(field))));
+  assert.ok(products.every((product) => product.requiresTreatment === Boolean(product.treatment)));
 });
 
 test("cada pedido reconcilia pedido, entrega y saldo", () => {
@@ -104,7 +106,7 @@ test("pedidos internos, externos e importados reservan donde corresponde", () =>
     rules: [{ operation: "assembly", peopleCount: 5, palletCapacity: 120 }, { operation: "ht", peopleCount: 2, palletCapacity: 90 }],
     internalDefaults: [{ operation: "assembly", peopleCount: 5 }, { operation: "ht", peopleCount: 2 }],
     externalDefaults: [{ providerId: "blanc", operation: "assembly", palletCapacity: 60, status: "confirmed" }],
-    transportDefaults: [{ source: "internal", palletCapacity: 120, status: "confirmed" }, { source: "external", providerId: "linares", palletCapacity: 60, status: "confirmed" }],
+    transportDefaults: [{ source: "internal", palletCapacity: 120, tripCapacity: 2, status: "confirmed" }, { source: "external", providerId: "linares", palletCapacity: 60, tripCapacity: 1, status: "confirmed" }],
     adjustments: [],
   });
   assert.equal(snapshot.days[0].internalProduction.find((item) => item.operation === "assembly").committed, 100);
@@ -117,6 +119,9 @@ test("pedidos internos, externos e importados reservan donde corresponde", () =>
   assert.equal(snapshot.days[0].productionTotals.missing, 20);
   assert.equal(snapshot.days[1].transportTotals.committed, 250);
   assert.equal(snapshot.days[1].transportTotals.missing, 70);
+  assert.equal(snapshot.days[1].transportTotals.tripCapacity, 3);
+  assert.equal(snapshot.days[1].transportTotals.tripsCommitted, 3);
+  assert.equal(snapshot.days[1].transportTotals.tripsAvailable, 0);
 });
 
 test("la capacidad general se repite y los ajustes afectan solo un día", () => {
@@ -125,16 +130,18 @@ test("la capacidad general se repite y los ajustes afectan solo un día", () => 
     rules: [{ operation: "assembly", peopleCount: 5, palletCapacity: 300 }],
     internalDefaults: [{ operation: "assembly", peopleCount: 5 }, { operation: "marking", peopleCount: 0, manualCapacity: 0 }, { operation: "ht", peopleCount: 0, manualCapacity: 0 }],
     externalDefaults: [],
-    transportDefaults: [{ source: "internal", palletCapacity: 200, status: "confirmed" }],
+    transportDefaults: [{ source: "internal", palletCapacity: 200, tripCapacity: 5, status: "confirmed" }],
     adjustments: [
       { date: "2026-08-25", resourceType: "internal_production", operation: "assembly", palletAdjustment: -50 },
-      { date: "2026-08-25", resourceType: "transport", source: "internal", palletAdjustment: 40 },
+      { date: "2026-08-25", resourceType: "transport", source: "internal", palletAdjustment: 40, tripAdjustment: -2 },
     ],
   });
   assert.equal(snapshot.days[0].internalProduction.find((item) => item.operation === "assembly").capacity, 300);
   assert.equal(snapshot.days[1].internalProduction.find((item) => item.operation === "assembly").capacity, 250);
   assert.equal(snapshot.days[0].transportTotals.internal, 200);
   assert.equal(snapshot.days[1].transportTotals.internal, 240);
+  assert.equal(snapshot.days[0].transportTotals.tripCapacity, 5);
+  assert.equal(snapshot.days[1].transportTotals.tripCapacity, 3);
   assert.equal(snapshot.days[0].productionTotals.capacity, 300);
   assert.equal(snapshot.days[1].productionTotals.capacity, 250);
   assert.equal(snapshot.days[0].productionTotals.available, 300);
@@ -167,7 +174,7 @@ test("marca en rojo lógico los días sin definir o con faltantes", () => {
     from: "2026-08-24", to: "2026-08-24", providers, orders: [base], rules: [],
     internalDefaults: [], externalDefaults: [], transportDefaults: [], adjustments: [],
   });
-  assert.deepEqual(snapshot.days[0].issues, ["Producción sin definir", "Falta producción", "Transporte sin definir", "Faltan camiones"]);
+  assert.deepEqual(snapshot.days[0].issues, ["Producción sin definir", "Falta producción", "Cupos de viaje sin configurar"]);
   assert.equal(snapshot.days[0].productionTotals.committed, 100);
   assert.equal(snapshot.days[0].productionTotals.available, undefined);
   assert.equal(snapshot.days[0].productionTotals.missing, 100);
