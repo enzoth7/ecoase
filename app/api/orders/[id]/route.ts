@@ -1,7 +1,5 @@
 import { getOrderDetail, getProviders, updateOrder } from "../../store";
-import type { CapacityOperation, OperationStage, ProductionSource, TransportSource } from "../../../data";
-
-const validStages = new Set<OperationStage>(["negociacion", "produccion", "logistica", "atrasado", "pospuesto", "cancelado", "reorganizando", "completado"]);
+import type { CapacityOperation, ProductionSource, TransportSource } from "../../../data";
 
 export async function GET(_request: Request, context: { params: Promise<{ id: string }> }) {
   const order = await getOrderDetail((await context.params).id);
@@ -18,10 +16,7 @@ export async function PATCH(request: Request, context: { params: Promise<{ id: s
   const requested = typeof payload.requested === "number" && Number.isFinite(payload.requested) && payload.requested > 0
     ? payload.requested
     : undefined;
-  const stage = typeof payload.stage === "string" && validStages.has(payload.stage as OperationStage)
-    ? payload.stage as OperationStage
-    : undefined;
-
+  const cancelled = payload.cancelled === true;
   const providers = await getProviders();
   const productionSource = typeof payload.productionSource === "string" && ["internal", "sawmill", "import"].includes(payload.productionSource) ? payload.productionSource as ProductionSource : undefined;
   const transportSource = typeof payload.transportSource === "string" && ["internal", "external"].includes(payload.transportSource) ? payload.transportSource as TransportSource : transportCandidate ? "external" : undefined;
@@ -37,12 +32,12 @@ export async function PATCH(request: Request, context: { params: Promise<{ id: s
   if (transportSource === "external" && transporter?.type !== "Transporte") return Response.json({ error: "Seleccione un transportista registrado." }, { status: 400 });
   const transport = transportSource === "internal" ? "Interno" : transporter?.name;
 
-  if (!transport && !plannedDate && !requested && !stage && !productionSource && !productionDate && !importArrivalDate && !requiredOperations && !transportSource) {
+  if (!transport && !plannedDate && !requested && !cancelled && !productionSource && !productionDate && !importArrivalDate && !requiredOperations && !transportSource) {
     return Response.json({ error: "Indique al menos un cambio válido." }, { status: 400 });
   }
 
   try {
-    const result = await updateOrder(id, { transport, plannedDate, requested, stage, productionSource, producerProviderId, productionDate, importArrivalDate, requiredOperations, transportSource, transportProviderId: transporter?.id });
+    const result = await updateOrder(id, { transport, plannedDate, requested, stage: cancelled ? "cancelado" : undefined, productionSource, producerProviderId, productionDate, importArrivalDate, requiredOperations, transportSource, transportProviderId: transporter?.id });
     if (!result) return Response.json({ error: "Pedido no encontrado." }, { status: 404 });
 
     return Response.json(result);

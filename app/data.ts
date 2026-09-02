@@ -8,6 +8,7 @@ export type CapacityStatus = "estimated" | "confirmed";
 export type ProductionAllocationStatus = "draft" | "confirmed" | "completed" | "cancelled";
 export type ShipmentStatus = "planned" | "ready" | "loaded" | "dispatched" | "delivered" | "cancelled";
 export type RescheduleReason = "production" | "logistics" | "client" | "weather" | "other";
+export type OrderOperationalStatus = "planned" | "preparation" | "ready_for_delivery" | "in_transit" | "partial_delivery" | "delivered" | "cancelled";
 
 export interface ProductionAllocation {
   id: number | string;
@@ -151,6 +152,55 @@ export const stageLabels: Record<OperationStage, string> = {
 export function getOrderStage(order: OperationOrder): OperationStage {
   if (order.stage) return order.stage;
   return "negociacion";
+}
+
+export const orderOperationalStatusLabels: Record<OrderOperationalStatus, string> = {
+  planned: "Planificado",
+  preparation: "En preparación",
+  ready_for_delivery: "Listo para entregar",
+  in_transit: "En viaje",
+  partial_delivery: "Entrega parcial",
+  delivered: "Entregado",
+  cancelled: "Cancelado",
+};
+
+export function getOrderOperationalStatus(order: OperationOrder): OrderOperationalStatus {
+  if (getOrderStage(order) === "cancelado") return "cancelled";
+
+  const shipments = (order.shipments ?? []).filter((shipment) => shipment.status !== "cancelled");
+  const deliveredByShipments = shipments.flatMap((shipment) => shipment.lines).reduce((sum, line) => sum + line.deliveredQuantity, 0);
+  const delivered = Math.max(order.delivered, deliveredByShipments);
+  const pending = Math.max(order.requested - delivered, 0);
+
+  if (pending === 0) return "delivered";
+  if (delivered > 0) return "partial_delivery";
+  if (order.dispatchedAt || order.deliveryStatus === "en_transito") return "in_transit";
+  if (shipments.some((shipment) => shipment.status === "dispatched")) return "in_transit";
+  if (shipments.some((shipment) => shipment.status === "ready" || shipment.status === "loaded")) return "ready_for_delivery";
+
+  const preparationStarted = order.lines.some((line) => {
+    const allocations = (line.productionAllocations ?? []).filter((allocation) => allocation.status !== "cancelled");
+    return allocations.some((allocation) => allocation.status === "confirmed" || allocation.status === "completed" || (allocation.actualQuantity ?? 0) > 0)
+      || (line.treatedQuantity ?? 0) > 0
+      || (line.readyReservedQuantity ?? 0) > 0;
+  });
+
+  return preparationStarted ? "preparation" : "planned";
+}
+
+export function isOrderClosed(order: OperationOrder) {
+  return ["delivered", "cancelled"].includes(getOrderOperationalStatus(order));
+}
+
+export function isOrderOverdue(order: OperationOrder, today = new Date()) {
+  if (isOrderClosed(order)) return false;
+  const openShipmentDates = (order.shipments ?? [])
+    .filter((shipment) => !["delivered", "cancelled"].includes(shipment.status))
+    .map((shipment) => shipment.plannedDate)
+    .sort();
+  const plannedDate = openShipmentDates[0] ?? getOrderPlannedDate(order);
+  const todayKey = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, "0")}-${String(today.getDate()).padStart(2, "0")}`;
+  return plannedDate < todayKey;
 }
 
 function dateFromLabel(label: string) {

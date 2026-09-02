@@ -39,6 +39,24 @@ test("existen las rutas para distribuir producción y operar viajes", async () =
   assert.match(sources.join("\n"), /rescheduleShipment/);
 });
 
+test("pedidos unifica los viajes en Distribuir y audita la planificación productiva", async () => {
+  const [dashboard, styles, store, migration] = await Promise.all([
+    read("app/Dashboard.tsx"),
+    read("app/globals.css"),
+    read("app/api/store.ts"),
+    read("supabase/migrations/20260902030524_audit_production_distribution_updates.sql"),
+  ]);
+  assert.match(dashboard, /Distribuir viajes/);
+  assert.match(dashboard, /Viajes planificados/);
+  assert.match(dashboard, /shipment-table-panel[\s\S]*?<td className="production-table-action"><button[\s\S]*?>Distribuir<\/button>/);
+  assert.doesNotMatch(dashboard, /tracking-shipments-title[\s\S]{0,300}<Plus[^>]*\/>Distribuir/);
+  assert.match(styles, /\.shipment-distribution-content\s*\{[^}]*padding:\s*20px 22px 22px/i);
+  assert.match(styles, /\.shipment-distribution-list article\s*\{[^}]*grid-template-columns:\s*minmax\(180px, 1fr\) 130px 96px/i);
+  assert.match(store, /shipmentHistory/);
+  assert.match(migration, /Distribución de producción/);
+  assert.match(migration, /insert into public\.order_changes/i);
+});
+
 test("el calendario muestra producto, marcado, transporte, remito y capacidad", async () => {
   const [calendar, capacity] = await Promise.all([read("app/components/OperationsCalendar.tsx"), read("app/capacity.ts")]);
   assert.match(calendar, /productSummary/);

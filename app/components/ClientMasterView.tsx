@@ -1,12 +1,13 @@
 "use client";
 
-import { ArrowLeft, ChevronDown, ChevronRight, FileText, Image as ImageIcon, Package, Plus, Save, Trash2, Upload } from "lucide-react";
+import { ArrowLeft, ChevronDown, ChevronRight, FileText, Image as ImageIcon, Package, Plus, Save, Trash2, TrendingDown, Upload } from "lucide-react";
 import Link from "next/link";
 import { useEffect, useMemo, useRef, useState, type FormEvent } from "react";
 import type { Product } from "../data";
 import { productLabel, type ClientDetail, type ClientProduct } from "../master-data";
 import { uruguayDepartments } from "../uruguay-departments";
 import { AsyncButton, EmptyState, FieldError, LoadingState, ModalShell } from "./ui";
+import ConsumptionRuleModal from "./ConsumptionRuleModal";
 
 export type ClientSummary = {
   id?: string;
@@ -28,7 +29,7 @@ async function payloadOf<T>(response: Response) {
   return response.json() as Promise<T & { error?: string }>;
 }
 
-function ProductCard({ item, onChanged }: { item: ClientProduct; onChanged: (next: ClientProduct) => void }) {
+function ProductCard({ item, clientName, onChanged }: { item: ClientProduct; clientName: string; onChanged: (next: ClientProduct) => void }) {
   const [editing, setEditing] = useState(false);
   const [controls, setControls] = useState(item.controls.map((control) => ({ title: control.title, detail: control.detail ?? "", active: control.active })));
   const [saving, setSaving] = useState(false);
@@ -38,6 +39,7 @@ function ProductCard({ item, onChanged }: { item: ClientProduct; onChanged: (nex
   const primaryAssetMimeType = primaryAsset?.mimeType;
   const [preview, setPreview] = useState<{ assetId: string; url: string } | null>(null);
   const [selectedAssetName, setSelectedAssetName] = useState("");
+  const [showConsumption, setShowConsumption] = useState(false);
   const previewUrl = preview?.assetId === String(primaryAssetId) ? preview.url : "";
   const productFormId = `client-product-editor-${item.id}`;
   const assetFormId = `client-product-asset-${item.id}`;
@@ -109,6 +111,10 @@ function ProductCard({ item, onChanged }: { item: ClientProduct; onChanged: (nex
           <fieldset className="control-editor"><legend>Puntos de control</legend>{controls.map((control, index) => <input key={index} name={`control-${index}`} defaultValue={control.title} aria-label={`Punto de control ${index + 1}`} />)}<button type="button" className="add-control-button" aria-label="Agregar punto de control" onClick={() => setControls((current) => [...current, { title: "", detail: "", active: true }])}><Plus size={18} aria-hidden="true" /></button></fieldset>
         </form> : <dl className="client-product-facts"><div><dt>Nombre operativo</dt><dd>{item.operationalName?.trim() || item.product.stockName || "—"}</dd></div><div><dt>Tipo</dt><dd>{item.product.kind}</dd></div><div><dt>Medidas</dt><dd>{item.product.measure ?? "Sin medida"}</dd></div><div><dt>Código Zeta</dt><dd>{zetaCode || "—"}</dd></div><div><dt>Puntos de control</dt><dd>{controls.length ? <ul>{controls.map((control, index) => <li key={index}>{control.title}</li>)}</ul> : "—"}</dd></div></dl>}
         </section>
+        <section className="client-product-consumption">
+          <div><TrendingDown size={18} aria-hidden="true" /><span><strong>Consumo del cliente</strong><small>Se utiliza para calcular los días de stock.</small></span></div>
+          <button type="button" className="secondary-button" onClick={() => setShowConsumption(true)}>Cargar consumo</button>
+        </section>
       </div>
 
       <aside className="client-product-media" aria-label={`Plano o fotografía de ${productLabel(item.product, item.operationalName)}`}>
@@ -119,6 +125,7 @@ function ProductCard({ item, onChanged }: { item: ClientProduct; onChanged: (nex
       </aside>
       <FieldError id={`product-${item.id}-error`}>{error}</FieldError>
     </div>
+    {showConsumption && <ConsumptionRuleModal productId={item.productId} fixedClient={{ id: item.clientId, name: clientName }} onClose={() => setShowConsumption(false)} onSaved={() => setShowConsumption(false)} />}
   </details>;
 }
 
@@ -176,7 +183,7 @@ function ClientPanel({ clientId, products }: { clientId: string; products: Produ
   if (!detail) return <FieldError id={`client-${clientId}-error`}>{loadError}</FieldError>;
   return <div className="client-master-panel">
     <section className="client-panel-section" aria-labelledby="client-information-title"><h3 id="client-information-title">Información del cliente</h3><form className="client-address-editor" onSubmit={saveClient}><label>Nombre<input value={detail.client.name} readOnly /></label><label>Dirección<input name="address" defaultValue={detail.client.address} /></label><label>Departamento<select name="department" defaultValue={detail.client.department ?? ""}><option value="">Seleccionar departamento</option>{uruguayDepartments.map((department) => <option key={department} value={department}>{department}</option>)}</select></label><label className="checkbox-line"><input name="active" type="checkbox" defaultChecked={detail.client.active} />Disponible para pedidos</label><FieldError id={`client-${clientId}-action-error`}>{clientError}</FieldError><AsyncButton type="submit" className="secondary-button" loading={savingClient}><Save size={15} />Guardar información</AsyncButton></form></section>
-    <section className="client-panel-section" aria-labelledby="client-products-title"><div className="client-panel-section-heading"><h3 id="client-products-title">Productos</h3><button type="button" className="primary-button" onClick={() => { setProductError(""); setShowAddProduct(true); }}><Plus size={16} />Agregar producto</button></div><div className="client-product-list">{detail.products.length ? detail.products.map((item) => <ProductCard key={item.id} item={item} onChanged={(next) => setDetail((current) => current ? { ...current, products: current.products.map((entry) => String(entry.id) === String(next.id) ? next : entry) } : current)} />) : <EmptyState icon={Package} title="Este cliente todavía no tiene productos" description="Agregá un producto para que luego aparezca en el alta de pedidos." />}</div></section>
+    <section className="client-panel-section" aria-labelledby="client-products-title"><div className="client-panel-section-heading"><h3 id="client-products-title">Productos</h3><button type="button" className="primary-button" onClick={() => { setProductError(""); setShowAddProduct(true); }}><Plus size={16} />Agregar producto</button></div><div className="client-product-list">{detail.products.length ? detail.products.map((item) => <ProductCard key={item.id} item={item} clientName={detail.client.name} onChanged={(next) => setDetail((current) => current ? { ...current, products: current.products.map((entry) => String(entry.id) === String(next.id) ? next : entry) } : current)} />) : <EmptyState icon={Package} title="Este cliente todavía no tiene productos" description="Agregá un producto para que luego aparezca en el alta de pedidos." />}</div></section>
     {showAddProduct && <AddClientProductDialog products={products} adding={addingProduct} error={productError} onSubmit={add} onClose={() => { setProductError(""); setShowAddProduct(false); }} />}
   </div>;
 }

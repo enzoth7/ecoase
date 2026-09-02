@@ -1,4 +1,4 @@
-import { getOrderPlannedDate, getOrderStage, type CapacityOperation, type CapacityStatus, type OperationOrder, type Provider, type TransportSource } from "./data.ts";
+import { getOrderOperationalStatus, getOrderPlannedDate, isOrderClosed, type CapacityOperation, type CapacityStatus, type OperationOrder, type Provider, type TransportSource } from "./data.ts";
 import {
   buildProductionCapacity,
   type ProductionCapacityRule,
@@ -47,8 +47,8 @@ function adjustedCapacity(base: number | undefined, adjustment: number) {
 
 export function buildCapacitySnapshot(input: { from: string; to: string; rules: CapacityRule[]; internalDefaults: InternalProductionDefault[]; availablePeople?: number; externalDefaults: ExternalProductionDefault[]; transportDefaults: TransportCapacityDefault[]; adjustments: CapacityAdjustment[]; orders: OperationOrder[]; providers: Provider[]; productionResources?: ProductionResource[]; productionRules?: ProductionCapacityRule[]; productionOverrides?: ProductionDailyOverride[]; productionProducts?: ProductionProduct[] }): CapacitySnapshot {
   const providerNames = new Map(input.providers.map((provider) => [provider.id, provider.name]));
-  const activeOrders = input.orders.filter((order) => !["cancelado", "completado"].includes(getOrderStage(order)));
-  const logisticsOrders = input.orders.filter((order) => getOrderStage(order) !== "cancelado");
+  const activeOrders = input.orders.filter((order) => !isOrderClosed(order));
+  const logisticsOrders = input.orders.filter((order) => getOrderOperationalStatus(order) !== "cancelled");
   const internalTeam: InternalTeamCapacity = { availablePeople: input.availablePeople };
   const days = datesBetween(input.from, input.to).map<CapacityDay>((date) => {
     const productionCommitments = activeOrders.flatMap((order) => {

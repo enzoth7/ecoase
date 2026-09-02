@@ -1,6 +1,6 @@
 import { getOrders } from "../store";
-import { getOrderStage } from "../../data";
+import { isOrderClosed } from "../../data";
 
 export async function GET() {
-  return Response.json({ history: (await getOrders()).filter((order) => getOrderStage(order) === "completado") });
+  return Response.json({ history: (await getOrders()).filter(isOrderClosed) });
 }

@@ -1,5 +1,5 @@
 import { getCapacity, getOrders, getProviders } from "../store";
-import { getOrderStage } from "../../data";
+import { isOrderClosed } from "../../data";
 
 function iso(date: Date) { return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}-${String(date.getDate()).padStart(2, "0")}`; }
 function productLabel(value: string) { return value.replace(/\s*[·/+|-]?\s*\b(?:Tratamiento\s+)?HT\b/giu, " ").replace(/\s+/g, " ").replace(/[·/+|-]+\s*$/g, "").trim(); }
@@ -13,7 +13,7 @@ export async function GET(request: Request) {
   const to = /^\d{4}-\d{2}-\d{2}$/.test(url.searchParams.get("to") ?? "") ? url.searchParams.get("to")! : iso(sunday);
   if (from > to) return Response.json({ error: "El rango de fechas no es válido." }, { status: 400 });
   const [orders, capacity, providers] = await Promise.all([getOrders(), getCapacity(from, to), getProviders()]);
-  const calendar = orders.filter((order) => hasRange || getOrderStage(order) !== "completado").flatMap((order) => (order.shipments ?? []).filter((shipment) => shipment.status !== "cancelled" && (!hasRange || shipment.plannedDate >= from && shipment.plannedDate <= to)).map((shipment) => ({
+  const calendar = orders.filter((order) => hasRange || !isOrderClosed(order)).flatMap((order) => (order.shipments ?? []).filter((shipment) => shipment.status !== "cancelled" && (!hasRange || shipment.plannedDate >= from && shipment.plannedDate <= to)).map((shipment) => ({
     ...shipment,
     orderId: order.id,
     client: order.client,

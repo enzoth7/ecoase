@@ -74,7 +74,7 @@ test("el brand kit define la paleta operativa y un mínimo tipográfico visible"
 test("stock deja la información secundaria en el detalle", async () => {
   const source = await readFile(stockPath, "utf8");
   const mainTable = source.slice(source.indexOf('<table className="stock-table">'));
-  assert.match(mainTable, /<th>Artículo<\/th><th>Código Zeta<\/th><th>Medida<\/th>/);
+  assert.match(mainTable, /<th>Artículo<\/th>[\s\S]*?<th>Código Zeta<\/th>[\s\S]*?<th>Medida<\/th>/);
   assert.match(mainTable, /row\.product\.zetaCode \?\? row\.product\.sourceCode/);
   assert.doesNotMatch(mainTable, /<small>\{row\.product\.sourceCode\}/);
   assert.match(mainTable, /Días de stock/);
@@ -99,4 +99,14 @@ test("los indicadores de pedidos funcionan como filtros accesibles", async () =>
   assert.match(source, /aria-pressed=\{orderKpiFilter === "compliance"\}/);
   assert.match(source, /isOrderInPeriod\(order, kpiPeriod, today\)/);
   assert.match(source, /setSelectedId\(""\)/);
+});
+
+test("los pedidos muestran un estado automático y no solicitan una etapa manual", async () => {
+  const source = await readFile(dashboardPath, "utf8");
+  assert.match(source, /getOrderOperationalStatus\(order\)/);
+  assert.match(source, /OrderStatusBadge order=\{order\}/);
+  assert.match(source, /Listo para entregar|orderOperationalStatusLabels/);
+  assert.doesNotMatch(source, /name="stage"/);
+  assert.doesNotMatch(source, /<label>Etapa/);
+  assert.match(source, /Cancelar pedido/);
 });

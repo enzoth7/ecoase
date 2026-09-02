@@ -56,6 +56,7 @@ export type ProductionAssignmentSummary = {
   capacityRuleId?: number | string;
   applicableRuleIds: Array<number | string>;
   configurationLabel?: string;
+  peopleCount?: number;
   plannedQuantity: number;
   actualQuantity?: number;
   pendingQuantity: number;
@@ -162,6 +163,7 @@ export function buildProductionCapacity(input: {
         capacityRuleId: rule?.id,
         applicableRuleIds: applicableRules.map((entry) => entry.id),
         configurationLabel: rule?.configurationLabel,
+        peopleCount: rule?.peopleCount,
         plannedQuantity,
         actualQuantity,
         pendingQuantity: Math.max(plannedQuantity - (actualQuantity ?? 0), 0),

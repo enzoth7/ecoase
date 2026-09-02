@@ -50,6 +50,7 @@ test("usa producción real al cerrar y expone el saldo pendiente", () => {
   const assignment = result.days[0].resources[0].assignments[0];
   assert.equal(result.days[0].resources[0].normalLoad, 0.7);
   assert.equal(assignment.pendingQuantity, 30);
+  assert.equal(assignment.peopleCount, 2);
 });
 
 test("la migración protege vigencias, evidencia y mutaciones de servidor", async () => {
@@ -65,10 +66,14 @@ test("la migración protege vigencias, evidencia y mutaciones de servidor", asyn
 
 test("la pantalla resume la producción semanal en una tabla de acciones", async () => {
   const view = await read("app/CapacityView.tsx");
-  for (const column of ["Fecha", "Origen / recurso", "Cliente / pedido", "Producto", "Cantidad", "Estado", "Acción"]) assert.match(view, new RegExp(column));
+  for (const column of ["Fecha", "Origen / recurso", "Cliente / pedido", "Producto", "Palets planificados", "Personas", "Estado", "Acción"]) assert.match(view, new RegExp(column));
   for (const action of ["Confirmar", "Registrar producción", "Configurar"]) assert.match(view, new RegExp(action));
   assert.match(view, /Sin asignar/);
   assert.match(view, /production-week-summary/);
+  assert.match(view, /requieren apoyo/);
+  assert.match(view, /configurationTypeLabel/);
+  assert.doesNotMatch(view, /Revisar capacidad del proveedor/);
+  assert.match(view, /Requiere ayuda o redistribución/);
   assert.doesNotMatch(view, /function ResourceCard/);
   assert.doesNotMatch(view, /Carga sobre normal/);
   assert.doesNotMatch(view, /Carga sobre máxima/);

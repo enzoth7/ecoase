@@ -20,16 +20,18 @@ import type { ProductionWorkspaceView } from "./components/ProductionTabs";
 import { AsyncButton, ConfirmDialog, EmptyState, FieldError, ModalShell, StatusBadge, WeekNavigator } from "./components/ui";
 import {
   compareProductsByInternalCode,
-  getOrderStage,
+  getOrderOperationalStatus,
   getOrderPlannedDate,
+  isOrderClosed,
+  isOrderOverdue,
+  orderOperationalStatusLabels,
   orders as initialOrders,
   products as initialProducts,
   providers as initialProviders,
-  stageLabels,
   type OperationOrder,
+  type OrderOperationalStatus,
   type OrderChange,
   type OrderUpdateKind,
-  type OperationStage,
   type OrderLine,
   type Provider,
   type Product,
@@ -327,7 +329,7 @@ export function CalendarView({ orders, onOpen }: { orders: OperationOrder[]; onO
               <div className="calendar-orders">
                 {dayOrders.map((order) => (
                   <button type="button" key={order.id} onClick={() => onOpen(order.id)}>
-                    <StageBadge stage={getOrderStage(order)} /><strong>{order.client}</strong>{visibleReference(order) && <small>{visibleReference(order)}</small>}<small>{number.format(order.requested)} unidades</small>
+                    <OrderStatusBadge order={order} /><strong>{order.client}</strong>{visibleReference(order) && <small>{visibleReference(order)}</small>}<small>{number.format(order.requested)} unidades</small>
                   </button>
                 ))}
                 {dayOrders.length === 0 && <p>Sin entregas</p>}
@@ -410,7 +412,7 @@ export function LogisticsView({ orders, providers, onOpen }: { orders: Operation
             <div><strong>{order.client}</strong><small>{[visibleReference(order), order.product].filter(Boolean).join(" · ")}</small></div>
             <div><small className="column-label">Fecha</small><strong>{order.dateLabel}</strong></div>
             <div><small className="column-label">Transporte</small><strong>{order.transport}</strong></div>
-            <StageBadge stage={getOrderStage(order)} />
+            <OrderStatusBadge order={order} />
             <ChevronRight size={19} aria-hidden="true" />
           </button>
         ))}
@@ -425,11 +427,20 @@ export function LogisticsView({ orders, providers, onOpen }: { orders: Operation
   );
 }
 
-function StageBadge({ stage }: { stage: OperationStage }) {
-  return <StatusBadge label={stageLabels[stage]} tone={stage} />;
-}
+const orderStatusIcons = {
+  planned: Package,
+  preparation: Factory,
+  ready_for_delivery: CheckCircle2,
+  in_transit: Truck,
+  partial_delivery: Package,
+  delivered: CheckCircle2,
+  cancelled: X,
+} satisfies Record<OrderOperationalStatus, typeof Package>;
 
-const editableStages: OperationStage[] = ["negociacion", "produccion", "logistica", "atrasado", "pospuesto", "cancelado", "reorganizando", "completado"];
+function OrderStatusBadge({ order, today }: { order: OperationOrder; today?: Date }) {
+  const status = getOrderOperationalStatus(order);
+  return <span className="order-status-stack"><StatusBadge label={orderOperationalStatusLabels[status]} tone={status} icon={orderStatusIcons[status]} />{isOrderOverdue(order, today) && <StatusBadge label="Atrasado" tone="overdue" icon={AlertTriangle} />}</span>;
+}
 
 const updateLabels: Record<OrderUpdateKind, string> = {
   cambio: "Cambio de planificación",
@@ -481,12 +492,19 @@ function ShipmentEditorModal({ order, shipment, providers, onClose, onSaved }: {
   return <ModalShell title={shipment ? "Editar viaje" : "Agregar viaje"} description={`${order.client} · ${number.format(order.requested)} palets`} className="order-operation-modal shipment-editor-modal" onClose={onClose}><form className="order-operation-form shipment-editor-form" onSubmit={submit}><div className="order-dialog-fields"><label>Fecha de entrega<input type="date" value={date} onChange={(event) => setDate(event.target.value)} required /></label><label>Transporte<select value={source} onChange={(event) => setSource(event.target.value as TransportSource)}><option value="internal">Transporte interno</option><option value="external">Transportista externo</option></select></label>{source === "external" && <label className="field-wide">Transportista<select value={providerId} onChange={(event) => setProviderId(event.target.value)} required><option value="" disabled>Seleccionar</option>{transporters.map((provider) => <option key={provider.id} value={provider.id}>{provider.name}</option>)}</select></label>}</div><fieldset className="order-dialog-section delivered-lines"><legend>Productos del viaje</legend>{order.lines.map((line) => <label key={line.id}><span><strong>{line.product}</strong><small>{number.format(maxFor(line))} disponibles</small></span><input aria-label={`Cantidad de ${line.product}`} type="number" min="0" max={maxFor(line)} value={quantities[line.id] || ""} onChange={(event) => setQuantities((current) => ({ ...current, [line.id]: Number(event.target.value) }))} /></label>)}</fieldset><FieldError id="shipment-editor-error">{error}</FieldError><div className="modal-actions"><button type="button" className="secondary-button" onClick={onClose}>Cancelar</button><AsyncButton type="submit" className="primary-button" loading={saving}>{shipment ? "Guardar cambios" : "Guardar viaje"}</AsyncButton></div></form></ModalShell>;
 }
 
-function OrderTrackingPanel({ order, providers, refreshKey, onAdd, onChanged, onClose }: { order?: OperationOrder; providers: Provider[]; refreshKey: number; onAdd: (order: OperationOrder) => void; onChanged: (id: string) => Promise<void>; onClose: () => void }) {
+function ShipmentDistributionModal({ order, onClose, onNew, onEdit }: { order: OperationOrder; onClose: () => void; onNew: () => void; onEdit: (shipment: Shipment) => void }) {
+  const planned = (order.shipments ?? []).filter((shipment) => shipment.status === "planned");
+  return <ModalShell title="Distribuir viajes" description={`${order.client} · ${number.format(order.requested)} palets`} className="order-operation-modal shipment-distribution-modal" onClose={onClose}><div className="shipment-distribution-content"><div className="shipment-distribution-heading"><div><strong>Viajes planificados</strong><small>Agregá un viaje o editá la distribución de uno existente.</small></div><button type="button" className="primary-button" onClick={onNew}><Plus size={16} />Agregar viaje</button></div>{planned.length ? <div className="shipment-distribution-list">{planned.map((shipment) => <article key={shipment.id}><div><strong>{formatOrderDate(shipment.plannedDate)}</strong><small>{shipment.transportLabel}</small></div><span>{number.format(shipment.lines.reduce((sum, line) => sum + line.plannedQuantity, 0))} palets</span><button type="button" className="secondary-button" onClick={() => onEdit(shipment)}>Editar</button></article>)}</div> : <p className="tracking-empty">Todavía no hay viajes planificados.</p>}<div className="modal-actions"><button type="button" className="secondary-button" onClick={onClose}>Cerrar</button></div></div></ModalShell>;
+}
+
+function OrderTrackingPanel({ order, providers, refreshKey, onAdd, onChanged, onCancel, onClose }: { order?: OperationOrder; providers: Provider[]; refreshKey: number; onAdd: (order: OperationOrder) => void; onChanged: (id: string) => Promise<void>; onCancel: (id: string) => Promise<boolean>; onClose: () => void }) {
   const [history, setHistory] = useState<OrderChange[]>([]);
   const [loading, setLoading] = useState(true);
   const [tab, setTab] = useState<"summary" | "production" | "shipments">("summary");
   const [allocationLine, setAllocationLine] = useState<OrderLine | null>(null);
+  const [showShipmentDistribution, setShowShipmentDistribution] = useState(false);
   const [shipmentEditor, setShipmentEditor] = useState<Shipment | "new" | null>(null);
+  const [confirmCancel, setConfirmCancel] = useState(false);
   const panelRef = useRef<HTMLElement>(null);
   const orderId = order?.id;
 
@@ -517,7 +535,7 @@ function OrderTrackingPanel({ order, providers, refreshKey, onAdd, onChanged, on
     <aside ref={panelRef} className="detail-column order-tracking-panel" aria-labelledby="tracking-title" tabIndex={-1}>
       <div className="tracking-heading">
         <div><small>Seguimiento del pedido</small><h2 id="tracking-title">{order.client}</h2><p>{order.product}</p></div>
-        <div className="tracking-heading-actions"><StageBadge stage={getOrderStage(order)} /><button type="button" className="tracking-close-button" onClick={onClose} aria-label="Cerrar seguimiento del pedido" title="Cerrar detalle"><X size={18} aria-hidden="true" /></button></div>
+        <div className="tracking-heading-actions"><OrderStatusBadge order={order} /><button type="button" className="tracking-close-button" onClick={onClose} aria-label="Cerrar seguimiento del pedido" title="Cerrar detalle"><X size={18} aria-hidden="true" /></button></div>
       </div>
       <nav className="tracking-tabs" aria-label="Secciones del pedido"><button type="button" className={tab === "summary" ? "active" : ""} onClick={() => setTab("summary")}>Resumen</button><button type="button" className={tab === "production" ? "active" : ""} onClick={() => setTab("production")}>Producción</button><button type="button" className={tab === "shipments" ? "active" : ""} onClick={() => setTab("shipments")}>Viajes <span>{order.shipments?.length ?? 0}</span></button></nav>
       {tab === "summary" && <>
@@ -556,11 +574,14 @@ function OrderTrackingPanel({ order, providers, refreshKey, onAdd, onChanged, on
           </article>
         )) : <p className="tracking-empty">Todavía no hay actualizaciones registradas.</p>}
       </section>
+      <button type="button" className="tracking-cancel-button" onClick={() => setConfirmCancel(true)}>Cancelar pedido</button>
       </>}
       {tab === "production" && <section className="tracking-operation-list production-table-panel" aria-labelledby="production-allocations-title"><header><div><h3 id="production-allocations-title">Plan de producción</h3><small>Una fila por producto</small></div></header><div className="production-table-wrap"><table className="production-tracking-table"><thead><tr><th scope="col">Producto del pedido</th><th scope="col">Total palets</th><th scope="col">Marcados</th><th scope="col">Pend. marcado</th><th scope="col">Listo</th><th scope="col">Planificación</th><th scope="col"><span className="sr-only">Acción</span></th></tr></thead><tbody>{order.lines.map((line) => { const requiresTreatment = order.requiredOperations?.includes("treatment"); const allocations = line.productionAllocations ?? []; return <tr key={line.id}><th scope="row">{line.product}</th><td className="numeric-cell">{number.format(line.quantity)}</td><td className="numeric-cell">{requiresTreatment ? number.format(line.treatedQuantity ?? 0) : "—"}</td><td className="numeric-cell">{requiresTreatment ? number.format(line.treatmentPendingQuantity ?? line.quantity) : "—"}</td><td className="numeric-cell">{requiresTreatment ? number.format(line.readyReservedQuantity ?? 0) : "—"}</td><td>{allocations.length ? <div className="production-table-allocations">{allocations.map((allocation) => <span key={allocation.id}><strong>{formatOrderDate(allocation.plannedDate)}</strong><small>{number.format(allocation.plannedQuantity)} · {allocation.resourceId ?? "Sin recurso"} · {allocation.status === "confirmed" ? "Confirmado" : allocation.status === "completed" ? "Completado" : "Borrador"}</small></span>)}</div> : <span className="production-unplanned">Sin distribuir</span>}</td><td className="production-table-action"><button type="button" className="secondary-button" onClick={() => setAllocationLine(line)}>Distribuir</button></td></tr>; })}</tbody></table></div></section>}
-      {tab === "shipments" && <section className="tracking-operation-list shipment-table-panel" aria-labelledby="tracking-shipments-title"><header><div><h3 id="tracking-shipments-title">Viajes del pedido</h3><small>Entregas parciales y remitos</small></div><button type="button" className="secondary-button" onClick={() => setShipmentEditor("new")}><Plus size={15} />Agregar viaje</button></header>{(order.shipments ?? []).length ? <div className="production-table-wrap shipment-table-wrap"><table className="production-tracking-table shipment-tracking-table"><thead><tr><th scope="col">Entrega</th><th scope="col">Transporte</th><th scope="col">Palets</th><th scope="col">Entregados</th><th scope="col">Estado</th><th scope="col">Productos</th><th scope="col">Remito</th><th scope="col"><span className="sr-only">Acción</span></th></tr></thead><tbody>{(order.shipments ?? []).map((shipment) => { const products = Array.from(new Set(shipment.lines.map((line) => line.product))); return <tr key={shipment.id}><th scope="row">{formatOrderDate(shipment.plannedDate)}</th><td>{shipment.transportLabel}</td><td className="numeric-cell">{number.format(shipment.lines.reduce((sum, line) => sum + line.plannedQuantity, 0))}</td><td className="numeric-cell">{number.format(shipment.lines.reduce((sum, line) => sum + line.deliveredQuantity, 0))}</td><td><span className={`shipment-table-status ${shipment.status}`}>{shipmentStatusLabels[shipment.status]}</span></td><td><div className="shipment-table-products">{products.map((product) => <strong key={product}>{product}</strong>)}</div></td><td><span className={shipment.remittance ? undefined : "shipment-remittance-pending"}>{shipment.remittance || "Pendiente"}</span></td><td className="production-table-action">{shipment.status === "planned" ? <button type="button" className="secondary-button" onClick={() => setShipmentEditor(shipment)}>Editar</button> : <span aria-hidden="true">—</span>}</td></tr>; })}</tbody></table></div> : <p className="tracking-empty">Todavía no hay viajes.</p>}</section>}
+      {tab === "shipments" && <section className="tracking-operation-list shipment-table-panel" aria-labelledby="tracking-shipments-title"><header><div><h3 id="tracking-shipments-title">Viajes del pedido</h3><small>Entregas parciales y remitos</small></div></header>{(order.shipments ?? []).length ? <div className="production-table-wrap shipment-table-wrap"><table className="production-tracking-table shipment-tracking-table"><thead><tr><th scope="col">Entrega</th><th scope="col">Transporte</th><th scope="col">Palets</th><th scope="col">Entregados</th><th scope="col">Estado</th><th scope="col">Productos</th><th scope="col">Remito</th><th scope="col"><span className="sr-only">Acción</span></th></tr></thead><tbody>{(order.shipments ?? []).map((shipment) => { const products = Array.from(new Set(shipment.lines.map((line) => line.product))); return <tr key={shipment.id}><th scope="row">{formatOrderDate(shipment.plannedDate)}</th><td>{shipment.transportLabel}</td><td className="numeric-cell">{number.format(shipment.lines.reduce((sum, line) => sum + line.plannedQuantity, 0))}</td><td className="numeric-cell">{number.format(shipment.lines.reduce((sum, line) => sum + line.deliveredQuantity, 0))}</td><td><span className={`shipment-table-status ${shipment.status}`}>{shipmentStatusLabels[shipment.status]}</span></td><td><div className="shipment-table-products">{products.map((product) => <strong key={product}>{product}</strong>)}</div></td><td><span className={shipment.remittance ? undefined : "shipment-remittance-pending"}>{shipment.remittance || "Pendiente"}</span></td><td className="production-table-action"><button type="button" className="secondary-button" onClick={() => setShowShipmentDistribution(true)}>Distribuir</button></td></tr>; })}</tbody></table></div> : <div className="tracking-empty tracking-empty-action"><span>Todavía no hay viajes.</span><button type="button" className="secondary-button" onClick={() => setShowShipmentDistribution(true)}>Distribuir</button></div>}</section>}
       {allocationLine && <ProductionAllocationModal line={allocationLine} providers={providers} onClose={() => setAllocationLine(null)} onSaved={() => onChanged(order.id)} />}
+      {showShipmentDistribution && <ShipmentDistributionModal order={order} onClose={() => setShowShipmentDistribution(false)} onNew={() => { setShowShipmentDistribution(false); setShipmentEditor("new"); }} onEdit={(shipment) => { setShowShipmentDistribution(false); setShipmentEditor(shipment); }} />}
       {shipmentEditor && <ShipmentEditorModal order={order} shipment={shipmentEditor === "new" ? undefined : shipmentEditor} providers={providers} onClose={() => setShipmentEditor(null)} onSaved={() => onChanged(order.id)} />}
+      {confirmCancel && <ConfirmDialog title="¿Cancelar este pedido?" description="El pedido dejará de aparecer entre los activos. Su información permanecerá disponible en el historial." confirmLabel="Cancelar pedido" destructive onCancel={() => setConfirmCancel(false)} onConfirm={() => void onCancel(order.id).then((saved) => { if (saved) onClose(); else setConfirmCancel(false); })} />}
     </aside>
   );
 }
@@ -616,7 +637,6 @@ function OrderUpdateModal({ order, onClose, onSave }: { order: OperationOrder; o
 type PlanChanges = {
   plannedDate?: string;
   requested?: number;
-  stage?: OperationStage;
   transport?: string;
   productionSource?: ProductionSource;
   producerProviderId?: string;
@@ -665,11 +685,9 @@ function EditPlanModal({ order, providers, onClose, onSave }: {
     event.preventDefault();
     setSaving(true);
     setError("");
-    const form = new FormData(event.currentTarget);
     const saved = await onSave({
       plannedDate,
       requested: quantity,
-      stage: form.get("stage") as OperationStage,
       productionSource,
       producerProviderId: productionSource === "internal" ? undefined : producerProviderId,
       productionDate: productionSource === "import" ? undefined : productionDate,
@@ -693,7 +711,6 @@ function EditPlanModal({ order, providers, onClose, onSave }: {
         <form onSubmit={submit}>
           <label>Fecha planificada<input type="date" value={plannedDate} onChange={(event) => setPlannedDate(event.target.value)} required /></label>
           <label>Cantidad de pallets<input type="number" min={order.delivered} step="1" value={quantity} onChange={(event) => setQuantity(Number(event.target.value))} required /></label>
-          <label>Etapa<select name="stage" defaultValue={getOrderStage(order)}>{editableStages.map((stage) => <option key={stage} value={stage}>{stageLabels[stage]}</option>)}</select></label>
           <fieldset className="field-wide assignment-fieldset"><legend>Producción</legend>
             <label>Origen<select value={productionSource} onChange={(event) => { setProductionSource(event.target.value as ProductionSource); setProducerProviderId(""); }}><option value="internal">Producción interna</option><option value="sawmill">Otro aserradero</option><option value="import">Importación</option></select></label>
             {productionSource !== "internal" && <label>{productionSource === "sawmill" ? "Aserradero" : "Importador"}<select value={producerProviderId} onChange={(event) => setProducerProviderId(event.target.value)} required><option value="" disabled>Seleccionar</option>{producers.map((provider) => <option key={provider.id} value={provider.id}>{provider.name}</option>)}</select></label>}
@@ -719,21 +736,21 @@ function EditPlanModal({ order, providers, onClose, onSave }: {
 }
 
 function PlanView({ orders, onEdit }: { orders: OperationOrder[]; onEdit: (order: OperationOrder) => void }) {
-  const stagePriority: Record<OperationStage, number> = { negociacion: 0, produccion: 1, logistica: 2, reorganizando: 3, atrasado: 4, pospuesto: 5, cancelado: 6, completado: 7 };
-  const planOrders = [...orders].sort((a, b) => stagePriority[getOrderStage(a)] - stagePriority[getOrderStage(b)] || a.client.localeCompare(b.client, "es"));
+  const statusPriority: Record<OrderOperationalStatus, number> = { planned: 0, preparation: 1, ready_for_delivery: 2, in_transit: 3, partial_delivery: 4, delivered: 5, cancelled: 6 };
+  const planOrders = [...orders].sort((a, b) => statusPriority[getOrderOperationalStatus(a)] - statusPriority[getOrderOperationalStatus(b)] || a.client.localeCompare(b.client, "es"));
 
   return (
     <section className="module-surface plan-surface" aria-labelledby="plan-title">
       <div className="module-toolbar"><div><h2 id="plan-title">Plan</h2></div></div>
       <div className="plan-board" aria-label="Plan operativo">
-        <div className="data-heading plan-heading" aria-hidden="true"><div>Cliente</div><div>Cantidad de pallets</div><div>Fecha planificada</div><div>Etapa</div><div>Transportista</div><div /></div>
+        <div className="data-heading plan-heading" aria-hidden="true"><div>Cliente</div><div>Cantidad de pallets</div><div>Fecha planificada</div><div>Estado</div><div>Transportista</div><div /></div>
         {planOrders.map((order) => {
           const dateChanged = Boolean(order.originalPlannedDate && order.originalPlannedDate !== getOrderPlannedDate(order));
           return <article className="plan-row" key={order.id}>
             <div className="plan-client"><strong>{order.client}</strong></div>
             <div><small className="column-label">Cantidad de pallets</small><strong>{number.format(order.requested)}</strong></div>
             <div className={dateChanged ? "plan-date changed" : "plan-date"}><small className="column-label">Fecha planificada</small><strong>{order.dateLabel}</strong></div>
-            <div><small className="column-label">Etapa</small><StageBadge stage={getOrderStage(order)} /></div>
+            <div><small className="column-label">Estado</small><OrderStatusBadge order={order} /></div>
             <div><small className="column-label">Transportista</small><strong>{order.transport}</strong></div>
             <button type="button" className="plan-edit" onClick={() => onEdit(order)} aria-label={`Editar pedido de ${order.client}`}><Pencil size={17} aria-hidden="true" /></button>
           </article>;
@@ -840,7 +857,6 @@ function AddOrderModal({ clientOptions, products, providers, initialDeliveryDate
         orderDate: form.get("orderDate"),
         requestedDeliveryDate: form.get("requestedDeliveryDate"),
         plannedDate: deliveryDate,
-        stage: form.get("stage"),
         productionSource,
         producerProviderId: productionSource === "internal" ? undefined : producerProviderId,
         productionDate: productionSource === "import" ? undefined : productionDate,
@@ -884,7 +900,6 @@ function AddOrderModal({ clientOptions, products, providers, initialDeliveryDate
           </fieldset>
           <label>Fecha solicitada<input name="requestedDeliveryDate" type="date" defaultValue={initialDeliveryDate} required /></label>
           <label>Fecha de entrega<input type="date" value={deliveryDate} onChange={(event) => setDeliveryDate(event.target.value)} required /></label>
-          <label>Etapa<select name="stage" required defaultValue="negociacion">{editableStages.filter((stage) => stage !== "completado").map((stage) => <option key={stage} value={stage}>{stageLabels[stage]}</option>)}</select></label>
           <fieldset className="field-wide assignment-fieldset"><legend>Producción</legend>
             <label>Origen de producción<select value={productionSource} onChange={(event) => { setProductionSource(event.target.value as ProductionSource); setProducerProviderId(""); }}><option value="internal">Producción interna</option><option value="sawmill">Otro aserradero</option><option value="import">Importación</option></select></label>
             {productionSource !== "internal" && <label>{productionSource === "sawmill" ? "Aserradero" : "Importador"}<select value={producerProviderId} onChange={(event) => setProducerProviderId(event.target.value)} required><option value="" disabled>Seleccionar proveedor</option>{producers.map((provider) => <option key={provider.id} value={provider.id}>{provider.name}</option>)}</select></label>}
@@ -971,17 +986,17 @@ export default function Dashboard({ initialSection = "calendario", initialClient
     return () => window.removeEventListener("keydown", closeOnEscape);
   }, []);
 
-  const activeOrders = useMemo(() => orderRows.filter((order) => getOrderStage(order) !== "completado"), [orderRows]);
-  const historyOrders = useMemo(() => orderRows.filter((order) => getOrderStage(order) === "completado"), [orderRows]);
+  const activeOrders = useMemo(() => orderRows.filter((order) => !isOrderClosed(order)), [orderRows]);
+  const historyOrders = useMemo(() => orderRows.filter(isOrderClosed), [orderRows]);
   const isHistory = section === "historial";
   const visibleOrders = useMemo(() => {
     const normalized = query.trim().toLocaleLowerCase("es");
     return (isHistory ? historyOrders : activeOrders).filter((order) => {
       if (!isHistory && orderKpiFilter) {
         if (!isOrderInPeriod(order, kpiPeriod, today)) return false;
-        const stage = getOrderStage(order);
-        if (orderKpiFilter === "in-progress" && !["produccion", "logistica"].includes(stage)) return false;
-        if (orderKpiFilter === "waiting" && stage !== "negociacion") return false;
+        const status = getOrderOperationalStatus(order);
+        if (orderKpiFilter === "in-progress" && !["preparation", "ready_for_delivery", "in_transit", "partial_delivery"].includes(status)) return false;
+        if (orderKpiFilter === "waiting" && status !== "planned") return false;
         if (orderKpiFilter === "compliance" && order.delivered <= 0) return false;
       }
       if (!normalized) return true;
@@ -993,12 +1008,12 @@ export default function Dashboard({ initialSection = "calendario", initialClient
   const selectedOrder = visibleOrders.find((order) => order.id === selectedId);
   const completed = historyOrders.length;
   const kpiOrders = useMemo(() => orderRows.filter((order) => isOrderInPeriod(order, kpiPeriod, today)), [kpiPeriod, orderRows, today]);
-  const kpiActiveOrders = kpiOrders.filter((order) => getOrderStage(order) !== "completado");
+  const kpiActiveOrders = kpiOrders.filter((order) => !isOrderClosed(order));
   const palletsInProgress = kpiActiveOrders
-    .filter((order) => ["produccion", "logistica"].includes(getOrderStage(order)))
+    .filter((order) => ["preparation", "ready_for_delivery", "in_transit", "partial_delivery"].includes(getOrderOperationalStatus(order)))
     .reduce((sum, order) => sum + order.pending, 0);
   const palletsWaiting = kpiActiveOrders
-    .filter((order) => getOrderStage(order) === "negociacion")
+    .filter((order) => getOrderOperationalStatus(order) === "planned")
     .reduce((sum, order) => sum + order.pending, 0);
   const totalPallets = kpiActiveOrders.reduce((sum, order) => sum + order.requested, 0);
   const periodRequested = kpiOrders.reduce((sum, order) => sum + order.requested, 0);
@@ -1016,7 +1031,7 @@ export default function Dashboard({ initialSection = "calendario", initialClient
       current.requested += order.requested;
       current.delivered += order.delivered;
       current.pending += order.pending;
-      if (getOrderStage(order) !== "completado") { current.activeOrders += 1; current.activePallets += order.requested; }
+      if (!isOrderClosed(order)) { current.activeOrders += 1; current.activePallets += order.requested; }
       summaries.set(order.client, current);
     });
     registeredClients.forEach((client) => {
@@ -1033,7 +1048,7 @@ export default function Dashboard({ initialSection = "calendario", initialClient
 
   const openOrder = (id: string) => {
     const order = orderRows.find((item) => item.id === id);
-    const nextSection: DashboardSection = getOrderStage(order ?? { stage: "negociacion" } as OperationOrder) === "completado" ? "historial" : "pedidos";
+    const nextSection: DashboardSection = order && isOrderClosed(order) ? "historial" : "pedidos";
     setSection(nextSection);
     window.history.pushState({}, "", sectionPaths[nextSection]);
     setQuery("");
@@ -1071,6 +1086,18 @@ export default function Dashboard({ initialSection = "calendario", initialClient
     const payload = (await response.json()) as { order?: OperationOrder; error?: string };
     if (!response.ok || !payload.order) {
       setUpdateError(payload.error ?? "No se pudo actualizar el pedido.");
+      return false;
+    }
+    setOrderRows((current) => current.map((order) => order.id === id ? payload.order! : order));
+    return true;
+  };
+
+  const cancelOrder = async (id: string) => {
+    setUpdateError("");
+    const response = await fetch(`/api/orders/${id}`, { method: "PATCH", headers: { "content-type": "application/json" }, body: JSON.stringify({ cancelled: true }) });
+    const payload = await response.json() as { order?: OperationOrder; error?: string };
+    if (!response.ok || !payload.order) {
+      setUpdateError(payload.error ?? "No se pudo cancelar el pedido.");
       return false;
     }
     setOrderRows((current) => current.map((order) => order.id === id ? payload.order! : order));
@@ -1190,7 +1217,7 @@ export default function Dashboard({ initialSection = "calendario", initialClient
             </div>
 
             <div className="list-heading" aria-hidden="true">
-              <div>Cliente</div><div>Pedido</div><div>Palets</div><div>Fecha de entrega</div><div>Etapa</div><div />
+              <div>Cliente</div><div>Pedido</div><div>Palets</div><div>Fecha de entrega</div><div>Estado</div><div />
             </div>
 
             <div className="order-list" aria-label={`${visibleOrders.length} pedidos`}>
@@ -1212,7 +1239,7 @@ export default function Dashboard({ initialSection = "calendario", initialClient
                     <div className="order-date">
                       <strong>{formatOrderDate(order.requestedDeliveryDate ?? getOrderPlannedDate(order))}</strong>
                     </div>
-                    <div className="order-stage"><StageBadge stage={getOrderStage(order)} /></div>
+                    <div className="order-stage"><OrderStatusBadge order={order} today={today} /></div>
                     <ChevronRight className="row-chevron" size={19} aria-hidden="true" />
                   </button>
                 );
@@ -1226,7 +1253,7 @@ export default function Dashboard({ initialSection = "calendario", initialClient
             </div>
           </section>
 
-          <div className={`order-detail-slot ${selectedOrder ? "open" : ""}`} aria-hidden={!selectedOrder}>{selectedOrder && <OrderTrackingPanel key={selectedOrder.id} order={selectedOrder} providers={providerRows} refreshKey={trackingRevision} onAdd={setUpdatingOrder} onChanged={refreshOrder} onClose={() => setSelectedId("")} />}</div>
+          <div className={`order-detail-slot ${selectedOrder ? "open" : ""}`} aria-hidden={!selectedOrder}>{selectedOrder && <OrderTrackingPanel key={selectedOrder.id} order={selectedOrder} providers={providerRows} refreshKey={trackingRevision} onAdd={setUpdatingOrder} onChanged={refreshOrder} onCancel={cancelOrder} onClose={() => setSelectedId("")} />}</div>
         </div> : section === "plan" ? <><PlanView orders={activeOrders} onEdit={setEditingPlanOrder} />{updateError && <p className="plan-error" role="alert">{updateError}</p>}</> : section === "calendario" ? <OperationsCalendarView key={calendarRevision} onOpen={openOrder} onAdd={(date) => { setAddOrderDate(date); setShowAddOrder(true); }} onChanged={refreshOrder} /> : section === "logistica" ? <OperationsLogisticsView onOpen={openOrder} onChanged={refreshOrder} /> : section === "produccion" ? initialProductionView === "marking" ? <TreatmentView /> : <CapacityView providers={providerRows} view={initialProductionView} initialDate={initialProductionDate} /> : section === "stock" ? <StockView initialRiskFilter={initialStockRiskFilter} /> : section === "productos" ? <ProductsView products={productRows} onEdit={setEditingProduct} onAdd={() => setShowAddProduct(true)} /> : section === "proveedores" ? <ProvidersView providers={providerRows} /> : <ClientMasterView clients={clients} products={productRows} initialClientId={initialClientId} onAdd={() => setShowAddClient(true)} />}
         </main>
 

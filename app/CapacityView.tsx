@@ -17,6 +17,12 @@ const statusLabels: Record<ProductionLoadStatus, string> = {
   unavailable: "Recurso no disponible",
 };
 
+const staffingLabels: Partial<Record<ProductionLoadStatus, string>> = {
+  stretched: "Revisar dotación o pedir apoyo",
+  overloaded: "Requiere ayuda o redistribución",
+  unavailable: "Reasignar recurso",
+};
+
 type ProductionTableRow = {
   date: string;
   entry?: ProductionResourceDay;
@@ -30,6 +36,7 @@ function formatDate(date: string, long = false) { return new Intl.DateTimeFormat
 function formatWeekday(date: string) { const label = new Intl.DateTimeFormat("es-UY", { weekday: "short" }).format(new Date(`${date}T12:00:00`)); return label.replace(".", ""); }
 function sameId(left: number | string | undefined, right: number | string | undefined) { return left !== undefined && right !== undefined && String(left) === String(right); }
 function displayProductName(value: string) { return value.replace(/tratamiento\s+térmico/giu, "Marcado").replace(/tratamiento/giu, "Marcado").replace(/\bHT\b/gu, "Marcado"); }
+function configurationTypeLabel(value?: string) { return value?.replace(/\s*[×x]\s*\d+\s*$/iu, "").trim(); }
 
 function LoadBadge({ status }: { status: ProductionLoadStatus }) {
   const Icon = status === "normal" ? CheckCircle2 : AlertTriangle;
@@ -148,17 +155,19 @@ export default function CapacityView({ providers, view = "production", initialDa
   }, [capacity]);
   const pendingConfirmation = rows.filter((row) => row.assignment.status === "draft").length;
   const capacityAlerts = rows.filter((row) => !row.entry || row.entry.status !== "normal").length;
+  const staffingAlerts = rows.filter((row) => row.entry?.resource.resourceType !== "external_supplier" && (row.entry?.status === "stretched" || row.entry?.status === "overloaded" || row.entry?.status === "unavailable")).length;
   const moveWeek = (amount: number) => setWeekStart((current) => { const value = new Date(current); value.setDate(value.getDate() + amount * 7); return value; });
   return <section className="production-capacity-page" aria-labelledby="capacity-title">
     <ProductionTabs current={view === "configuration" ? "configuration" : "production"} />
     {error && <p className="capacity-error" role="alert">{error}</p>}{loading && !capacity && <div className="module-surface capacity-loading"><LoadingState label="Cargando producción" rows={5} /></div>}
     {capacity && view === "production" && <section className="module-surface production-weekly-panel" aria-labelledby="capacity-title">
-      <div className="module-toolbar production-weekly-toolbar"><div><h2 id="capacity-title">Producción semanal</h2><p className="production-week-summary"><span><strong>{rows.length}</strong> asignaciones</span><span><strong>{pendingConfirmation}</strong> sin confirmar</span><span className={capacityAlerts ? "danger" : ""}><strong>{capacityAlerts}</strong> alertas de capacidad</span></p></div><WeekNavigator label={formatRange(weekStart)} onPrevious={() => moveWeek(-1)} onNext={() => moveWeek(1)} /></div>
-      <div className="production-weekly-table-wrap"><table className="production-weekly-table"><thead><tr><th>Fecha</th><th>Origen / recurso</th><th>Cliente / pedido</th><th>Producto</th><th>Cantidad</th><th>Estado</th><th>Acción</th></tr></thead><tbody>{rows.map((row) => {
+      <div className="module-toolbar production-weekly-toolbar"><div><h2 id="capacity-title">Producción semanal</h2><p className="production-week-summary"><span><strong>{rows.length}</strong> asignaciones</span><span><strong>{pendingConfirmation}</strong> sin confirmar</span><span className={capacityAlerts ? "danger" : ""}><strong>{capacityAlerts}</strong> alertas de capacidad</span><span className={staffingAlerts ? "danger" : ""}><strong>{staffingAlerts}</strong> requieren apoyo</span></p></div><WeekNavigator label={formatRange(weekStart)} onPrevious={() => moveWeek(-1)} onNext={() => moveWeek(1)} /></div>
+      <div className="production-weekly-table-wrap"><table className="production-weekly-table"><thead><tr><th>Fecha</th><th>Origen / recurso</th><th>Cliente / pedido</th><th>Producto</th><th>Palets planificados</th><th>Personas</th><th>Estado</th><th>Acción</th></tr></thead><tbody>{rows.map((row) => {
         const loadStatus = row.entry?.status;
         const needsRule = row.assignment.status === "draft" && row.assignment.applicableRuleIds.length === 0;
         const origin = row.entry?.resource.resourceType === "external_supplier" ? "Externa" : row.entry ? "Interna" : "Sin asignar";
-        return <tr key={`${row.date}-${row.assignment.id}`} className={!row.entry || (loadStatus && loadStatus !== "normal") ? "has-alert" : ""}><td><strong>{formatDate(row.date)}</strong></td><td><strong>{row.entry?.resource.name ?? "Sin recurso"}</strong><small>{origin}</small></td><td><strong>{row.assignment.client}</strong><small>{row.assignment.orderReference || `Pedido ${row.assignment.orderId}`}</small></td><td>{displayProductName(row.assignment.productName)}</td><td className="numeric-cell"><strong>{number.format(row.assignment.actualQuantity ?? row.assignment.plannedQuantity)}</strong>{row.assignment.actualQuantity !== undefined && <small>de {number.format(row.assignment.plannedQuantity)}</small>}</td><td>{!row.entry ? <span className="production-load-badge missing_rule"><AlertTriangle size={14} />Sin asignar</span> : <LoadBadge status={loadStatus!} />}{row.assignment.status === "completed" && <small className="production-row-state">Completada</small>}</td><td className="production-table-action">{row.assignment.status === "draft" && !needsRule && row.entry ? <button type="button" className="secondary-button" onClick={() => setConfirming(row.assignment)}>Confirmar</button> : row.assignment.status === "draft" && needsRule ? <a className="secondary-button" href="/produccion?vista=configuracion">Configurar</a> : row.assignment.status === "confirmed" ? <button type="button" className="secondary-button" onClick={() => setCompleting(row.assignment)}>Registrar producción</button> : row.assignment.status === "completed" && row.assignment.pendingQuantity > 0 ? <small>Saldo {number.format(row.assignment.pendingQuantity)}</small> : <span aria-hidden="true">—</span>}</td></tr>;
+        const staffingCopy = loadStatus && row.entry?.resource.resourceType !== "external_supplier" ? staffingLabels[loadStatus] : undefined;
+        return <tr key={`${row.date}-${row.assignment.id}`} className={!row.entry || (loadStatus && loadStatus !== "normal") ? "has-alert" : ""}><td><strong>{formatDate(row.date)}</strong></td><td><strong>{row.entry?.resource.name ?? "Sin recurso"}</strong><small>{origin}</small></td><td><strong>{row.assignment.client}</strong><small>{row.assignment.orderReference || `Pedido ${row.assignment.orderId}`}</small></td><td>{displayProductName(row.assignment.productName)}</td><td className="numeric-cell"><strong>{number.format(row.assignment.actualQuantity ?? row.assignment.plannedQuantity)}</strong>{row.assignment.actualQuantity !== undefined && <small>de {number.format(row.assignment.plannedQuantity)}</small>}</td><td className="production-people-cell"><strong>{row.assignment.peopleCount ? number.format(row.assignment.peopleCount) : "—"}</strong><small>{configurationTypeLabel(row.assignment.configurationLabel) ?? (row.assignment.status === "draft" ? "A confirmar" : "Sin regla")}</small></td><td>{!row.entry ? <span className="production-load-badge missing_rule"><AlertTriangle size={14} />Sin asignar</span> : <LoadBadge status={loadStatus!} />}{staffingCopy && <small className="production-staffing-alert">{staffingCopy}</small>}{row.assignment.status === "completed" && <small className="production-row-state">Completada</small>}</td><td className="production-table-action">{row.assignment.status === "draft" && !needsRule && row.entry ? <button type="button" className="secondary-button" onClick={() => setConfirming(row.assignment)}>Confirmar</button> : row.assignment.status === "draft" && needsRule ? <a className="secondary-button" href="/produccion?vista=configuracion">Configurar</a> : row.assignment.status === "confirmed" ? <button type="button" className="secondary-button" onClick={() => setCompleting(row.assignment)}>Registrar producción</button> : row.assignment.status === "completed" && row.assignment.pendingQuantity > 0 ? <small>Saldo {number.format(row.assignment.pendingQuantity)}</small> : <span aria-hidden="true">—</span>}</td></tr>;
       })}</tbody></table>{!rows.length && <div className="production-table-empty"><Factory size={24} /><strong>No hay producción asignada esta semana</strong></div>}</div>
     </section>}
     {capacity && view === "configuration" && <div className="production-configuration" aria-labelledby="capacity-title">

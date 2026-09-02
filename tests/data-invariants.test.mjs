@@ -1,12 +1,33 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { getOrderStage, orders, products, providers } from "../app/data.ts";
+import { getOrderOperationalStatus, getOrderStage, isOrderClosed, isOrderOverdue, orders, products, providers } from "../app/data.ts";
 import { buildCapacitySnapshot } from "../app/capacity.ts";
 
 test("separa los pedidos activos del historial", () => {
   assert.equal(orders.length, 12);
-  assert.equal(orders.filter((order) => getOrderStage(order) !== "completado").length, 2);
-  assert.equal(orders.filter((order) => getOrderStage(order) === "completado").length, 10);
+  assert.equal(orders.filter((order) => !isOrderClosed(order)).length, 2);
+  assert.equal(orders.filter(isOrderClosed).length, 10);
+});
+
+test("deriva el estado operativo desde producción, viajes y entregas", () => {
+  const source = orders.find((order) => order.id === "frutura-74");
+  assert.ok(source);
+  const planned = structuredClone(source);
+  assert.equal(getOrderOperationalStatus(planned), "planned");
+
+  const preparation = structuredClone(source);
+  preparation.lines[0].productionAllocations = [{ id: 1, orderLineId: preparation.lines[0].id, plannedDate: "2026-08-31", plannedQuantity: 100, status: "confirmed", createdAt: "2026-08-31T12:00:00Z", updatedAt: "2026-08-31T12:00:00Z" }];
+  assert.equal(getOrderOperationalStatus(preparation), "preparation");
+
+  const shipment = { id: 1, orderId: source.id, plannedDate: "2026-08-31", status: "ready", transportSource: "internal", transportLabel: "Interno", createdAt: "2026-08-31T12:00:00Z", updatedAt: "2026-08-31T12:00:00Z", lines: [], events: [] };
+  assert.equal(getOrderOperationalStatus({ ...structuredClone(source), shipments: [shipment] }), "ready_for_delivery");
+  assert.equal(getOrderOperationalStatus({ ...structuredClone(source), shipments: [{ ...shipment, status: "dispatched" }] }), "in_transit");
+  assert.equal(getOrderOperationalStatus({ ...structuredClone(source), dispatchedAt: "2026-08-31T12:00:00Z" }), "in_transit");
+  assert.equal(getOrderOperationalStatus({ ...structuredClone(source), delivered: 100, pending: 500 }), "partial_delivery");
+  assert.equal(getOrderOperationalStatus({ ...structuredClone(source), delivered: 600, pending: 0 }), "delivered");
+  assert.equal(getOrderOperationalStatus({ ...structuredClone(source), stage: "cancelado" }), "cancelled");
+  assert.equal(isOrderClosed({ ...structuredClone(source), delivered: 600, pending: 0 }), true);
+  assert.equal(isOrderOverdue(planned, new Date("2026-09-01T12:00:00")), true);
 });
 
 test("distingue proveedores de aserradero y transporte", () => {

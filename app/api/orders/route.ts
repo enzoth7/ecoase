@@ -1,13 +1,12 @@
 import { createOrder, getOrders, getProviders, type CreateOrderInput } from "../store";
-import { getOrderStage } from "../../data";
-import type { CapacityOperation, OperationStage, ProductionSource, TransportSource } from "../../data";
+import { isOrderClosed } from "../../data";
+import type { CapacityOperation, ProductionSource, TransportSource } from "../../data";
 
 const isoDate = /^\d{4}-\d{2}-\d{2}$/;
 const operations: CapacityOperation[] = ["assembly", "treatment"];
-const creationStages: Exclude<OperationStage, "completado">[] = ["negociacion", "produccion", "logistica", "atrasado", "pospuesto", "cancelado", "reorganizando"];
 
 export async function GET() {
-  return Response.json({ orders: (await getOrders()).filter((order) => getOrderStage(order) !== "completado") });
+  return Response.json({ orders: (await getOrders()).filter((order) => !isOrderClosed(order)) });
 }
 
 export async function POST(request: Request) {
@@ -25,10 +24,9 @@ export async function POST(request: Request) {
   const productionDate = typeof payload.productionDate === "string" && isoDate.test(payload.productionDate) ? payload.productionDate : plannedDate || undefined;
   const importArrivalDate = typeof payload.importArrivalDate === "string" && isoDate.test(payload.importArrivalDate) ? payload.importArrivalDate : undefined;
   const requiredOperations: CapacityOperation[] = Array.isArray(payload.requiredOperations) ? payload.requiredOperations.filter((item): item is CapacityOperation => operations.includes(item as CapacityOperation)) : ["assembly"];
-  const stage = creationStages.includes(payload.stage as Exclude<OperationStage, "completado">) ? payload.stage as Exclude<OperationStage, "completado"> : "";
 
-  if (!lines.length || !orderDate || !requestedDeliveryDate || !plannedDate || !stage || !productionSource || !transportSource || requiredOperations.length === 0) {
-    return Response.json({ error: "Cliente, al menos un producto con cantidad, fechas, etapa, operaciones y orígenes son obligatorios." }, { status: 400 });
+  if (!lines.length || !orderDate || !requestedDeliveryDate || !plannedDate || !productionSource || !transportSource || requiredOperations.length === 0) {
+    return Response.json({ error: "Cliente, al menos un producto con cantidad, fechas, operaciones y orígenes son obligatorios." }, { status: 400 });
   }
   const providers = await getProviders();
   const producer = providers.find((provider) => provider.id === payload.producerProviderId);
@@ -46,7 +44,7 @@ export async function POST(request: Request) {
       requestedDeliveryDate,
       plannedDate,
       transport,
-      stage,
+      stage: "negociacion",
       reference: payload.reference,
       notes: payload.notes,
       productionSource,

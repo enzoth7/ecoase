@@ -48,9 +48,10 @@ test("la importación conserva detalle y documenta el total defectuoso de Palbin
   assert.match(reconciliation, /omiten? las filas 34:47/i);
 });
 
-test("la pantalla expone filtros, conciliación, proyección y libro", async () => {
+test("la pantalla expone filtros, proyección y libro sin conciliación inicial", async () => {
   const view = await read("app/StockView.tsx");
-  for (const copy of ["Stock", "Conciliación inicial", "Registrar entrada", "Proyección", "Consumo", "Movimientos", "Ver tabla de la proyección", "Con alerta", "Días de stock"]) assert.match(view, new RegExp(copy));
+  for (const copy of ["Stock", "Registrar entrada", "Proyección", "Consumo", "Movimientos", "Ver tabla de la proyección", "Con alerta", "Días de stock"]) assert.match(view, new RegExp(copy));
+  assert.doesNotMatch(view, /Conciliación inicial/);
   assert.match(view, /ResponsiveContainer/);
   assert.match(view, /value="alert"/);
   assert.match(view, /Todos los catálogos/);
@@ -74,4 +75,17 @@ test("los datos opcionales del cliente no bloquean pedidos", async () => {
   assert.doesNotMatch(store, /Para activar, cargue la dirección/);
   assert.match(master, /return Boolean\(\(item\.product\?\.zetaCode \?\? item\.zetaCode\)\.trim\(\)\)/);
   assert.match(dashboard, /selectedClientProduct\?\.clientAddress \|\| "—"/);
+});
+
+test("el consumo se carga desde Stock o desde el producto del cliente", async () => {
+  const [stock, client, shared] = await Promise.all([
+    read("app/StockView.tsx"),
+    read("app/components/ClientMasterView.tsx"),
+    read("app/components/ConsumptionRuleModal.tsx"),
+  ]);
+  assert.match(stock, /ConsumptionRuleModal/);
+  assert.match(client, /Consumo del cliente/);
+  assert.match(client, /ConsumptionRuleModal/);
+  assert.match(shared, /\/api\/stock\/consumption/);
+  assert.match(shared, /se comparte entre Clientes y Stock/i);
 });

@@ -1149,6 +1149,9 @@ h3 {
   background: var(--forest-2);
 }
 
+.tracking-cancel-button { min-height: 44px; margin-top: 14px; padding: 0 14px; border: 1px solid #e8b9b4; border-radius: 9px; background: #fff; color: var(--red); font-weight: 750; cursor: pointer; }
+.tracking-cancel-button:hover { background: var(--red-soft); }
+
 .tracking-timeline {
   margin-top: 23px;
 }
@@ -3588,6 +3591,7 @@ h3 {
 .production-table-action { width: 88px; text-align: right !important; }
 .production-table-action .secondary-button { min-height: 36px; padding: 7px 10px; font-size: 12px; white-space: nowrap; }
 .shipment-table-panel { gap: 10px; }
+.tracking-empty-action { display: flex; align-items: center; justify-content: space-between; gap: 16px; }
 .shipment-table-wrap { width: 100%; }
 .shipment-tracking-table { min-width: 940px; }
 .shipment-tracking-table tbody th { min-width: 108px; white-space: nowrap; }
@@ -4088,6 +4092,10 @@ button:focus-visible, a:focus-visible, input:focus-visible, select:focus-visible
 .status-badge.produccion, .status-badge.logistica, .status-badge.completado, .status-badge.entregado, .status-badge.ready, .status-badge.confirmed { background: var(--brand-green-light); color: var(--brand-green-dark); }
 .status-badge.negociacion, .status-badge.pospuesto, .status-badge.reorganizando { background: var(--amber-soft); color: var(--amber); }
 .status-badge.atrasado, .status-badge.cancelado, .status-badge.bloqueado { background: var(--red-soft); color: var(--red); }
+.status-badge.preparation, .status-badge.ready_for_delivery, .status-badge.in_transit, .status-badge.delivered { background: var(--brand-green-light); color: var(--brand-green-dark); }
+.status-badge.planned, .status-badge.partial_delivery { background: var(--amber-soft); color: var(--amber); }
+.status-badge.cancelled, .status-badge.overdue { background: var(--red-soft); color: var(--red); }
+.order-status-stack { display: inline-flex; flex-wrap: wrap; align-items: center; gap: 4px; }
 
 .data-heading, .providers-heading, .shipment-table-heading, .capacity-table-heading { background: var(--brand-brown-dark); color: var(--brand-white); }
 .stock-table th { background: var(--brand-brown-dark); color: var(--brand-white); }
@@ -4138,7 +4146,7 @@ input, select, textarea { color: var(--brand-black); }
 .production-weekly-table,
 .production-config-table-wrap table,
 .treatment-table { width: 100%; border-collapse: collapse; color: var(--ink); font-size: 12px; }
-.production-weekly-table { min-width: 980px; }
+.production-weekly-table { min-width: 1120px; }
 .production-config-table-wrap table { min-width: 790px; }
 .treatment-table { min-width: 890px; }
 .production-weekly-table th,
@@ -4168,6 +4176,41 @@ input, select, textarea { color: var(--brand-black); }
 .production-weekly-table .production-table-action a,
 .production-weekly-table .production-table-action button { min-height: 36px; display: inline-flex; align-items: center; justify-content: center; padding: 7px 10px; font-size: 12px; text-decoration: none; white-space: nowrap; }
 .production-row-state { display: block; margin-top: 4px; color: var(--muted); }
+.production-people-cell { min-width: 110px; }
+.production-people-cell > strong { font-size: 15px; }
+.production-staffing-alert { display: block; max-width: 190px; margin-top: 5px !important; color: var(--danger) !important; font-weight: 800; line-height: 1.25; }
+.shipment-distribution-modal { width: min(760px, 100%); }
+.shipment-distribution-content { display: grid; gap: 18px; padding: 20px 22px 22px; }
+.shipment-distribution-heading { display: flex; align-items: center; justify-content: space-between; gap: 24px; }
+.shipment-distribution-heading > div { min-width: 0; display: grid; gap: 4px; }
+.shipment-distribution-heading strong { color: var(--brand-black); font-size: 16px; }
+.shipment-distribution-heading small { max-width: 470px; color: var(--muted); line-height: 1.45; }
+.shipment-distribution-heading .primary-button { flex: 0 0 auto; min-height: 44px; padding-inline: 18px; }
+.shipment-distribution-list { display: grid; border: 1px solid var(--line); border-radius: 14px; overflow: hidden; }
+.shipment-distribution-list article { min-height: 82px; display: grid; grid-template-columns: minmax(180px, 1fr) 130px 96px; align-items: center; gap: 18px; padding: 14px 16px; border-bottom: 1px solid var(--line); }
+.shipment-distribution-list article:last-child { border-bottom: 0; }
+.shipment-distribution-list article > div { min-width: 0; display: grid; gap: 3px; }
+.shipment-distribution-list article > span { justify-self: end; color: var(--brand-black); font-weight: 750; font-variant-numeric: tabular-nums; white-space: nowrap; }
+.shipment-distribution-list article > button { width: 100%; min-height: 44px; }
+.shipment-distribution-list small { color: var(--muted); line-height: 1.4; }
+.shipment-distribution-content > .modal-actions { margin: 0; padding-top: 16px; border-top: 1px solid var(--line); }
+.shipment-distribution-content > .modal-actions button { min-width: 96px; min-height: 44px; }
+
+@media (max-width: 760px) {
+  .shipment-distribution-content { padding: 16px; }
+  .shipment-distribution-heading { align-items: stretch; flex-direction: column; gap: 12px; }
+  .shipment-distribution-heading .primary-button { width: 100%; }
+  .shipment-distribution-list article { grid-template-columns: minmax(0, 1fr) auto; gap: 10px 14px; padding: 14px; }
+  .shipment-distribution-list article > button { grid-column: 1 / -1; }
+  .shipment-distribution-content > .modal-actions button { width: 100%; }
+}
+.client-product-consumption { display: flex; align-items: center; justify-content: space-between; gap: 16px; padding: 14px 0; border-top: 1px solid var(--line); }
+.client-product-consumption > div { display: flex; align-items: center; gap: 10px; color: var(--green); }
+.client-product-consumption span { display: grid; gap: 2px; }
+.client-product-consumption strong { color: var(--ink); }
+.client-product-consumption small { color: var(--muted); }
+.consumption-client-context { min-height: 66px; display: grid; align-content: center; gap: 3px; padding: 10px 13px; border: 1px solid var(--line); border-radius: 12px; background: var(--green-soft); }
+.consumption-client-context small { color: var(--muted); }
 .production-table-empty { min-height: 170px; display: grid; place-items: center; align-content: center; gap: 8px; padding: 28px; color: var(--muted); text-align: center; }
 .production-table-empty strong { color: var(--ink); font-size: 13px; }
 .production-configuration { display: grid; gap: 14px; }

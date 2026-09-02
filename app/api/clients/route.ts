@@ -1,5 +1,5 @@
 import { createClient, getClients, getOrders } from "../store";
-import { getOrderStage } from "../../data";
+import { isOrderClosed } from "../../data";
 
 export async function GET() {
   const clients = new Map<string, { id?: string; name: string; address?: string; department?: string; active?: boolean; updatedAt?: string; orders: number; requested: number; delivered: number; pending: number; activeOrders: number; activePallets: number }>();
@@ -10,7 +10,7 @@ export async function GET() {
     client.requested += order.requested;
     client.delivered += order.delivered;
     client.pending += order.pending;
-    if (getOrderStage(order) !== "completado") { client.activeOrders += 1; client.activePallets += order.requested; }
+    if (!isOrderClosed(order)) { client.activeOrders += 1; client.activePallets += order.requested; }
     clients.set(order.client, client);
   });
 

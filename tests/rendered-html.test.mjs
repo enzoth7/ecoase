@@ -83,7 +83,7 @@ test("renderiza pedidos activos e incluye acceso al historial", async () => {
   assert.match(html, /Cliente/);
   assert.match(html, /Pedido/);
   assert.match(html, /Fecha de entrega/);
-  assert.match(html, /Etapa/);
+  assert.match(html, /Estado/);
   assert.match(html, /Palets/);
   assert.doesNotMatch(html, /order-detail-placeholder/);
   assert.doesNotMatch(html, /Bloqueado|En coordinación/);
@@ -226,7 +226,7 @@ test("administra capacidad por recurso y producto con confirmación trazable", a
   const deactivated = await request("/api/capacity/resources", { method: "PATCH", headers: { "content-type": "application/json" }, body: JSON.stringify({ id: crewResource.id, active: false }) });
   assert.equal(deactivated.status, 200);
 
-  const cleanupOrder = await request(`/api/orders/${createdOrder.id}`, { method: "PATCH", headers: { "content-type": "application/json" }, body: JSON.stringify({ stage: "completado" }) });
+  const cleanupOrder = await request(`/api/orders/${createdOrder.id}`, { method: "PATCH", headers: { "content-type": "application/json" }, body: JSON.stringify({ cancelled: true }) });
   assert.equal(cleanupOrder.status, 200);
 });
 
@@ -289,7 +289,7 @@ test("registra entradas, ajustes y reversiones en stock", async () => {
   assert.equal(page.status, 200);
   const html = await page.text();
   assert.match(html, />Stock</);
-  assert.match(html, /Conciliación inicial/);
+  assert.doesNotMatch(html, /Conciliación inicial/);
 
   const initial = (await (await request("/api/stock/summary")).json()).stock.find((row) => row.product.id === "palbin-p02");
   const receipt = await request("/api/stock/movements/receipts", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ productId: "palbin-p02", stockState: "ready", quantity: 20, movementType: "supplier_receipt", providerId: "mirasol", occurredAt: "2026-09-08T12:00:00.000Z", responsible: "Recepción QA", sourceReference: "REM-QA" }) });
@@ -429,7 +429,6 @@ test("permite editar el plan y registra los cambios del pedido", async () => {
       transport: "Milton",
       plannedDate: "2026-08-18",
       requested: 650,
-      stage: "logistica",
     }),
   });
 
@@ -441,20 +440,21 @@ test("permite editar el plan y registra los cambios del pedido", async () => {
   assert.equal(payload.order.originalPlannedDate, "2026-08-14");
   assert.equal(payload.order.requested, 650);
   assert.equal(payload.order.lines.reduce((total, line) => total + line.quantity, 0), 650);
-  assert.equal(payload.order.stage, "logistica");
+  assert.equal(payload.order.stage, "produccion");
 
   const history = await (await request("/api/orders/frutura-74/history")).json();
-  assert.equal(history.history.length, 1);
-  assert.equal(history.history[0].changes.some((change) => change.field === "Fecha planificada"), true);
-  assert.equal(history.history[0].changes.some((change) => change.field === "Cantidad de pallets"), true);
-  assert.equal(history.history[0].changes.some((change) => change.field === "Transportista"), true);
+  assert.ok(history.history.length >= 2);
+  const planChange = history.history.find((entry) => entry.changes.some((change) => change.field === "Fecha planificada"));
+  assert.ok(planChange);
+  assert.equal(planChange.changes.some((change) => change.field === "Cantidad de pallets"), true);
+  assert.equal(planChange.changes.some((change) => change.field === "Transportista"), true);
 });
 
-test("al completar un pedido se mueve al historial", async () => {
-  const updateResponse = await request("/api/orders/proquimur-63", {
-    method: "PATCH",
+test("al registrar la entrega total el pedido se mueve al historial", async () => {
+  const updateResponse = await request("/api/orders/proquimur-63/updates", {
+    method: "POST",
     headers: { "content-type": "application/json" },
-    body: JSON.stringify({ stage: "completado" }),
+    body: JSON.stringify({ kind: "entrega", deliveredQuantity: 600 }),
   });
   assert.equal(updateResponse.status, 200);
 
@@ -486,10 +486,12 @@ test("registra entregas y cambios de dirección en el seguimiento del pedido", a
   assert.equal(addressPayload.order.deliveryAddress, "Camino de los Aromos 120");
 
   const history = await (await request("/api/orders/frutura-74/history")).json();
-  assert.equal(history.history[0].kind, "direccion");
-  assert.equal(history.history[0].changes.some((change) => change.field === "Dirección de entrega"), true);
-  assert.equal(history.history[1].kind, "entrega");
-  assert.equal(history.history[1].changes.some((change) => change.field === "Cantidad entregada"), true);
+  const addressChange = history.history.find((entry) => entry.kind === "direccion");
+  const deliveryChange = history.history.find((entry) => entry.kind === "entrega");
+  assert.ok(addressChange);
+  assert.equal(addressChange.changes.some((change) => change.field === "Dirección de entrega"), true);
+  assert.ok(deliveryChange);
+  assert.equal(deliveryChange.changes.some((change) => change.field === "Cantidad entregada"), true);
 });
 
 test("redirige el plan anterior a producción sin perder parámetros", async () => {
@@ -540,7 +542,7 @@ test("crea pedidos mediante POST /api/orders", async () => {
   assert.equal(payload.order.pending, 50);
   assert.equal(payload.order.orderDate, "2026-08-01");
   assert.equal(payload.order.requestedDeliveryDate, "2026-08-10");
-  assert.equal(payload.order.stage, "reorganizando");
+  assert.equal(payload.order.stage, "negociacion");
   assert.equal(payload.order.zetaCode, "P02");
   assert.equal(payload.order.deliveryAddress, "Ruta 5 km 18");
   assert.equal(payload.order.notes, "Descargar por el acceso norte.");

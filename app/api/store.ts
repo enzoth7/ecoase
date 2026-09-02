@@ -3,6 +3,7 @@ import {
   formatPlannedDate,
   getOrderPlannedDate,
   getOrderStage,
+  isOrderClosed,
   orders as seededOrders,
   products as seededProducts,
   providers as seededProviders,
@@ -798,10 +799,15 @@ export async function replaceProductionAllocations(orderLineId: string, allocati
   const line = order?.lines.find((item) => item.id === orderLineId);
   if (!line) return null;
   const fixed = (line.productionAllocations ?? []).filter((item) => item.status === "confirmed" || item.status === "completed");
+  const previousDrafts = (line.productionAllocations ?? []).filter((item) => item.status === "draft");
   if (allocations.some((item) => item.status !== "draft" || !/^\d{4}-\d{2}-\d{2}$/.test(item.plannedDate) || !Number.isInteger(item.plannedQuantity) || item.plannedQuantity <= 0)) throw new Error("Las asignaciones nuevas se guardan en borrador con fecha y cantidad válidas.");
   if ([...fixed, ...allocations].reduce((sum, item) => sum + item.plannedQuantity, 0) > line.quantity) throw new Error("La producción asignada supera la cantidad de la línea.");
   const now = new Date().toISOString();
   line.productionAllocations = [...fixed, ...allocations.map((item) => { const resourceId = item.resourceId?.trim() || undefined; const resource = memoryProductionResources.find((entry) => String(entry.id) === resourceId || entry.providerId === resourceId || resourceId === "internal" && entry.resourceType === "internal_factory"); return { ...item, id: `pa-${crypto.randomUUID()}`, orderLineId, resourceId, productionResourceId: resource?.id, status: "draft" as const, note: item.note?.trim() || undefined, createdAt: now, updatedAt: now }; })];
+  const describe = (entries: Array<{ plannedDate: string; plannedQuantity: number; resourceId?: string }>) => entries.length ? entries.map((entry) => `${formatPlannedDate(entry.plannedDate)} · ${entry.plannedQuantity} palets · ${entry.resourceId ?? "Sin recurso"}`).join(" | ") : "Sin distribuir";
+  const from = describe(previousDrafts);
+  const to = describe(allocations);
+  if (order && from !== to) memoryHistory.set(order.id, [{ id: `produccion-${crypto.randomUUID()}`, changedAt: new Intl.DateTimeFormat("es-UY", { dateStyle: "short", timeStyle: "short" }).format(new Date(now)), kind: "cambio", note: `${line.product}: distribución de producción actualizada`, changes: [{ field: "Distribución de producción", from, to }] }, ...(memoryHistory.get(order.id) ?? [])]);
   return line;
 }
 
@@ -902,16 +908,37 @@ export async function rescheduleShipment(shipmentId: number | string, input: { n
   const previousDate = shipment.plannedDate; const now = new Date().toISOString(); shipment.plannedDate = input.newDate; shipment.updatedAt = now; shipment.events.push({ id: `se-${crypto.randomUUID()}`, shipmentId, eventType: "rescheduled", previousDate, nextDate: input.newDate, reason: input.reason, note: input.note?.trim() || undefined, responsible: input.responsible?.trim() || "Operación", createdAt: now }); refreshMemoryOrder(order); return shipment;
 }
 
+const shipmentHistoryStatus: Record<ShipmentStatus, string> = { planned: "Planificado", ready: "Pronto", loaded: "Cargado", dispatched: "En viaje", delivered: "Entregado", cancelled: "Cancelado" };
+const shipmentHistoryReasons: Record<RescheduleReason, string> = { production: "Producción", logistics: "Logística", client: "Cliente", weather: "Clima / lluvia", other: "Otro" };
+
+function shipmentHistory(order: OperationOrder) {
+  return (order.shipments ?? []).flatMap((shipment) => shipment.events.map((event) => {
+    const changes: OrderChange["changes"] = [];
+    if (event.eventType === "created") changes.push({ field: "Viaje", from: "—", to: `Creado para ${formatPlannedDate(event.nextDate ?? shipment.plannedDate)}` });
+    if (event.eventType === "rescheduled" && event.previousDate && event.nextDate) changes.push({ field: "Fecha de entrega", from: formatPlannedDate(event.previousDate), to: formatPlannedDate(event.nextDate) });
+    if (event.eventType === "transition" && event.previousStatus && event.nextStatus) changes.push({ field: "Estado del viaje", from: shipmentHistoryStatus[event.previousStatus], to: shipmentHistoryStatus[event.nextStatus] });
+    if ((event.eventType === "transition" || event.eventType === "remittance_corrected") && event.previousRemittance !== event.nextRemittance) changes.push({ field: "Remito", from: event.previousRemittance ?? "—", to: event.nextRemittance ?? "—" });
+    if (event.eventType === "incident" && !changes.length) changes.push({ field: "Viaje", from: "Sin incidencia", to: "Incidencia registrada" });
+    const reason = event.reason ? `Motivo: ${shipmentHistoryReasons[event.reason]}. ` : "";
+    const detail = [reason, event.note, `Responsable: ${event.responsible}`].filter(Boolean).join(" ").trim();
+    const kind: OrderUpdateKind = event.eventType === "incident" ? "incidencia" : event.nextStatus === "delivered" ? "entrega" : event.nextStatus === "dispatched" ? "despacho" : "cambio";
+    return { createdAt: event.createdAt, change: { id: `shipment-${event.id}`, changedAt: new Intl.DateTimeFormat("es-UY", { dateStyle: "short", timeStyle: "short" }).format(new Date(event.createdAt)), kind, note: detail || undefined, changes } satisfies OrderChange };
+  })).filter((entry) => entry.change.changes.length > 0);
+}
+
 export async function getOrderHistory(id: string) {
-  if (useMemoryStore) return memoryHistory.get(id) ?? [];
+  if (useMemoryStore) {
+    const order = memoryOrders.find((item) => item.id === id);
+    return [...(order ? shipmentHistory(order).sort((a, b) => b.createdAt.localeCompare(a.createdAt)).map((entry) => entry.change) : []), ...(memoryHistory.get(id) ?? [])];
+  }
   const query = new URLSearchParams({
     select: "id,changed_at,kind,note,order_change_items(field,from_value,to_value,position)",
     order_id: `eq.${id}`,
     order: "changed_at.desc",
     "order_change_items.order": "position.asc",
   });
-  const rows = await supabaseRequest<DbChange[]>(`/rest/v1/order_changes?${query}`);
-  return rows.map<OrderChange>((row) => ({
+  const [rows, order] = await Promise.all([supabaseRequest<DbChange[]>(`/rest/v1/order_changes?${query}`), getDatabaseOrder(id)]);
+  const orderChanges = rows.map((row) => ({ createdAt: row.changed_at, change: {
     id: row.id,
     changedAt: new Intl.DateTimeFormat("es-UY", { dateStyle: "short", timeStyle: "short" }).format(new Date(row.changed_at)),
     kind: row.kind,
@@ -923,7 +950,8 @@ export async function getOrderHistory(id: string) {
         from: item.field === "Fecha planificada" ? formatPlannedDate(item.from_value) : item.from_value,
         to: item.field === "Fecha planificada" ? formatPlannedDate(item.to_value) : item.to_value,
       })),
-  }));
+  } satisfies OrderChange }));
+  return [...orderChanges, ...(order ? shipmentHistory(order) : [])].sort((a, b) => b.createdAt.localeCompare(a.createdAt)).map((entry) => entry.change);
 }
 
 export async function recordOrderUpdate(id: string, input: RecordOrderUpdateInput) {
@@ -1535,7 +1563,7 @@ export async function getTreatmentOptions(): Promise<TreatmentProductOption[]> {
       primaryAsset: primary && url ? { id: primary.id, url, mimeType: primary.mimeType, altText: primary.altText } : undefined,
     };
     const destinations: TreatmentDestination[] = [{ key: `client:${relation.id}`, label: base.clientName, ...base }];
-    for (const order of orders.filter((item) => getOrderStage(item) !== "completado")) for (const line of order.lines.filter((item) => String(item.clientProductId) === String(relation.id))) {
+    for (const order of orders.filter((item) => !isOrderClosed(item))) for (const line of order.lines.filter((item) => String(item.clientProductId) === String(relation.id))) {
       destinations.push({ key: `order:${line.id}`, label: `${base.clientName} · ${order.reference}`, ...base, orderLineId: line.id, orderReference: order.reference });
     }
     return { productId: relation.productId, destinations };
