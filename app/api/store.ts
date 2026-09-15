@@ -13,6 +13,7 @@ import {
   type OrderChange,
   type OrderUpdateKind,
   type Provider,
+  type ProviderType,
   type Product,
   type ProductKind,
   type ProductionSource,
@@ -169,6 +170,7 @@ const useMemoryStore = process.env.ECOASE_DATA_BACKEND === "memory";
 const memoryOrders: OperationOrder[] = structuredClone(seededOrders);
 const memoryHistory = new Map<string, OrderChange[]>();
 const memoryProducts: Product[] = structuredClone(seededProducts);
+const memoryProviders: Provider[] = structuredClone(seededProviders);
 const memoryClients: ClientMaster[] = [...new Set(seededOrders.map((order) => order.client))].map((name, index) => {
   const address = seededOrders.find((order) => order.client === name)?.deliveryAddress;
   return { id: `cliente-${index + 1}`, name, address, active: Boolean(address), updatedAt: new Date(0).toISOString() };
@@ -328,10 +330,208 @@ export async function getOrders() {
   return attachDatabaseOperations(rows.map(mapOrder));
 }
 
+export type CreateProviderInput = {
+  name: string;
+  type: ProviderType;
+  supplies: string;
+};
+
+export type UpdateProviderInput = {
+  name?: string;
+  type?: ProviderType;
+  supplies?: string;
+};
+
+export function generateProviderSlug(name: string): string {
+  const normalized = name
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .toLowerCase()
+    .trim()
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-+|-+$/g, "");
+  return normalized || `prov-${crypto.randomUUID().slice(0, 8)}`;
+}
+
 export async function getProviders() {
-  if (useMemoryStore) return seededProviders;
+  if (useMemoryStore) return memoryProviders;
   const query = new URLSearchParams({ select: "id,name,type,supplies", order: "type.asc,name.asc" });
   return supabaseRequest<Provider[]>(`/rest/v1/providers?${query}`);
+}
+
+export async function createProvider(input: CreateProviderInput): Promise<Provider> {
+  const name = input.name.trim();
+  if (!name) throw new Error("Indique el nombre del proveedor.");
+
+  const validTypes = new Set<ProviderType>(["Aserradero", "Transporte", "Importador"]);
+  if (!validTypes.has(input.type)) throw new Error("El tipo de proveedor indicado no es válido.");
+
+  const supplies = input.supplies?.trim() ?? "";
+  if (!supplies) throw new Error("Indique qué provee el proveedor.");
+
+  if (useMemoryStore) {
+    if (memoryProviders.some((p) => p.name.localeCompare(name, "es", { sensitivity: "accent" }) === 0)) {
+      throw new Error("Ya existe un proveedor con ese nombre.");
+    }
+    const baseSlug = generateProviderSlug(name);
+    let id = baseSlug;
+    let counter = 2;
+    while (memoryProviders.some((p) => p.id === id)) {
+      id = `${baseSlug}-${counter++}`;
+    }
+    const provider: Provider = { id, name, type: input.type, supplies };
+    memoryProviders.push(provider);
+    return provider;
+  }
+
+  const existing = await getProviders();
+  if (existing.some((p) => p.name.localeCompare(name, "es", { sensitivity: "accent" }) === 0)) {
+    throw new Error("Ya existe un proveedor con ese nombre.");
+  }
+  const baseSlug = generateProviderSlug(name);
+  let id = baseSlug;
+  let counter = 2;
+  while (existing.some((p) => p.id === id)) {
+    id = `${baseSlug}-${counter++}`;
+  }
+
+  const rows = await supabaseServerRequest<Provider[]>("/rest/v1/providers", {
+    method: "POST",
+    prefer: "return=representation",
+    body: JSON.stringify({ id, name, type: input.type, supplies }),
+  });
+  const created = rows?.[0] ?? (await getProviders()).find((p) => p.id === id);
+  if (!created) throw new Error("El proveedor se creó pero no pudo recuperarse.");
+  return created;
+}
+
+export async function updateProvider(id: string, input: UpdateProviderInput): Promise<Provider> {
+  const trimmedId = id.trim();
+  if (!trimmedId) throw new Error("ID de proveedor no válido.");
+
+  if (useMemoryStore) {
+    const current = memoryProviders.find((p) => p.id === trimmedId);
+    if (!current) throw new Error("Proveedor no encontrado.");
+
+    if (input.name !== undefined) {
+      const name = input.name.trim();
+      if (!name) throw new Error("El nombre no puede estar vacío.");
+      if (memoryProviders.some((p) => p.id !== trimmedId && p.name.localeCompare(name, "es", { sensitivity: "accent" }) === 0)) {
+        throw new Error("Ya existe otro proveedor con ese nombre.");
+      }
+      current.name = name;
+    }
+    if (input.type !== undefined) {
+      const validTypes = new Set<ProviderType>(["Aserradero", "Transporte", "Importador"]);
+      if (!validTypes.has(input.type)) throw new Error("El tipo de proveedor no es válido.");
+      current.type = input.type;
+    }
+    if (input.supplies !== undefined) {
+      const supplies = input.supplies.trim();
+      if (!supplies) throw new Error("Indique qué provee el proveedor.");
+      current.supplies = supplies;
+    }
+    return current;
+  }
+
+  const current = (await getProviders()).find((p) => p.id === trimmedId);
+  if (!current) throw new Error("Proveedor no encontrado.");
+
+  const patch: { name?: string; type?: ProviderType; supplies?: string } = {};
+  if (input.name !== undefined) {
+    const name = input.name.trim();
+    if (!name) throw new Error("El nombre no puede estar vacío.");
+    const existing = await getProviders();
+    if (existing.some((p) => p.id !== trimmedId && p.name.localeCompare(name, "es", { sensitivity: "accent" }) === 0)) {
+      throw new Error("Ya existe otro proveedor con ese nombre.");
+    }
+    patch.name = name;
+  }
+  if (input.type !== undefined) {
+    const validTypes = new Set<ProviderType>(["Aserradero", "Transporte", "Importador"]);
+    if (!validTypes.has(input.type)) throw new Error("El tipo de proveedor no es válido.");
+    patch.type = input.type;
+  }
+  if (input.supplies !== undefined) {
+    const supplies = input.supplies.trim();
+    if (!supplies) throw new Error("Indique qué provee el proveedor.");
+    patch.supplies = supplies;
+  }
+
+  if (Object.keys(patch).length > 0) {
+    await supabaseServerRequest<unknown>(`/rest/v1/providers?id=eq.${encodeURIComponent(trimmedId)}`, {
+      method: "PATCH",
+      prefer: "return=minimal",
+      body: JSON.stringify(patch),
+    });
+  }
+
+  const updated = (await getProviders()).find((p) => p.id === trimmedId);
+  if (!updated) throw new Error("El proveedor se actualizó pero no pudo recuperarse.");
+  return updated;
+}
+
+export async function deleteProvider(id: string): Promise<{ ok: boolean }> {
+  const trimmedId = id.trim();
+  if (!trimmedId) throw new Error("ID de proveedor no válido.");
+
+  if (useMemoryStore) {
+    const index = memoryProviders.findIndex((p) => p.id === trimmedId);
+    if (index === -1) throw new Error("Proveedor no encontrado.");
+
+    const isReferencedInOrders = memoryOrders.some(
+      (order) =>
+        order.producerProviderId === trimmedId ||
+        order.transportProviderId === trimmedId ||
+        order.shipments?.some((s) => s.transportProviderId === trimmedId)
+    );
+    const isReferencedInResources = memoryProductionResources.some((r) => r.providerId === trimmedId);
+    const isReferencedInDefaults =
+      memoryExternalDefaults.some((d) => d.providerId === trimmedId) ||
+      memoryTransportDefaults.some((t) => t.providerId === trimmedId);
+    const isReferencedInMovements = memoryStockMovements.some((m) => m.providerId === trimmedId);
+
+    if (isReferencedInOrders || isReferencedInResources || isReferencedInDefaults || isReferencedInMovements) {
+      throw new Error("No se puede eliminar el proveedor porque tiene órdenes, transportes o recursos asociados.");
+    }
+
+    memoryProviders.splice(index, 1);
+    return { ok: true };
+  }
+
+  const [ordersUsing, resourcesUsing, externalDefaults, transportDefaults] = await Promise.all([
+    supabaseRequest<Array<{ id: string }>>(
+      `/rest/v1/orders?or=(producer_provider_id.eq.${encodeURIComponent(trimmedId)},transport_provider_id.eq.${encodeURIComponent(trimmedId)})&select=id&limit=1`
+    ).catch(() => []),
+    supabaseRequest<Array<{ id: number }>>(
+      `/rest/v1/production_resources?provider_id=eq.${encodeURIComponent(trimmedId)}&select=id&limit=1`
+    ).catch(() => []),
+    supabaseRequest<Array<{ id: number }>>(
+      `/rest/v1/external_production_defaults?provider_id=eq.${encodeURIComponent(trimmedId)}&select=id&limit=1`
+    ).catch(() => []),
+    supabaseRequest<Array<{ id: number }>>(
+      `/rest/v1/transport_capacity_defaults?provider_id=eq.${encodeURIComponent(trimmedId)}&select=id&limit=1`
+    ).catch(() => []),
+  ]);
+
+  if (ordersUsing.length > 0 || resourcesUsing.length > 0 || externalDefaults.length > 0 || transportDefaults.length > 0) {
+    throw new Error("No se puede eliminar el proveedor porque tiene órdenes, transportes o recursos asociados.");
+  }
+
+  try {
+    await supabaseServerRequest<unknown>(`/rest/v1/providers?id=eq.${encodeURIComponent(trimmedId)}`, {
+      method: "DELETE",
+      prefer: "return=representation",
+    });
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    if (message.includes("foreign key") || (error as { code?: string }).code === "23503") {
+      throw new Error("No se puede eliminar el proveedor porque tiene registros dependientes.");
+    }
+    throw error;
+  }
+
+  return { ok: true };
 }
 
 export async function getProducts() {
@@ -829,7 +1029,7 @@ export async function createShipment(orderId: string, input: ShipmentInput) {
   const order = memoryOrders.find((item) => item.id === orderId);
   if (!order) return null;
   validateMemoryShipmentLines(order, undefined, input.lines);
-  const provider = seededProviders.find((item) => item.id === input.transportProviderId);
+  const provider = memoryProviders.find((item) => item.id === input.transportProviderId);
   if (input.transportSource === "external" && provider?.type !== "Transporte") throw new Error("Seleccione un transportista registrado.");
   const now = new Date().toISOString();
   const id = `shipment-${crypto.randomUUID()}`;
@@ -848,7 +1048,7 @@ export async function updatePlannedShipment(shipmentId: number | string, input: 
   if (!order || !shipment) return null;
   if (shipment.status !== "planned") throw new Error("Solo se edita un viaje planificado.");
   validateMemoryShipmentLines(order, shipmentId, input.lines);
-  shipment.plannedDate = input.plannedDate; shipment.transportSource = input.transportSource; shipment.transportProviderId = input.transportProviderId; shipment.transportLabel = input.transportSource === "internal" ? "Transporte interno" : seededProviders.find((item) => item.id === input.transportProviderId)?.name ?? "Transportista"; shipment.updatedAt = new Date().toISOString();
+  shipment.plannedDate = input.plannedDate; shipment.transportSource = input.transportSource; shipment.transportProviderId = input.transportProviderId; shipment.transportLabel = input.transportSource === "internal" ? "Transporte interno" : memoryProviders.find((item) => item.id === input.transportProviderId)?.name ?? "Transportista"; shipment.updatedAt = new Date().toISOString();
   shipment.lines = input.lines.map((item) => { const line = order.lines.find((entry) => entry.id === item.orderLineId)!; return { id: `sl-${crypto.randomUUID()}`, shipmentId, orderLineId: line.id, product: line.product, treatment: line.treatment, plannedQuantity: item.plannedQuantity, deliveredQuantity: 0 }; });
   refreshMemoryOrder(order); return shipment;
 }
@@ -1149,7 +1349,7 @@ function productionProducts(products: Product[]): ProductionProduct[] {
 }
 
 export async function getCapacity(from: string, to: string) {
-  if (useMemoryStore) return buildCapacitySnapshot({ from, to, rules: memoryCapacityRules, internalDefaults: memoryInternalDefaults, availablePeople: memoryAvailablePeople, externalDefaults: memoryExternalDefaults, transportDefaults: memoryTransportDefaults, adjustments: memoryCapacityAdjustments, orders: memoryOrders, providers: seededProviders, productionResources: memoryProductionResources, productionRules: memoryProductionRules, productionOverrides: memoryProductionOverrides, productionProducts: productionProducts(memoryProducts) });
+  if (useMemoryStore) return buildCapacitySnapshot({ from, to, rules: memoryCapacityRules, internalDefaults: memoryInternalDefaults, availablePeople: memoryAvailablePeople, externalDefaults: memoryExternalDefaults, transportDefaults: memoryTransportDefaults, adjustments: memoryCapacityAdjustments, orders: memoryOrders, providers: memoryProviders, productionResources: memoryProductionResources, productionRules: memoryProductionRules, productionOverrides: memoryProductionOverrides, productionProducts: productionProducts(memoryProducts) });
   const range = `adjustment_date=gte.${from}&adjustment_date=lte.${to}`;
   const productionRange = `override_date=gte.${from}&override_date=lte.${to}`;
   const [rules, internal, team, external, transport, adjustments, orders, providers, resources, productionRules, overrides, products] = await Promise.all([

@@ -34,6 +34,7 @@ import {
   type OrderUpdateKind,
   type OrderLine,
   type Provider,
+  type ProviderType,
   type Product,
   type Shipment,
 } from "./data";
@@ -122,26 +123,296 @@ function formatCalendarRange(weekStart: Date) {
   return `${formatter.format(weekStart)} – ${formatter.format(weekEnd)}`;
 }
 
-function ProvidersView({ providers }: { providers: Provider[] }) {
+function ProvidersView({ providers, onEdit, onAdd }: { providers: Provider[]; onEdit: (provider: Provider) => void; onAdd: () => void }) {
+  const [providerQuery, setProviderQuery] = useState("");
+  const [providerType, setProviderType] = useState<ProviderType | "">("");
+
+  const visibleProviders = useMemo(() => {
+    const normalized = providerQuery.trim().toLocaleLowerCase("es");
+    return providers.filter((provider) => {
+      const typeMatches = !providerType || provider.type === providerType;
+      const queryMatches = !normalized || [provider.name, provider.type, provider.supplies]
+        .some((val) => val.toLocaleLowerCase("es").includes(normalized));
+      return typeMatches && queryMatches;
+    });
+  }, [providerQuery, providerType, providers]);
+
   return (
     <section className="module-surface providers-surface" aria-labelledby="providers-page-title">
-      <div className="module-toolbar">
-        <div><h2 id="providers-page-title">Proveedores</h2></div>
-        <small>{providers.length} proveedores registrados</small>
+      <div className="module-toolbar products-toolbar">
+        <div>
+          <h2 id="providers-page-title">Proveedores</h2>
+          <small>{visibleProviders.length} de {providers.length} proveedores registrados</small>
+        </div>
+        <div className="module-toolbar-actions">
+          <label className="search-field">
+            <i className="sr-only">Buscar por proveedor, tipo o insumos</i>
+            <Search size={17} aria-hidden="true" />
+            <input
+              type="search"
+              value={providerQuery}
+              onChange={(event) => setProviderQuery(event.target.value)}
+              placeholder="Buscar proveedor, tipo, qué provee…"
+            />
+            {providerQuery && (
+              <button type="button" onClick={() => setProviderQuery("")} aria-label="Limpiar búsqueda">
+                <X size={15} aria-hidden="true" />
+              </button>
+            )}
+          </label>
+          <button type="button" className="add-order-button" onClick={onAdd}>
+            <Plus size={17} aria-hidden="true" />
+            Agregar proveedor
+          </button>
+        </div>
       </div>
       <div className="providers-board" aria-label="Listado de proveedores">
         <div className="data-heading providers-heading" aria-hidden="true">
-          <div>Proveedor</div><div>Tipo de proveedor</div><div>Qué provee</div>
+          <div>Proveedor</div>
+          <label className="table-filter">
+            <i className="sr-only">Filtrar por tipo</i>
+            <select
+              value={providerType}
+              onChange={(event) => setProviderType(event.target.value as ProviderType | "")}
+              aria-label="Filtrar por tipo de proveedor"
+            >
+              <option value="">Tipo de proveedor</option>
+              <option value="Aserradero">Aserradero</option>
+              <option value="Transporte">Transporte</option>
+              <option value="Importador">Importador</option>
+            </select>
+          </label>
+          <div>Qué provee</div>
+          <div className="sr-only">Acciones</div>
         </div>
-        {providers.map((provider) => (
-          <article className="provider-row" key={provider.id}>
-            <div className="provider-name"><i className={`provider-icon ${provider.type === "Transporte" ? "transport" : ""}`} aria-hidden="true">{provider.type === "Transporte" ? <Truck size={18} /> : <Factory size={18} />}</i><strong>{provider.name}</strong></div>
-            <div><small className="column-label">Tipo de proveedor</small><strong>{provider.type}</strong></div>
-            <div><small className="column-label">Qué provee</small><strong>{provider.supplies}</strong></div>
-          </article>
-        ))}
+        {visibleProviders.length > 0 ? (
+          visibleProviders.map((provider) => (
+            <article className="provider-row" key={provider.id}>
+              <div className="provider-name">
+                <i className={`provider-icon ${provider.type === "Transporte" ? "transport" : ""}`} aria-hidden="true">
+                  {provider.type === "Transporte" ? <Truck size={18} /> : <Factory size={18} />}
+                </i>
+                <strong>{provider.name}</strong>
+              </div>
+              <div>
+                <small className="column-label">Tipo de proveedor</small>
+                <strong>{provider.type}</strong>
+              </div>
+              <div>
+                <small className="column-label">Qué provee</small>
+                <strong>{provider.supplies}</strong>
+              </div>
+              <button
+                type="button"
+                className="product-edit"
+                onClick={() => onEdit(provider)}
+                aria-label={`Editar ${provider.name}`}
+              >
+                <Pencil size={17} aria-hidden="true" />
+              </button>
+            </article>
+          ))
+        ) : (
+          <EmptyState
+            icon={Factory}
+            title="No hay proveedores para ese filtro"
+            action={
+              <button
+                type="button"
+                onClick={() => {
+                  setProviderQuery("");
+                  setProviderType("");
+                }}
+              >
+                Limpiar filtros
+              </button>
+            }
+          />
+        )}
       </div>
     </section>
+  );
+}
+
+function AddProviderModal({
+  onClose,
+  onSave,
+}: {
+  onClose: () => void;
+  onSave: (input: { name: string; type: ProviderType; supplies: string }) => Promise<boolean>;
+}) {
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState("");
+  const [dirty, setDirty] = useState(false);
+  const inputRef = useRef<HTMLInputElement>(null);
+
+  const submit = async (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    const form = new FormData(event.currentTarget);
+    setSaving(true);
+    setError("");
+    try {
+      const saved = await onSave({
+        name: String(form.get("name") ?? "").trim(),
+        type: String(form.get("type") ?? "Aserradero") as ProviderType,
+        supplies: String(form.get("supplies") ?? "").trim(),
+      });
+      if (saved) {
+        setDirty(false);
+        onClose();
+      }
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "No se pudo crear el proveedor.");
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  return (
+    <ModalShell
+      title="Agregar proveedor"
+      className="edit-product-modal"
+      onClose={onClose}
+      initialFocusRef={inputRef}
+      dirty={dirty && !saving}
+    >
+      <form onSubmit={submit} onChange={() => setDirty(true)}>
+        <label>
+          Nombre del proveedor
+          <input ref={inputRef} name="name" required placeholder="Ej. Mirasol" />
+        </label>
+        <label>
+          Tipo de proveedor
+          <select name="type" defaultValue="Aserradero">
+            <option value="Aserradero">Aserradero</option>
+            <option value="Transporte">Transporte</option>
+            <option value="Importador">Importador</option>
+          </select>
+        </label>
+        <label>
+          Qué provee
+          <input name="supplies" required placeholder="Ej. Pallets y mercadería de terceros" />
+        </label>
+        <FieldError id="add-provider-error">{error}</FieldError>
+        <div className="modal-actions">
+          <button type="button" className="secondary-button" onClick={onClose}>
+            Cancelar
+          </button>
+          <AsyncButton type="submit" className="primary-button" loading={saving} error={Boolean(error)}>
+            Agregar proveedor
+          </AsyncButton>
+        </div>
+      </form>
+    </ModalShell>
+  );
+}
+
+function EditProviderModal({
+  provider,
+  onClose,
+  onSave,
+  onDelete,
+}: {
+  provider: Provider;
+  onClose: () => void;
+  onSave: (id: string, changes: { name?: string; type?: ProviderType; supplies?: string }) => Promise<boolean>;
+  onDelete: (id: string) => Promise<boolean>;
+}) {
+  const [saving, setSaving] = useState(false);
+  const [confirmDelete, setConfirmDelete] = useState(false);
+  const [error, setError] = useState("");
+  const [dirty, setDirty] = useState(false);
+  const inputRef = useRef<HTMLInputElement>(null);
+
+  const save = async (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    const form = new FormData(event.currentTarget);
+    setSaving(true);
+    setError("");
+    try {
+      const saved = await onSave(provider.id, {
+        name: String(form.get("name") ?? "").trim(),
+        type: String(form.get("type") ?? provider.type) as ProviderType,
+        supplies: String(form.get("supplies") ?? "").trim(),
+      });
+      if (saved) {
+        setDirty(false);
+        onClose();
+      }
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "No se pudo guardar el proveedor.");
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const remove = async () => {
+    setSaving(true);
+    setError("");
+    try {
+      const deleted = await onDelete(provider.id);
+      if (deleted) {
+        onClose();
+      }
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "No se pudo eliminar el proveedor.");
+    } finally {
+      setSaving(false);
+      setConfirmDelete(false);
+    }
+  };
+
+  return (
+    <ModalShell
+      title="Editar proveedor"
+      className="edit-product-modal"
+      onClose={onClose}
+      initialFocusRef={inputRef}
+      dirty={dirty && !saving}
+    >
+      <form onSubmit={save} onChange={() => setDirty(true)}>
+        <label>
+          Nombre del proveedor
+          <input ref={inputRef} name="name" required defaultValue={provider.name} />
+        </label>
+        <label>
+          Tipo de proveedor
+          <select name="type" defaultValue={provider.type}>
+            <option value="Aserradero">Aserradero</option>
+            <option value="Transporte">Transporte</option>
+            <option value="Importador">Importador</option>
+          </select>
+        </label>
+        <label>
+          Qué provee
+          <input name="supplies" required defaultValue={provider.supplies} />
+        </label>
+        <FieldError id="edit-provider-error">{error}</FieldError>
+        <div className="modal-actions">
+          <button type="button" className="delete-button" onClick={() => setConfirmDelete(true)} disabled={saving}>
+            Eliminar proveedor
+          </button>
+          <div>
+            <button type="button" className="secondary-button" onClick={onClose}>
+              Cancelar
+            </button>
+            <AsyncButton type="submit" className="primary-button" loading={saving} error={Boolean(error)}>
+              Guardar cambios
+            </AsyncButton>
+          </div>
+        </div>
+      </form>
+      {confirmDelete && (
+        <ConfirmDialog
+          title={`¿Eliminar "${provider.name}"?`}
+          description="Se verificará que no existan órdenes ni recursos vinculados antes de eliminarlo."
+          confirmLabel="Eliminar"
+          destructive
+          onCancel={() => setConfirmDelete(false)}
+          onConfirm={() => void remove()}
+        />
+      )}
+    </ModalShell>
   );
 }
 
@@ -940,9 +1211,11 @@ export default function Dashboard({ initialSection = "calendario", initialClient
   const [addOrderDate, setAddOrderDate] = useState<string | undefined>();
   const [calendarRevision, setCalendarRevision] = useState(0);
   const [showAddProduct, setShowAddProduct] = useState(false);
+  const [showAddProvider, setShowAddProvider] = useState(false);
   const [showAddClient, setShowAddClient] = useState(false);
   const [editingPlanOrder, setEditingPlanOrder] = useState<OperationOrder | null>(null);
   const [editingProduct, setEditingProduct] = useState<Product | null>(null);
+  const [editingProvider, setEditingProvider] = useState<Provider | null>(null);
   const [updatingOrder, setUpdatingOrder] = useState<OperationOrder | null>(null);
   const [trackingRevision, setTrackingRevision] = useState(0);
   const [updateError, setUpdateError] = useState("");
@@ -1150,6 +1423,46 @@ export default function Dashboard({ initialSection = "calendario", initialClient
     return true;
   };
 
+  const addProvider = async (input: { name: string; type: ProviderType; supplies: string }) => {
+    const response = await fetch("/api/providers", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify(input),
+    });
+    const payload = (await response.json()) as { provider?: Provider; error?: string };
+    if (!response.ok || !payload.provider) {
+      throw new Error(payload.error || "No se pudo crear el proveedor.");
+    }
+    setProviderRows((current) => [...current, payload.provider!].sort((a, b) => a.name.localeCompare(b.name, "es")));
+    return true;
+  };
+
+  const updateProvider = async (id: string, changes: { name?: string; type?: ProviderType; supplies?: string }) => {
+    const response = await fetch(`/api/providers/${id}`, {
+      method: "PATCH",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify(changes),
+    });
+    const payload = (await response.json()) as { provider?: Provider; error?: string };
+    if (!response.ok || !payload.provider) {
+      throw new Error(payload.error || "No se pudo actualizar el proveedor.");
+    }
+    setProviderRows((current) =>
+      current.map((provider) => (provider.id === id ? payload.provider! : provider)).sort((a, b) => a.name.localeCompare(b.name, "es"))
+    );
+    return true;
+  };
+
+  const removeProvider = async (id: string) => {
+    const response = await fetch(`/api/providers/${id}`, { method: "DELETE" });
+    const payload = (await response.json().catch(() => ({}))) as { ok?: boolean; error?: string };
+    if (!response.ok) {
+      throw new Error(payload.error || "No se pudo eliminar el proveedor.");
+    }
+    setProviderRows((current) => current.filter((provider) => provider.id !== id));
+    return true;
+  };
+
   const addClient = async (input: { name: string; address: string; department: string }) => {
     const response = await fetch("/api/clients", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(input) });
     const payload = (await response.json()) as { client?: { id?: string; name: string; address?: string; department?: string; active?: boolean } };
@@ -1254,15 +1567,17 @@ export default function Dashboard({ initialSection = "calendario", initialClient
           </section>
 
           <div className={`order-detail-slot ${selectedOrder ? "open" : ""}`} aria-hidden={!selectedOrder}>{selectedOrder && <OrderTrackingPanel key={selectedOrder.id} order={selectedOrder} providers={providerRows} refreshKey={trackingRevision} onAdd={setUpdatingOrder} onChanged={refreshOrder} onCancel={cancelOrder} onClose={() => setSelectedId("")} />}</div>
-        </div> : section === "plan" ? <><PlanView orders={activeOrders} onEdit={setEditingPlanOrder} />{updateError && <p className="plan-error" role="alert">{updateError}</p>}</> : section === "calendario" ? <OperationsCalendarView key={calendarRevision} onOpen={openOrder} onAdd={(date) => { setAddOrderDate(date); setShowAddOrder(true); }} onChanged={refreshOrder} /> : section === "logistica" ? <OperationsLogisticsView onOpen={openOrder} onChanged={refreshOrder} /> : section === "produccion" ? initialProductionView === "marking" ? <TreatmentView /> : <CapacityView providers={providerRows} view={initialProductionView} initialDate={initialProductionDate} /> : section === "stock" ? <StockView initialRiskFilter={initialStockRiskFilter} /> : section === "productos" ? <ProductsView products={productRows} onEdit={setEditingProduct} onAdd={() => setShowAddProduct(true)} /> : section === "proveedores" ? <ProvidersView providers={providerRows} /> : <ClientMasterView clients={clients} products={productRows} initialClientId={initialClientId} onAdd={() => setShowAddClient(true)} />}
+        </div> : section === "plan" ? <><PlanView orders={activeOrders} onEdit={setEditingPlanOrder} />{updateError && <p className="plan-error" role="alert">{updateError}</p>}</> : section === "calendario" ? <OperationsCalendarView key={calendarRevision} onOpen={openOrder} onAdd={(date) => { setAddOrderDate(date); setShowAddOrder(true); }} onChanged={refreshOrder} /> : section === "logistica" ? <OperationsLogisticsView onOpen={openOrder} onChanged={refreshOrder} /> : section === "produccion" ? initialProductionView === "marking" ? <TreatmentView /> : <CapacityView providers={providerRows} view={initialProductionView} initialDate={initialProductionDate} /> : section === "stock" ? <StockView initialRiskFilter={initialStockRiskFilter} /> : section === "productos" ? <ProductsView products={productRows} onEdit={setEditingProduct} onAdd={() => setShowAddProduct(true)} /> : section === "proveedores" ? <ProvidersView providers={providerRows} onEdit={setEditingProvider} onAdd={() => setShowAddProvider(true)} /> : <ClientMasterView clients={clients} products={productRows} initialClientId={initialClientId} onAdd={() => setShowAddClient(true)} />}
         </main>
 
       </div>
       {showAddOrder && <AddOrderModal clientOptions={clients.filter((client) => client.id && client.active)} products={productRows} providers={providerRows} initialDeliveryDate={addOrderDate} onClose={() => { setShowAddOrder(false); setAddOrderDate(undefined); }} onCreated={addCreatedOrder} />}
       {showAddProduct && <AddProductModal onClose={() => setShowAddProduct(false)} onSave={addProduct} />}
+      {showAddProvider && <AddProviderModal onClose={() => setShowAddProvider(false)} onSave={addProvider} />}
       {showAddClient && <AddClientModal onClose={() => setShowAddClient(false)} onSave={addClient} />}
       {editingPlanOrder && <EditPlanModal order={editingPlanOrder} providers={providerRows} onClose={() => setEditingPlanOrder(null)} onSave={(changes) => updateOrder(editingPlanOrder.id, changes)} />}
       {editingProduct && <EditProductModal product={editingProduct} clients={clients} onClose={() => setEditingProduct(null)} onSave={updateProduct} onDelete={removeProduct} />}
+      {editingProvider && <EditProviderModal provider={editingProvider} onClose={() => setEditingProvider(null)} onSave={updateProvider} onDelete={removeProvider} />}
       {updatingOrder && <OrderUpdateModal order={updatingOrder} onClose={() => setUpdatingOrder(null)} onSave={(update) => recordUpdate(updatingOrder.id, update)} />}
     </div>
   );

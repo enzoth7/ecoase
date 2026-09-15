@@ -2250,7 +2250,7 @@ h3 {
 .provider-row {
   min-height: 78px;
   display: grid;
-  grid-template-columns: minmax(180px, 1fr) 150px minmax(220px, 1.2fr);
+  grid-template-columns: minmax(180px, 1fr) 150px minmax(220px, 1.2fr) 42px;
   align-items: center;
   gap: 14px;
   padding: 13px 18px;
@@ -2329,7 +2329,7 @@ h3 {
 }
 
 .providers-heading {
-  grid-template-columns: minmax(180px, 1fr) 150px minmax(220px, 1.2fr);
+  grid-template-columns: minmax(180px, 1fr) 150px minmax(220px, 1.2fr) 42px;
 }
 
 .plan-board {
@@ -3089,7 +3089,7 @@ h3 {
 
   .provider-row {
     min-height: 118px;
-    grid-template-columns: 40px minmax(0, 1fr);
+    grid-template-columns: 40px minmax(0, 1fr) 38px;
     gap: 8px 11px;
     padding: 13px 14px;
   }
@@ -3122,7 +3122,13 @@ h3 {
   }
 
   .provider-name {
-    grid-column: 1 / -1;
+    grid-column: 1 / 3;
+  }
+
+  .provider-row .product-edit {
+    grid-column: 3;
+    grid-row: 1;
+    align-self: center;
   }
 
   .provider-row > div:not(.provider-name) {

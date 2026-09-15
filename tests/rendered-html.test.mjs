@@ -682,3 +682,57 @@ test("edita, asigna cliente y elimina productos mediante endpoints separados", a
   assert.equal(products.products.some((product) => product.id === "palbin-p05"), false);
   assert.equal(products.products.length, before.length - 1);
 });
+
+test("crea, actualiza y elimina proveedores mediante endpoints dedicados", async () => {
+  const initial = (await (await request("/api/providers")).json()).providers;
+
+  // 1. Crear proveedor
+  const createResponse = await request("/api/providers", {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({
+      name: "Aserradero El Ceibo",
+      type: "Aserradero",
+      supplies: "Tablas y tirantes de pino",
+    }),
+  });
+  assert.equal(createResponse.status, 201);
+  const created = (await createResponse.json()).provider;
+  assert.equal(created.name, "Aserradero El Ceibo");
+  assert.equal(created.type, "Aserradero");
+  assert.equal(created.supplies, "Tablas y tirantes de pino");
+  assert.ok(created.id.includes("aserradero-el-ceibo"));
+
+  // 2. Comprobar que aparece en listado
+  const afterCreate = (await (await request("/api/providers")).json()).providers;
+  assert.equal(afterCreate.length, initial.length + 1);
+  assert.ok(afterCreate.some((p) => p.id === created.id));
+
+  // 3. Actualizar proveedor
+  const updateResponse = await request(`/api/providers/${created.id}`, {
+    method: "PATCH",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({
+      name: "El Ceibo Forestal",
+      supplies: "Madera tratada y pallets rústicos",
+    }),
+  });
+  assert.equal(updateResponse.status, 200);
+  const updated = (await updateResponse.json()).provider;
+  assert.equal(updated.name, "El Ceibo Forestal");
+  assert.equal(updated.supplies, "Madera tratada y pallets rústicos");
+
+  // 4. Intentar eliminar un proveedor con dependencias (ej. mirasol)
+  const failDeleteResponse = await request("/api/providers/mirasol", { method: "DELETE" });
+  assert.equal(failDeleteResponse.status, 400);
+
+  // 5. Eliminar el proveedor recién creado (sin dependencias)
+  const deleteResponse = await request(`/api/providers/${created.id}`, { method: "DELETE" });
+  assert.equal(deleteResponse.status, 200);
+
+  // 6. Verificar que ya no está
+  const final = (await (await request("/api/providers")).json()).providers;
+  assert.equal(final.length, initial.length);
+  assert.ok(!final.some((p) => p.id === created.id));
+});
+
