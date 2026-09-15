@@ -73,6 +73,12 @@ test("la pantalla resume la producción semanal en una tabla de acciones", async
   assert.match(view, /requieren apoyo/);
   assert.match(view, /configurationTypeLabel/);
   assert.doesNotMatch(view, /Revisar capacidad del proveedor/);
+  assert.match(view, /production-rule-people-heading">Personas/);
+  assert.match(view, /production-rule-people-cell/);
+  assert.match(view, /configurationTypeLabel\(rule\.configurationLabel\)/);
+  for (const filter of ["ruleResourceFilter", "ruleProductFilter", "ruleConfigurationFilter"]) assert.match(view, new RegExp(filter));
+  for (const label of ["Filtrar reglas por recurso", "Filtrar reglas por producto", "Filtrar reglas por configuración"]) assert.match(view, new RegExp(label));
+  assert.match(view, /visibleRules\.map/);
   assert.match(view, /Requiere ayuda o redistribución/);
   assert.doesNotMatch(view, /function ResourceCard/);
   assert.doesNotMatch(view, /Carga sobre normal/);

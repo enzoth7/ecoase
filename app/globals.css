@@ -4219,6 +4219,14 @@ input, select, textarea { color: var(--brand-black); }
 .production-config-section > header small { color: var(--muted); }
 .production-config-section > header button { min-height: 40px; display: inline-flex; align-items: center; gap: 7px; }
 .production-rule-actions-heading { width: 112px; text-align: right !important; }
+.production-rule-people-heading,
+.production-rule-people-cell { width: 96px; text-align: center !important; }
+.production-rule-people-cell strong { font-size: 15px; font-variant-numeric: tabular-nums; }
+.production-rule-filter-cell { padding-block: 0 !important; }
+.production-rule-filter { display: block; }
+.production-rule-filter select { width: 100%; min-width: 118px; min-height: 44px; padding: 0 26px 0 0; border: 0; outline: 0; background: transparent; color: inherit; cursor: pointer; font: inherit; font-size: 12px; font-weight: 850; letter-spacing: .035em; text-transform: uppercase; }
+.production-rule-filter select:focus-visible { outline: 2px solid var(--brand-white); outline-offset: 2px; }
+.production-rule-filter option { background: var(--brand-white); color: var(--ink); font-weight: 650; text-transform: none; }
 .production-rule-actions { display: flex; justify-content: flex-end; gap: 8px; }
 .production-rule-actions button { width: 44px; height: 44px; display: inline-grid; place-items: center; flex: 0 0 44px; padding: 0; border-radius: 9px; background: var(--brand-white); cursor: pointer; transition: background-color 160ms ease, border-color 160ms ease, color 160ms ease; }
 .production-rule-edit { border: 1px solid var(--line-strong); color: var(--brand-green-dark); }
