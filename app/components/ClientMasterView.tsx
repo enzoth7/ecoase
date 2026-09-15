@@ -2,11 +2,12 @@
 
 import { ArrowLeft, ChevronDown, ChevronRight, FileText, Image as ImageIcon, Package, Plus, Save, Trash2, TrendingDown, Upload } from "lucide-react";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { useEffect, useMemo, useRef, useState, type FormEvent } from "react";
 import type { Product } from "../data";
 import { productLabel, type ClientDetail, type ClientProduct } from "../master-data";
 import { uruguayDepartments } from "../uruguay-departments";
-import { AsyncButton, EmptyState, FieldError, LoadingState, ModalShell } from "./ui";
+import { AsyncButton, ConfirmDialog, EmptyState, FieldError, LoadingState, ModalShell } from "./ui";
 import ConsumptionRuleModal from "./ConsumptionRuleModal";
 
 export type ClientSummary = {
@@ -145,10 +146,13 @@ function AddClientProductDialog({ products, adding, error, onClose, onSubmit }: 
 }
 
 function ClientPanel({ clientId, products }: { clientId: string; products: Product[] }) {
+  const router = useRouter();
   const [detail, setDetail] = useState<ClientDetail | null>(null);
   const [loading, setLoading] = useState(true);
   const [addingProduct, setAddingProduct] = useState(false);
   const [savingClient, setSavingClient] = useState(false);
+  const [deletingClient, setDeletingClient] = useState(false);
+  const [confirmDelete, setConfirmDelete] = useState(false);
   const [loadError, setLoadError] = useState("");
   const [clientError, setClientError] = useState("");
   const [productError, setProductError] = useState("");
@@ -179,12 +183,64 @@ function ClientPanel({ clientId, products }: { clientId: string; products: Produ
     if (!response.ok || !payload.client) return setClientError(payload.error ?? "No se pudo guardar el cliente.");
     setDetail((current) => current ? { ...current, client: payload.client! } : current);
   };
+  const removeClient = async () => {
+    setDeletingClient(true);
+    setClientError("");
+    try {
+      const response = await fetch(`/api/clients/${clientId}`, { method: "DELETE" });
+      const payload = await payloadOf<{ ok?: boolean }>(response);
+      setDeletingClient(false);
+      if (!response.ok || !payload.ok) {
+        setClientError(payload.error ?? "No se pudo eliminar el cliente.");
+        setConfirmDelete(false);
+        return;
+      }
+      router.push("/clientes");
+      router.refresh();
+    } catch {
+      setDeletingClient(false);
+      setClientError("Error de conexión al eliminar el cliente.");
+      setConfirmDelete(false);
+    }
+  };
   if (loading) return <LoadingState label="Cargando ficha del cliente" />;
   if (!detail) return <FieldError id={`client-${clientId}-error`}>{loadError}</FieldError>;
   return <div className="client-master-panel">
-    <section className="client-panel-section" aria-labelledby="client-information-title"><h3 id="client-information-title">Información del cliente</h3><form className="client-address-editor" onSubmit={saveClient}><label>Nombre<input value={detail.client.name} readOnly /></label><label>Dirección<input name="address" defaultValue={detail.client.address} /></label><label>Departamento<select name="department" defaultValue={detail.client.department ?? ""}><option value="">Seleccionar departamento</option>{uruguayDepartments.map((department) => <option key={department} value={department}>{department}</option>)}</select></label><label className="checkbox-line"><input name="active" type="checkbox" defaultChecked={detail.client.active} />Disponible para pedidos</label><FieldError id={`client-${clientId}-action-error`}>{clientError}</FieldError><AsyncButton type="submit" className="secondary-button" loading={savingClient}><Save size={15} />Guardar información</AsyncButton></form></section>
+    <section className="client-panel-section" aria-labelledby="client-information-title">
+      <h3 id="client-information-title">Información del cliente</h3>
+      <form className="client-address-editor" onSubmit={saveClient}>
+        <label>Nombre<input value={detail.client.name} readOnly /></label>
+        <label>Dirección<input name="address" defaultValue={detail.client.address} /></label>
+        <label>Departamento<select name="department" defaultValue={detail.client.department ?? ""}><option value="">Seleccionar departamento</option>{uruguayDepartments.map((department) => <option key={department} value={department}>{department}</option>)}</select></label>
+        <label className="checkbox-line"><input name="active" type="checkbox" defaultChecked={detail.client.active} />Disponible para pedidos</label>
+        <FieldError id={`client-${clientId}-action-error`}>{clientError}</FieldError>
+        <div className="client-address-actions">
+          <AsyncButton type="submit" className="secondary-button" loading={savingClient}>
+            <Save size={15} />Guardar información
+          </AsyncButton>
+          <button
+            type="button"
+            className="delete-button"
+            onClick={() => { setClientError(""); setConfirmDelete(true); }}
+            disabled={savingClient || deletingClient}
+          >
+            <Trash2 size={15} />Eliminar cliente
+          </button>
+        </div>
+      </form>
+    </section>
     <section className="client-panel-section" aria-labelledby="client-products-title"><div className="client-panel-section-heading"><h3 id="client-products-title">Productos</h3><button type="button" className="primary-button" onClick={() => { setProductError(""); setShowAddProduct(true); }}><Plus size={16} />Agregar producto</button></div><div className="client-product-list">{detail.products.length ? detail.products.map((item) => <ProductCard key={item.id} item={item} clientName={detail.client.name} onChanged={(next) => setDetail((current) => current ? { ...current, products: current.products.map((entry) => String(entry.id) === String(next.id) ? next : entry) } : current)} />) : <EmptyState icon={Package} title="Este cliente todavía no tiene productos" description="Agregá un producto para que luego aparezca en el alta de pedidos." />}</div></section>
     {showAddProduct && <AddClientProductDialog products={products} adding={addingProduct} error={productError} onSubmit={add} onClose={() => { setProductError(""); setShowAddProduct(false); }} />}
+    {confirmDelete && (
+      <ConfirmDialog
+        title={`¿Eliminar al cliente ${detail.client.name}?`}
+        description="Esta acción eliminará la ficha del cliente y sus asociaciones de productos. Esta acción no se puede deshacer."
+        confirmLabel="Eliminar cliente"
+        destructive
+        onCancel={() => setConfirmDelete(false)}
+        onConfirm={() => void removeClient()}
+      />
+    )}
   </div>;
 }
 

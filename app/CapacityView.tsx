@@ -1,12 +1,13 @@
 "use client";
 
-import { AlertTriangle, CheckCircle2, Factory, Gauge, Pencil, Plus, Settings2, Trash2, Truck } from "lucide-react";
+import { AlertTriangle, CheckCircle2, Factory, Gauge, Pencil, Plus, Save, Settings2, Trash2, Truck } from "lucide-react";
 import { useCallback, useEffect, useMemo, useState, type FormEvent } from "react";
 import type { CapacityDay, CapacitySnapshot } from "./capacity";
-import type { CapacityStatus, Provider, TransportSource } from "./data";
+import type { CapacityStatus, Product, Provider, TransportSource } from "./data";
 import type { ProductionAssignmentSummary, ProductionCapacityRule, ProductionLoadStatus, ProductionResource, ProductionResourceDay } from "./production-capacity";
 import { AsyncButton, FieldError, LoadingState, ModalShell, WeekNavigator } from "./components/ui";
 import ProductionTabs from "./components/ProductionTabs";
+import ProductionMatrixTable from "./components/ProductionMatrixTable";
 
 const number = new Intl.NumberFormat("es-UY");
 const statusLabels: Record<ProductionLoadStatus, string> = {
@@ -131,10 +132,11 @@ export function DayLogisticsAdjustmentModal({ day, transporters, onClose, onSave
   return <ModalShell title={`Capacidad logística · ${formatDate(day.date)}`} onClose={onClose}><div className="logistics-adjustment-modal">{day.transportTotals.missing > 0 && <div className="capacity-day-alert"><AlertTriangle size={19} /><div><strong>Este día necesita revisión</strong><p>Faltan {number.format(day.transportTotals.missing)} palets de transporte confirmados.</p></div></div>}<div className="capacity-day-summary"><div className="capacity-metric"><small>Palets a entregar</small><strong>{number.format(day.transportTotals.committed)}</strong></div><div className="capacity-metric"><small>Capacidad confirmada</small><strong>{number.format(confirmedCapacity)}</strong></div><div className={`capacity-metric ${day.transportTotals.missing > 0 ? "danger" : ""}`}><small>{day.transportTotals.missing > 0 ? "Faltan camiones" : "Capacidad libre"}</small><strong>{number.format(day.transportTotals.missing > 0 ? day.transportTotals.missing : Math.max(confirmedCapacity - day.transportTotals.committed, 0))}</strong></div></div><div className="day-adjustment-section day-transport">{day.transport.map((entry) => <TransportAdjustmentRow key={`${entry.source}-${entry.providerId ?? "internal"}`} day={day} entry={entry} onSave={onSave} />)}<form className="day-provider-assignment" onSubmit={assign}><div><strong>Asignar transportista solo para este día</strong><small>No modifica la capacidad general.</small></div><label>Transportista<select value={providerId} onChange={(event) => setProviderId(event.target.value)} required><option value="" disabled>Seleccionar</option>{transporters.map((provider) => <option key={provider.id} value={provider.id}>{provider.name}</option>)}</select></label><label>Palets asignados<input type="number" min="1" step="1" value={pallets} onChange={(event) => setPallets(event.target.value)} required /></label><label>Estado<select value={status} onChange={(event) => setStatus(event.target.value as CapacityStatus)}><option value="confirmed">Confirmada</option><option value="estimated">Estimada</option></select></label><AsyncButton type="submit" loading={saving}>Asignar</AsyncButton></form></div></div></ModalShell>;
 }
 
-export default function CapacityView({ providers, view = "production", initialDate }: { providers: Provider[]; view?: "production" | "configuration"; initialDate?: string }) {
+export default function CapacityView({ providers, products = [], view = "production", initialDate }: { providers: Provider[]; products?: Product[]; view?: "production" | "configuration"; initialDate?: string }) {
   const validInitialDate = initialDate && /^\d{4}-\d{2}-\d{2}$/.test(initialDate) ? initialDate : undefined;
   const [weekStart, setWeekStart] = useState(() => startOfWeek(validInitialDate ? new Date(`${validInitialDate}T12:00:00`) : new Date())); const [capacity, setCapacity] = useState<CapacitySnapshot | null>(null); const [selectedDate, setSelectedDate] = useState(() => validInitialDate ?? dateKey(new Date())); const [loading, setLoading] = useState(true); const [error, setError] = useState("");
   const [ruleModal, setRuleModal] = useState<ProductionCapacityRule | "new" | null>(null); const [deletingRule, setDeletingRule] = useState<ProductionCapacityRule | null>(null); const [resourceModal, setResourceModal] = useState(false); const [overrideEntry, setOverrideEntry] = useState<ProductionResourceDay | null>(null); const [confirming, setConfirming] = useState<ProductionAssignmentSummary | null>(null); const [completing, setCompleting] = useState<ProductionAssignmentSummary | null>(null);
+  const [rulesViewMode, setRulesViewMode] = useState<"matrix" | "individual">("matrix");
   const [ruleResourceFilter, setRuleResourceFilter] = useState(""); const [ruleProductFilter, setRuleProductFilter] = useState(""); const [ruleConfigurationFilter, setRuleConfigurationFilter] = useState("");
   const from = dateKey(weekStart); const weekEnd = useMemo(() => { const value = new Date(weekStart); value.setDate(value.getDate() + 6); return value; }, [weekStart]); const to = dateKey(weekEnd);
   const load = useCallback(async () => { setLoading(true); setError(""); try { const response = await fetch(`/api/capacity?from=${from}&to=${to}`); const body = await response.json() as { capacity?: CapacitySnapshot; error?: string }; if (!response.ok || !body.capacity) throw new Error(body.error ?? "No se pudo cargar la capacidad."); setCapacity(body.capacity); setSelectedDate((current) => current >= from && current <= to ? current : from); } catch (caught) { setError(caught instanceof Error ? caught.message : "No se pudo cargar la capacidad."); } finally { setLoading(false); } }, [from, to]);
@@ -182,7 +184,68 @@ export default function CapacityView({ providers, view = "production", initialDa
     </section>}
     {capacity && view === "configuration" && <div className="production-configuration" aria-labelledby="capacity-title">
       <section className="module-surface production-config-section"><header><div><h2 id="capacity-title">Recursos</h2><small>Fábrica, cuadrillas y proveedores externos.</small></div><button type="button" className="secondary-button" onClick={() => setResourceModal(true)}><Settings2 size={16} />Gestionar recursos</button></header><div className="production-config-table-wrap"><table><thead><tr><th>Recurso</th><th>Tipo</th><th>Estado</th></tr></thead><tbody>{capacity.production.resources.map((resource) => <tr key={resource.id}><td><strong>{resource.name}</strong></td><td>{resource.resourceType === "internal_factory" ? "Fábrica interna" : resource.resourceType === "internal_crew" ? "Cuadrilla interna" : "Proveedor externo"}</td><td><span className={`production-resource-state ${resource.active ? "active" : ""}`}>{resource.active ? "Activo" : "Inactivo"}</span></td></tr>)}</tbody></table></div></section>
-      <section className="module-surface production-config-section"><header><div><h2>Reglas de rendimiento</h2><small>Capacidad normal y máxima por recurso, producto y configuración.</small></div><button type="button" className="primary-button" onClick={() => setRuleModal("new")}><Plus size={16} />Nueva regla</button></header><div className="production-config-table-wrap"><table><thead><tr><th className="production-rule-filter-cell"><label className="production-rule-filter"><span className="sr-only">Filtrar reglas por recurso</span><select aria-label="Filtrar reglas por recurso" value={ruleResourceFilter} onChange={(event) => setRuleResourceFilter(event.target.value)}><option value="">Recurso</option>{ruleFilterOptions.resources.map(([id, name]) => <option value={id} key={id}>{name}</option>)}</select></label></th><th className="production-rule-filter-cell"><label className="production-rule-filter"><span className="sr-only">Filtrar reglas por producto</span><select aria-label="Filtrar reglas por producto" value={ruleProductFilter} onChange={(event) => setRuleProductFilter(event.target.value)}><option value="">Producto</option>{ruleFilterOptions.products.map(([id, name]) => <option value={id} key={id}>{name}</option>)}</select></label></th><th className="production-rule-filter-cell"><label className="production-rule-filter"><span className="sr-only">Filtrar reglas por configuración</span><select aria-label="Filtrar reglas por configuración" value={ruleConfigurationFilter} onChange={(event) => setRuleConfigurationFilter(event.target.value)}><option value="">Configuración</option>{ruleFilterOptions.configurations.map((configuration) => <option value={configuration} key={configuration}>{configuration}</option>)}</select></label></th><th className="production-rule-people-heading">Personas</th><th>Normal</th><th>Máximo</th><th>Vigencia</th><th className="production-rule-actions-heading">Acciones</th></tr></thead><tbody>{visibleRules.map((rule) => <tr key={rule.id}><td>{capacity.production.resources.find((resource) => sameId(resource.id, rule.resourceId))?.name ?? "Recurso"}</td><td><strong>{rule.productName}</strong></td><td>{configurationTypeLabel(rule.configurationLabel) || "—"}</td><td className="production-rule-people-cell"><strong>{rule.peopleCount ? number.format(rule.peopleCount) : "—"}</strong></td><td>{number.format(rule.normalUnitsPerDay)}</td><td>{number.format(rule.maximumUnitsPerDay)}</td><td>{formatDate(rule.validFrom)}{rule.validTo ? ` – ${formatDate(rule.validTo)}` : " – vigente"}</td><td><div className="production-rule-actions"><button type="button" className="production-rule-edit" aria-label={`Editar regla de ${rule.productName}`} title="Editar regla" onClick={() => setRuleModal(rule)}><Pencil size={18} aria-hidden="true" /></button><button type="button" className="production-rule-delete" aria-label={`Eliminar regla de ${rule.productName}`} title="Eliminar regla" onClick={() => setDeletingRule(rule)}><Trash2 size={18} aria-hidden="true" /></button></div></td></tr>)}</tbody></table>{!visibleRules.length && <div className="production-table-empty"><Gauge size={24} /><strong>{capacity.production.rules.length ? "No hay reglas para esos filtros" : "No hay reglas cargadas"}</strong></div>}</div></section>
+      <section className="module-surface production-config-section">
+        <header>
+          <div>
+            <h2>Reglas de rendimiento</h2>
+            <small>Capacidad normal y máxima por recurso, producto y configuración.</small>
+          </div>
+          <div className="production-config-header-actions">
+            <div className="matrix-view-toggle" role="group" aria-label="Modo de vista de reglas">
+              <button
+                type="button"
+                className={`matrix-toggle-btn ${rulesViewMode === "matrix" ? "active" : ""}`}
+                onClick={() => setRulesViewMode("matrix")}
+              >
+                Planilla
+              </button>
+              <button
+                type="button"
+                className={`matrix-toggle-btn ${rulesViewMode === "individual" ? "active" : ""}`}
+                onClick={() => setRulesViewMode("individual")}
+              >
+                Reglas individuales
+              </button>
+            </div>
+            {rulesViewMode === "individual" ? (
+              <button type="button" className="primary-button" onClick={() => setRuleModal("new")}><Plus size={16} />Nueva regla</button>
+            ) : (
+              <button
+                type="button"
+                className="primary-button"
+                onClick={() => window.dispatchEvent(new CustomEvent("ecoase:save-matrix-rules"))}
+              >
+                <Save size={16} />
+                Guardar reglas
+              </button>
+            )}
+          </div>
+        </header>
+        {rulesViewMode === "matrix" ? (
+          <ProductionMatrixTable products={products} onSaved={load} />
+        ) : (
+          <div className="production-config-table-wrap">
+            <table>
+              <thead>
+                <tr>
+                  <th className="production-rule-filter-cell"><label className="production-rule-filter"><span className="sr-only">Filtrar reglas por recurso</span><select aria-label="Filtrar reglas por recurso" value={ruleResourceFilter} onChange={(event) => setRuleResourceFilter(event.target.value)}><option value="">Recurso</option>{ruleFilterOptions.resources.map(([id, name]) => <option value={id} key={id}>{name}</option>)}</select></label></th>
+                  <th className="production-rule-filter-cell"><label className="production-rule-filter"><span className="sr-only">Filtrar reglas por producto</span><select aria-label="Filtrar reglas por producto" value={ruleProductFilter} onChange={(event) => setRuleProductFilter(event.target.value)}><option value="">Producto</option>{ruleFilterOptions.products.map(([id, name]) => <option value={id} key={id}>{name}</option>)}</select></label></th>
+                  <th className="production-rule-filter-cell"><label className="production-rule-filter"><span className="sr-only">Filtrar reglas por configuración</span><select aria-label="Filtrar reglas por configuración" value={ruleConfigurationFilter} onChange={(event) => setRuleConfigurationFilter(event.target.value)}><option value="">Configuración</option>{ruleFilterOptions.configurations.map((configuration) => <option value={configuration} key={configuration}>{configuration}</option>)}</select></label></th>
+                  <th className="production-rule-people-heading">Personas</th>
+                  <th>Normal</th>
+                  <th>Máximo</th>
+                  <th>Vigencia</th>
+                  <th className="production-rule-actions-heading">Acciones</th>
+                </tr>
+              </thead>
+              <tbody>
+                {visibleRules.map((rule) => <tr key={rule.id}><td>{capacity.production.resources.find((resource) => sameId(resource.id, rule.resourceId))?.name ?? "Recurso"}</td><td><strong>{rule.productName}</strong></td><td>{configurationTypeLabel(rule.configurationLabel) || "—"}</td><td className="production-rule-people-cell"><strong>{rule.peopleCount ? number.format(rule.peopleCount) : "—"}</strong></td><td>{number.format(rule.normalUnitsPerDay)}</td><td>{number.format(rule.maximumUnitsPerDay)}</td><td>{formatDate(rule.validFrom)}{rule.validTo ? ` – ${formatDate(rule.validTo)}` : " – vigente"}</td><td><div className="production-rule-actions"><button type="button" className="production-rule-edit" aria-label={`Editar regla de ${rule.productName}`} title="Editar regla" onClick={() => setRuleModal(rule)}><Pencil size={18} aria-hidden="true" /></button><button type="button" className="production-rule-delete" aria-label={`Eliminar regla de ${rule.productName}`} title="Eliminar regla" onClick={() => setDeletingRule(rule)}><Trash2 size={18} aria-hidden="true" /></button></div></td></tr>)}
+              </tbody>
+            </table>
+            {!visibleRules.length && <div className="production-table-empty"><Gauge size={24} /><strong>{capacity.production.rules.length ? "No hay reglas para esos filtros" : "No hay reglas cargadas"}</strong></div>}
+          </div>
+        )}
+      </section>
       <section className="module-surface production-config-section production-exceptions-section">
         <header><div><h2>Excepciones por fecha</h2><small>Cambios puntuales de disponibilidad o capacidad que reemplazan la configuración habitual solamente ese día.</small></div><WeekNavigator label={formatRange(weekStart)} onPrevious={() => moveWeek(-1)} onNext={() => moveWeek(1)} /></header>
         <div className="production-exception-week-wrap">

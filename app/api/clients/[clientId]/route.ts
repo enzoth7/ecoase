@@ -1,4 +1,4 @@
-import { getClientDetail, updateClientMaster } from "../../store";
+import { deleteClient, getClientDetail, updateClientMaster } from "../../store";
 
 export async function GET(_request: Request, { params }: { params: Promise<{ clientId: string }> }) {
   const { clientId } = await params;
@@ -14,5 +14,15 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ cl
     return client ? Response.json({ client }) : Response.json({ error: "Cliente no encontrado." }, { status: 404 });
   } catch (error) {
     return Response.json({ error: error instanceof Error ? error.message : "No se pudo actualizar el cliente." }, { status: 400 });
+  }
+}
+
+export async function DELETE(_request: Request, { params }: { params: Promise<{ clientId: string }> }) {
+  const { clientId } = await params;
+  try {
+    await deleteClient(clientId);
+    return Response.json({ ok: true });
+  } catch (error) {
+    return Response.json({ error: error instanceof Error ? error.message : "No se pudo eliminar el cliente." }, { status: 400 });
   }
 }

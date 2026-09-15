@@ -186,8 +186,14 @@ const memoryTransportDefaults: TransportCapacityDefault[] = [];
 const memoryCapacityAdjustments: CapacityAdjustment[] = [];
 const memoryProductionResources: ProductionResource[] = [
   { id: "internal", name: "Fábrica", resourceType: "internal_factory", active: true, displayOrder: 10 },
-  { id: "mirasol", name: "Mirasol", resourceType: "external_supplier", providerId: "mirasol", active: true, displayOrder: 20 },
-  { id: "blanc", name: "Blanc", resourceType: "external_supplier", providerId: "blanc", active: true, displayOrder: 30 },
+  { id: "blanc", name: "Blanc", resourceType: "external_supplier", providerId: "blanc", active: true, displayOrder: 20 },
+  { id: "mirasol", name: "Mirasol", resourceType: "external_supplier", providerId: "mirasol", active: true, displayOrder: 30 },
+  { id: "sandro_raul", name: "Sandro Raul", resourceType: "internal_crew", active: true, displayOrder: 40 },
+  { id: "fabrica_john", name: "Fábrica John", resourceType: "internal_factory", active: true, displayOrder: 50 },
+  { id: "fabrica_omar", name: "Fábrica Omar", resourceType: "internal_factory", active: true, displayOrder: 60 },
+  { id: "john_esteban", name: "John y Esteban", resourceType: "internal_crew", active: true, displayOrder: 70 },
+  { id: "enzo", name: "Enzo", resourceType: "internal_crew", active: true, displayOrder: 80 },
+  { id: "lito", name: "Lito", resourceType: "internal_crew", active: true, displayOrder: 90 },
 ];
 const memoryProductionRules: ProductionCapacityRule[] = [];
 const memoryProductionOverrides: ProductionDailyOverride[] = [];
@@ -595,6 +601,88 @@ export async function updateClientMaster(id: string, input: { name?: string; add
   }
   await supabaseServerRequest<unknown>(`/rest/v1/clients?id=eq.${encodeURIComponent(id)}`, { method: "PATCH", prefer: "return=minimal", body: JSON.stringify({ name: next.name, address: next.address ?? null, department: next.department ?? null, active: next.active }) });
   return (await getClients()).find((item) => item.id === id) ?? null;
+}
+
+export async function deleteClient(id: string): Promise<{ ok: boolean }> {
+  const trimmedId = id.trim();
+  if (!trimmedId) throw new Error("ID de cliente no válido.");
+
+  const clients = await getClients();
+  const current = clients.find((c) => c.id === trimmedId);
+  if (!current) throw new Error("Cliente no encontrado.");
+
+  if (useMemoryStore) {
+    const isReferencedInOrders = memoryOrders.some(
+      (order) => order.client.localeCompare(current.name, "es", { sensitivity: "accent" }) === 0
+    );
+    if (isReferencedInOrders) {
+      throw new Error("No se puede eliminar el cliente porque tiene pedidos registrados.");
+    }
+
+    const clientProductIds = new Set(
+      memoryClientProducts.filter((cp) => cp.clientId === trimmedId).map((cp) => String(cp.id))
+    );
+    for (const cpId of clientProductIds) {
+      memoryAssetFiles.delete(cpId);
+    }
+    const nextClientProducts = memoryClientProducts.filter((cp) => cp.clientId !== trimmedId);
+    memoryClientProducts.length = 0;
+    memoryClientProducts.push(...nextClientProducts);
+
+    const clientIndex = memoryClients.findIndex((c) => c.id === trimmedId);
+    if (clientIndex !== -1) {
+      memoryClients.splice(clientIndex, 1);
+    }
+    return { ok: true };
+  }
+
+  const ordersUsing = await supabaseRequest<Array<{ id: string }>>(
+    `/rest/v1/orders?client=eq.${encodeURIComponent(current.name)}&select=id&limit=1`
+  ).catch(() => []);
+
+  if (ordersUsing.length > 0) {
+    throw new Error("No se puede eliminar el cliente porque tiene pedidos registrados.");
+  }
+
+  try {
+    const clientProducts = await supabaseRequest<Array<{ id: number }>>(
+      `/rest/v1/client_products?client_id=eq.${encodeURIComponent(trimmedId)}&select=id`
+    ).catch(() => []);
+
+    for (const cp of clientProducts) {
+      await supabaseServerRequest<unknown>(
+        `/rest/v1/client_product_assets?client_product_id=eq.${cp.id}`,
+        { method: "DELETE" }
+      ).catch(() => undefined);
+      await supabaseServerRequest<unknown>(
+        `/rest/v1/client_product_controls?client_product_id=eq.${cp.id}`,
+        { method: "DELETE" }
+      ).catch(() => undefined);
+    }
+
+    await supabaseServerRequest<unknown>(
+      `/rest/v1/client_product_consumption?client_id=eq.${encodeURIComponent(trimmedId)}`,
+      { method: "DELETE" }
+    ).catch(() => undefined);
+
+    await supabaseServerRequest<unknown>(
+      `/rest/v1/client_products?client_id=eq.${encodeURIComponent(trimmedId)}`,
+      { method: "DELETE" }
+    ).catch(() => undefined);
+
+    await supabaseServerRequest<unknown>(
+      `/rest/v1/clients?id=eq.${encodeURIComponent(trimmedId)}`,
+      { method: "DELETE", prefer: "return=representation" }
+    );
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    if (message.includes("foreign key") || (error as { code?: string }).code === "23503") {
+      throw new Error("No se puede eliminar el cliente porque tiene registros dependientes.");
+    }
+    throw error;
+  }
+
+  return { ok: true };
 }
 
 type DbProductRow = { id: string; kind: ProductKind; measure: string | null; treatment: Product["treatment"] | null; requires_treatment: boolean; stock_name?: string | null; source_catalog?: Product["sourceCatalog"] | null; source_code?: string | null; zeta_code?: string | null; stock_active?: boolean };
