@@ -1,0 +1,42 @@
+name: Deploy - Vercel (ecoase)
+
+on:
+  push:
+    branches: [main]
+    paths-ignore:
+      - .github/workflows/deploy-vercel.yml
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: deploy-vercel-production
+  cancel-in-progress: false
+
+env:
+  VERCEL_ORG_ID: team_nvrETovmDRtUay05tg8OkZb0
+  VERCEL_PROJECT_ID: prj_cr3wmI05ds7OOuPp4hOuhEXa2Zeu
+
+jobs:
+  deploy:
+    runs-on: ubuntu-24.04
+    env:
+      VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN_ENZOTHOME1 }}
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 24
+      - name: Instalar Vercel CLI
+        run: npm install --global vercel@50.1.3
+      - name: Traer configuración de producción
+        run: vercel pull --yes --environment=production --token="$VERCEL_TOKEN"
+      - name: Construir
+        run: vercel build --prod --token="$VERCEL_TOKEN"
+      - name: Quitar metadatos del repositorio
+        run: rm -rf .git
+      - name: Desplegar
+        run: vercel deploy --prebuilt --prod --token="$VERCEL_TOKEN"
+
+
