@@ -1,3 +1,4 @@
+import { buildProductName, canonicalProductName, hasClassification, productHeatTreatmentLabel, treatmentOf } from "./classification";
 import type { Client, Product } from "./data";
 
 export type ClientProductControl = {
@@ -51,6 +52,7 @@ export type ClientDetail = {
 export type ClientProductOption = {
   id: number | string;
   productId: string;
+  kind?: Product["kind"];
   label: string;
   zetaCode: string;
   clientAddress?: string;
@@ -66,5 +68,10 @@ export function clientProductReady(item: Pick<ClientProduct, "zetaCode" | "contr
 }
 
 export function productLabel(product: Product, operationalName?: string) {
-  return operationalName?.trim() || [product.stockName, product.kind, product.measure ?? "Sin medida", product.requiresTreatment ? "Marcado" : "Sin marcado"].filter(Boolean).join(" · ");
+  if (!operationalName?.trim() && hasClassification(product)) return canonicalProductName(product.stockName?.trim() || buildProductName(product));
+  const name = operationalName?.trim();
+  if (name) return canonicalProductName(name);
+  const base = product.stockName?.trim() || [product.kind, product.measure ?? "Sin medida"].join(" / ");
+  const treatment = productHeatTreatmentLabel(base) ? "" : treatmentOf(product);
+  return canonicalProductName([base, treatment].filter(Boolean).join(" / "));
 }

@@ -1,0 +1,601 @@
+{
+  "source": "https://docs.google.com/spreadsheets/d/1t2vtQfIDgUP2XMv3STSPnvALK08VFtk2bLF7CnLB-lc/edit?gid=253069878",
+  "sheet": "Productos del árbol",
+  "rows": [
+    {
+      "sourceRow": 2,
+      "measure": "100 x 100",
+      "client": "Pamer",
+      "modelo": "Doble entrada",
+      "terminacion": "Rústico",
+      "tratamiento": "Sin HT"
+    },
+    {
+      "sourceRow": 3,
+      "measure": "100 x 100",
+      "client": "Pamer",
+      "modelo": "Doble entrada",
+      "terminacion": "Rústico",
+      "tratamiento": "Con HT"
+    },
+    {
+      "sourceRow": 4,
+      "measure": "100 x 120",
+      "client": "Pamer",
+      "modelo": "Adium",
+      "terminacion": "Rústico"
+    },
+    {
+      "sourceRow": 5,
+      "measure": "100 x 120",
+      "client": "Pamer",
+      "modelo": "Mercosur",
+      "terminacion": "Rústico",
+      "tratamiento": "Con HT"
+    },
+    {
+      "sourceRow": 6,
+      "measure": "100 x 120",
+      "client": "Pamer",
+      "modelo": "Mercosur",
+      "terminacion": "Rústico",
+      "tratamiento": "Sin HT"
+    },
+    {
+      "sourceRow": 7,
+      "measure": "100 x 120",
+      "client": "Antonio de Souza e Hijos",
+      "modelo": "Citrus",
+      "terminacion": "Rústico",
+      "tratamiento": "Con HT"
+    },
+    {
+      "sourceRow": 8,
+      "measure": "100 x 120",
+      "client": "Forbel",
+      "modelo": "Citrus",
+      "terminacion": "Rústico",
+      "tratamiento": "Con HT"
+    },
+    {
+      "sourceRow": 9,
+      "measure": "100 x 120",
+      "client": "Frutos de Chapicuy Ltda.",
+      "modelo": "Citrus",
+      "terminacion": "Rústico",
+      "tratamiento": "Con HT"
+    },
+    {
+      "sourceRow": 10,
+      "measure": "100 x 120",
+      "client": "Frutura Uruguay S.A. BIC",
+      "modelo": "Citrus",
+      "terminacion": "Rústico",
+      "tratamiento": "Con HT"
+    },
+    {
+      "sourceRow": 11,
+      "measure": "100 x 120",
+      "client": "Sanducitrus SRL",
+      "modelo": "Citrus",
+      "terminacion": "Rústico",
+      "tratamiento": "Con HT"
+    },
+    {
+      "sourceRow": 12,
+      "measure": "100 x 80",
+      "client": "Pamer",
+      "modelo": "Doble entrada",
+      "terminacion": "Rústico",
+      "tratamiento": "Sin HT"
+    },
+    {
+      "sourceRow": 13,
+      "measure": "106 x 106",
+      "client": "Saint Gobain",
+      "terminacion": "Rústico",
+      "tratamiento": "Sin HT"
+    },
+    {
+      "sourceRow": 14,
+      "measure": "113 x 113",
+      "client": "Frutura Uruguay S.A. BIC",
+      "modelo": "Citrus",
+      "terminacion": "Rústico",
+      "tratamiento": "Con HT"
+    },
+    {
+      "sourceRow": 15,
+      "measure": "113 x 113",
+      "client": "San Miguel",
+      "modelo": "Citrus",
+      "terminacion": "Rústico",
+      "tratamiento": "Con HT"
+    },
+    {
+      "sourceRow": 16,
+      "measure": "115 x 115",
+      "client": "Aluminio del Uruguay",
+      "terminacion": "Rústico",
+      "tratamiento": "Con HT"
+    },
+    {
+      "sourceRow": 17,
+      "measure": "115 x 115",
+      "client": "Aluminio del Uruguay",
+      "terminacion": "Rústico",
+      "tratamiento": "Sin HT"
+    },
+    {
+      "sourceRow": 18,
+      "measure": "116 x 116",
+      "client": "Frutura Uruguay S.A. BIC",
+      "modelo": "Citrus",
+      "terminacion": "Cepillado",
+      "tratamiento": "Con HT"
+    },
+    {
+      "sourceRow": 19,
+      "measure": "116,5 x 114",
+      "client": "San Miguel",
+      "modelo": "Citrus",
+      "terminacion": "Rústico",
+      "tratamiento": "Con HT"
+    },
+    {
+      "sourceRow": 20,
+      "measure": "119 x 106",
+      "client": "Cristalpet",
+      "terminacion": "Rústico"
+    },
+    {
+      "sourceRow": 21,
+      "measure": "120 x 100",
+      "client": "Conaprole",
+      "modelo": "Mercosur",
+      "corteEsquina": "Con corte",
+      "terminacion": "Rústico"
+    },
+    {
+      "sourceRow": 22,
+      "measure": "120 x 100",
+      "client": "Azucarlito",
+      "modelo": "Mercosur",
+      "corteEsquina": "Con corte",
+      "terminacion": "Rústico"
+    },
+    {
+      "sourceRow": 23,
+      "measure": "120 x 100",
+      "client": "Granja Pocha",
+      "modelo": "Mercosur",
+      "corteEsquina": "Con corte",
+      "terminacion": "Rústico"
+    },
+    {
+      "sourceRow": 24,
+      "measure": "120 x 100",
+      "client": "Ghelfa",
+      "modelo": "Mercosur",
+      "corteEsquina": "Con corte",
+      "terminacion": "Rústico"
+    },
+    {
+      "sourceRow": 25,
+      "measure": "120 x 100",
+      "client": "Labrezza",
+      "modelo": "Mercosur",
+      "corteEsquina": "Con corte",
+      "terminacion": "Rústico"
+    },
+    {
+      "sourceRow": 26,
+      "measure": "120 x 100",
+      "client": "Proquimur",
+      "modelo": "Mercosur 20 mm",
+      "corteEsquina": "Sin corte",
+      "terminacion": "Rústico"
+    },
+    {
+      "sourceRow": 27,
+      "measure": "120 x 100",
+      "client": "Azucarlito",
+      "modelo": "Mercosur",
+      "corteEsquina": "Sin corte",
+      "terminacion": "Rústico"
+    },
+    {
+      "sourceRow": 28,
+      "measure": "120 x 100",
+      "client": "Granja Pocha",
+      "modelo": "Mercosur",
+      "corteEsquina": "Sin corte",
+      "terminacion": "Rústico"
+    },
+    {
+      "sourceRow": 29,
+      "measure": "120 x 100",
+      "client": "Ghelfa",
+      "modelo": "Mercosur",
+      "corteEsquina": "Sin corte",
+      "terminacion": "Rústico"
+    },
+    {
+      "sourceRow": 30,
+      "measure": "120 x 100",
+      "client": "Labrezza",
+      "modelo": "Mercosur",
+      "corteEsquina": "Sin corte",
+      "terminacion": "Rústico"
+    },
+    {
+      "sourceRow": 31,
+      "measure": "120 x 100",
+      "client": "Alimentos Fray Bentos",
+      "modelo": "Mercosur",
+      "corteEsquina": "Con corte",
+      "terminacion": "Cepillado"
+    },
+    {
+      "sourceRow": 32,
+      "measure": "120 x 100",
+      "client": "Molinos  San José",
+      "modelo": "Mercosur",
+      "corteEsquina": "Con corte",
+      "terminacion": "Rebaje en todas las tablas del piso"
+    },
+    {
+      "sourceRow": 33,
+      "measure": "120 x 100",
+      "client": "CRUFI",
+      "terminacion": "Rústico"
+    },
+    {
+      "sourceRow": 34,
+      "measure": "120 x 100",
+      "client": "Aluminio del Uruguay",
+      "terminacion": "Rústico",
+      "tratamiento": "Sin HT"
+    },
+    {
+      "sourceRow": 35,
+      "measure": "120 x 100",
+      "client": "Aluminio del Uruguay",
+      "terminacion": "Rústico",
+      "tratamiento": "Con HT"
+    },
+    {
+      "sourceRow": 36,
+      "measure": "120 x 100",
+      "client": "Gamorel",
+      "terminacion": "Rústico",
+      "tratamiento": "Con HT"
+    },
+    {
+      "sourceRow": 37,
+      "measure": "120 x 100",
+      "client": "Sin identificar",
+      "identificacion": "Punto Rojo",
+      "terminacion": "Rústico",
+      "tratamiento": "Sin HT"
+    },
+    {
+      "sourceRow": 38,
+      "measure": "120 x 100",
+      "client": "Azucarlito",
+      "terminacion": "Rústico",
+      "tratamiento": "Con HT"
+    },
+    {
+      "sourceRow": 39,
+      "measure": "120 x 100",
+      "client": "Pamer",
+      "modelo": "Mercosur",
+      "refuerzo": "Reforzado",
+      "terminacion": "Rústico",
+      "tratamiento": "Con HT"
+    },
+    {
+      "sourceRow": 40,
+      "measure": "120 x 100",
+      "client": "Pamer",
+      "modelo": "Mercosur",
+      "refuerzo": "Reforzado Celsius",
+      "terminacion": "Rústico",
+      "tratamiento": "Sin HT"
+    },
+    {
+      "sourceRow": 41,
+      "measure": "120 x 100",
+      "client": "Pamer",
+      "modelo": "Doble entrada",
+      "terminacion": "Rústico",
+      "tratamiento": "Con HT"
+    },
+    {
+      "sourceRow": 42,
+      "measure": "120 x 100",
+      "client": "Pamer",
+      "modelo": "Doble entrada",
+      "terminacion": "Rústico",
+      "tratamiento": "Sin HT"
+    },
+    {
+      "sourceRow": 43,
+      "measure": "120 x 100",
+      "client": "Azucitrus",
+      "modelo": "Citrus",
+      "identificacion": "N° 1",
+      "terminacion": "Rústico",
+      "tratamiento": "Con HT"
+    },
+    {
+      "sourceRow": 44,
+      "measure": "120 x 112",
+      "client": "Frutura Uruguay S.A. BIC",
+      "modelo": "Citrus",
+      "terminacion": "Rústico",
+      "tratamiento": "Con HT"
+    },
+    {
+      "sourceRow": 45,
+      "measure": "120 x 120",
+      "client": "Pamer",
+      "modelo": "Doble entrada",
+      "terminacion": "Rústico",
+      "tratamiento": "Con HT"
+    },
+    {
+      "sourceRow": 46,
+      "measure": "120 x 120",
+      "client": "Pamer",
+      "modelo": "Doble entrada",
+      "terminacion": "Rústico",
+      "tratamiento": "Sin HT"
+    },
+    {
+      "sourceRow": 47,
+      "measure": "120 x 120",
+      "client": "Pamer",
+      "modelo": "Doble entrada · Cerrado",
+      "terminacion": "Rústico",
+      "tratamiento": "Sin HT"
+    },
+    {
+      "sourceRow": 48,
+      "measure": "120 x 120",
+      "client": "San Miguel",
+      "modelo": "Citrus",
+      "terminacion": "Rústico",
+      "tratamiento": "Sin HT"
+    },
+    {
+      "sourceRow": 49,
+      "measure": "120 x 120",
+      "client": "San Miguel",
+      "modelo": "Citrus",
+      "refuerzo": "Reforzado",
+      "terminacion": "Rústico",
+      "tratamiento": "Sin HT"
+    },
+    {
+      "sourceRow": 50,
+      "measure": "120 x 130",
+      "client": "Forestal Oriental",
+      "corteEsquina": "Sin corte",
+      "terminacion": "Rústico",
+      "tratamiento": "Sin HT"
+    },
+    {
+      "sourceRow": 51,
+      "measure": "120 x 80",
+      "client": "Pamer",
+      "modelo": "Doble entrada",
+      "terminacion": "Rústico",
+      "tratamiento": "Con HT"
+    },
+    {
+      "sourceRow": 52,
+      "measure": "120 x 80",
+      "client": "Pamer",
+      "modelo": "Doble entrada",
+      "terminacion": "Rústico",
+      "tratamiento": "Sin HT"
+    },
+    {
+      "sourceRow": 53,
+      "measure": "120 x 80",
+      "client": "Pamer",
+      "modelo": "Doble entrada · Cerrado",
+      "terminacion": "Rústico"
+    },
+    {
+      "sourceRow": 54,
+      "measure": "120 x 80",
+      "client": "Noridel",
+      "modelo": "Citrus",
+      "terminacion": "Rústico",
+      "tratamiento": "Con HT"
+    },
+    {
+      "sourceRow": 55,
+      "measure": "120 x 90",
+      "client": "Pamer",
+      "modelo": "Doble entrada · Cerrado",
+      "terminacion": "Rústico",
+      "tratamiento": "Con HT"
+    },
+    {
+      "sourceRow": 56,
+      "measure": "120 x 90",
+      "client": "Pamer",
+      "modelo": "Doble entrada · Cerrado",
+      "terminacion": "Rústico",
+      "tratamiento": "Sin HT"
+    },
+    {
+      "sourceRow": 57,
+      "measure": "121 x 103",
+      "client": "Azucitrus",
+      "modelo": "Citrus",
+      "identificacion": "N° 3 Punto Azul",
+      "terminacion": "Rústico",
+      "tratamiento": "Con HT"
+    },
+    {
+      "sourceRow": 58,
+      "measure": "122 x 102",
+      "client": "Antonio de Souza e Hijos",
+      "modelo": "Citrus",
+      "terminacion": "Rústico",
+      "tratamiento": "Con HT"
+    },
+    {
+      "sourceRow": 59,
+      "measure": "122 x 102",
+      "client": "Forbel",
+      "modelo": "Citrus",
+      "terminacion": "Rústico",
+      "tratamiento": "Con HT"
+    },
+    {
+      "sourceRow": 60,
+      "measure": "122 x 102",
+      "client": "Forbel",
+      "modelo": "Citrus",
+      "identificacion": "Punto Azul",
+      "terminacion": "Rústico",
+      "tratamiento": "Con HT"
+    },
+    {
+      "sourceRow": 61,
+      "measure": "122 x 102",
+      "client": "Frutos de Chapicuy Ltda.",
+      "modelo": "Citrus",
+      "terminacion": "Rústico",
+      "tratamiento": "Con HT"
+    },
+    {
+      "sourceRow": 62,
+      "measure": "122 x 102",
+      "client": "Frutura Uruguay S.A. BIC",
+      "modelo": "Citrus",
+      "terminacion": "Rústico",
+      "tratamiento": "Con HT"
+    },
+    {
+      "sourceRow": 63,
+      "measure": "122 x 102",
+      "client": "Noridel",
+      "modelo": "Citrus",
+      "refuerzo": "Reforzado",
+      "terminacion": "Rústico",
+      "tratamiento": "Con HT"
+    },
+    {
+      "sourceRow": 64,
+      "measure": "122 x 102",
+      "client": "Noridel",
+      "modelo": "Citrus",
+      "refuerzo": "Reforzado",
+      "identificacion": "Punto Negro",
+      "terminacion": "Rústico",
+      "tratamiento": "Con HT"
+    },
+    {
+      "sourceRow": 65,
+      "measure": "122 x 102",
+      "client": "Azucitrus",
+      "modelo": "Citrus",
+      "refuerzo": "Reforzado",
+      "identificacion": "N° 6",
+      "terminacion": "Rústico",
+      "tratamiento": "Con HT"
+    },
+    {
+      "sourceRow": 66,
+      "measure": "140 x 120",
+      "client": "Pamer",
+      "modelo": "Doble entrada",
+      "refuerzo": "7 tablas",
+      "terminacion": "Rústico",
+      "tratamiento": "Con HT"
+    },
+    {
+      "sourceRow": 67,
+      "measure": "140 x 120",
+      "client": "Pamer",
+      "modelo": "Doble entrada",
+      "refuerzo": "7 tablas",
+      "terminacion": "Rústico",
+      "tratamiento": "Sin HT"
+    },
+    {
+      "sourceRow": 68,
+      "measure": "140 x 120",
+      "client": "Pamer",
+      "modelo": "Cerrado",
+      "terminacion": "Rústico",
+      "tratamiento": "Con HT"
+    },
+    {
+      "sourceRow": 69,
+      "measure": "145 x 100",
+      "client": "Pamer",
+      "modelo": "Doble entrada",
+      "terminacion": "Rústico",
+      "tratamiento": "Con HT"
+    },
+    {
+      "sourceRow": 70,
+      "measure": "145 x 100",
+      "client": "Pamer",
+      "modelo": "Cerrado",
+      "terminacion": "Rústico",
+      "tratamiento": "Con HT"
+    },
+    {
+      "sourceRow": 71,
+      "measure": "145 x 80",
+      "client": "Pamer",
+      "modelo": "Doble entrada",
+      "refuerzo": "Reforzado",
+      "terminacion": "Rústico",
+      "tratamiento": "Con HT"
+    },
+    {
+      "sourceRow": 72,
+      "measure": "145 x 80",
+      "client": "Pamer",
+      "modelo": "Doble entrada",
+      "terminacion": "Rústico",
+      "tratamiento": "Sin HT"
+    },
+    {
+      "sourceRow": 73,
+      "measure": "160 x 110",
+      "client": "Pamer",
+      "modelo": "Simple entrada",
+      "terminacion": "Rústico",
+      "tratamiento": "Sin HT"
+    },
+    {
+      "sourceRow": 74,
+      "measure": "216 x 110",
+      "client": "Pamer",
+      "modelo": "Simple entrada",
+      "taco": "5 tacos",
+      "terminacion": "Rústico",
+      "tratamiento": "Con HT"
+    },
+    {
+      "sourceRow": 75,
+      "measure": "216 x 110",
+      "client": "Pamer",
+      "modelo": "Simple entrada",
+      "taco": "Taco corrido",
+      "terminacion": "Rústico",
+      "tratamiento": "Sin HT"
+    }
+  ]
+}

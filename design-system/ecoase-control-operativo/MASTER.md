@@ -1,62 +1,50 @@
-# Ecoase Control Operativo — Brand kit
+# Control Operativo: sistema visual
 
-Este archivo es la fuente visual de verdad de la aplicación. Las reglas particulares de una página pueden ampliar estas pautas, pero no introducir nuevos colores de marca ni tamaños de texto inferiores al mínimo.
+Identidad de la aplicación operativa de Ecoase. `AGENTS.md` conserva las reglas funcionales y de accesibilidad obligatorias.
 
-## Principios
+## Carácter
 
-- Herramienta operativa, directa y de alta legibilidad.
-- Mostrar primero decisiones, cantidades, estados y acciones.
-- Ocultar explicaciones, trazabilidad y configuración avanzada hasta que se soliciten.
-- No comunicar estados solamente mediante color: usar texto e iconos.
-- Mantener interacciones de al menos 44 × 44 px y foco visible.
+- Industrial moderno: preciso, legible y sobrio.
+- La información operativa determina la jerarquía. Los estados críticos tienen texto explícito.
+- Una misma familia de componentes se repite en Inicio, Pedidos, Calendario, Producción, Stock, Secadero y Logística.
 
-## Paleta
+## Colores
 
-| Token | Hex | Uso |
+| Token | Valor | Uso |
 |---|---|---|
-| `--brand-green-dark` | `#183D31` | Navegación, acciones principales, selección |
-| `--brand-green-light` | `#E8F3ED` | Estados positivos y superficies activas |
-| `--brand-brown-dark` | `#6B3F29` | Encabezados, agrupaciones y calendario |
-| `--brand-brown-light` | `#FBF4EE` | Fondo general, filas alternadas y separación |
-| `--brand-black` | `#17221E` | Texto principal |
-| `--brand-white` | `#FFFFFF` | Tarjetas, formularios y modales |
+| `--brand-white` | `#FFFFFF` | Superficies de trabajo |
+| `--brand-gray` | `#F4F6F8` | Fondo de encabezados y agrupaciones |
+| `--brand-slate` | `#41515E` | Navegación lateral y controles secundarios |
+| `--brand-yellow` | `#FFCA08` | Acciones principales y datos destacados |
+| `--brand-black` | `#26343E` | Texto sobre superficies claras y amarillas |
 
-Rojo y ámbar son excepciones semánticas: se reservan para error, peligro, sobrecarga y alertas de stock. Los bordes y estados de interacción se obtienen mezclando los seis colores anteriores; no constituyen nuevos colores de marca.
+La referencia visual es un panel de fabricación de fondo blanco, encabezados gris frío, gráficos amarillos y grafito. Rojo, azul y verde se reservan para estados operativos, con rótulos legibles. Los bordes usan gris neutro. El amarillo nunca se usa como texto pequeño sobre blanco.
 
-## Tipografía y densidad
+## Tipografía
 
-- Familia: `Arial, Helvetica, sans-serif`.
-- Escala visible: `12px`, `14px`, `16px`, `20px`, `28px`.
-- Texto base: `16px`, altura de línea `1.5`.
-- Etiquetas y metadatos indispensables: mínimo `12px`.
-- No usar mayúsculas pequeñas para llenar espacio ni subtítulos que repitan el título.
-- `.sr-only` puede conservar tamaño técnico porque no es contenido visual.
+- Familia única: Archivo Variable, alojada en el paquete de la aplicación.
+- Texto base: 16 px con altura de línea 1.5. Tablas: 14 px. Etiquetas: mínimo 12 px.
+- Título de página: 26 a 30 px. Títulos de sección: 18 a 20 px. Cifras principales: 28 a 32 px.
+- Cantidades, fechas y códigos usan números tabulares.
+- Pesos 400, 500, 600 y 700. Evitar mayúsculas de adorno y texto excesivamente fino.
 
-## Jerarquía de componentes
+## Logo
 
-- **Página:** título único y, sólo cuando haga falta, una acción global.
-- **Sección:** encabezado marrón oscuro o tarjeta blanca claramente separada.
-- **Métrica:** cifra primero, etiqueta breve debajo.
-- **Tabla:** columnas necesarias para decidir; el resto vive en el detalle.
-- **Estado:** etiqueta de 12px como mínimo, icono y color semántico.
-- **Formulario:** etiquetas visibles; ayuda únicamente cuando evita un error.
-- **Modal:** fondo blanco opaco, contraste alto, foco atrapado y cierre accesible.
-- **Detalle avanzado:** `details`, modal o subpágina; cerrado por defecto.
+- Símbolo definitivo: variante 02, media sierra circular y un tablón. Las alternativas se conservan en `design-system/control-operativo-propuestas/operaciones-logos.html`.
+- Wordmark visible: Operaciones en Archivo Semibold, sin firma secundaria.
+- Mantener versiones horizontal, compacta, monocromática y favicon en SVG. Sin gradientes ni sombras.
 
-## Asignación por área
+## Composición
 
-- Calendario: encabezados marrón oscuro, días marrón claro y tarjetas blancas.
-- Stock: saldos, disponibilidad y días de stock en primer plano; proyección, consumo y movimientos cerrados por defecto.
-- Producción: tabla semanal de asignaciones, estado y próxima acción; capacidades normal y máxima viven en el detalle o en Configuración.
-- Marcado: fecha, producto, cantidad, responsable y resultado en primer plano; alta en diálogo, tendencia y controles ampliados bajo demanda.
-- Maestros: listas compactas; edición y relaciones en páginas de detalle.
+- Escritorio: dos paneles grafito, áreas y secciones. El de áreas está compacto y se abre con el mouse o el foco del teclado, con una transición breve; al salir vuelve a iconos. Móvil: menú accesible con ambos niveles.
+- Fondo blanco; encabezados de contenedores en gris frío `--nav-bg`.
+- Un patrón de tarjeta para todos los indicadores, una escala de botones y una escala de tablas.
+- Espaciado de 8, 16, 24 y 32 px. Evitar cajas y líneas que no separen información útil.
+- Estados vacíos, errores y carga tienen texto distinto; cero no equivale a dato no disponible.
 
-## Lista de verificación
+## Verificación
 
-- Contraste de texto normal mínimo 4.5:1.
-- Ningún texto visible por debajo de 12px.
-- Estados críticos con texto o icono además del color.
-- Foco visible y navegación por teclado.
-- Sin desbordes en 375, 768, 1024 y 1440px.
-- Sin colores azul, violeta o naranja usados como identidad de marca.
-- Movimiento reducido respetado.
+- Contraste normal mínimo 4.5:1, foco visible y estado no comunicado solo por color.
+- Interacciones táctiles de al menos 44 por 44 px.
+- Sin desplazamiento horizontal a 375, 768, 1024 y 1440 px.
+- Verificar Inicio y las siete áreas con datos, vacío y error de carga.

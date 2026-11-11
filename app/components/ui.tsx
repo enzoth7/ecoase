@@ -7,6 +7,7 @@ import {
   ChevronRight,
   LoaderCircle,
   Search,
+  Trash2,
   X,
   type LucideIcon,
 } from "lucide-react";
@@ -22,10 +23,28 @@ import {
   type RefObject,
 } from "react";
 
-export function ConfirmDialog({ title, description, confirmLabel = "Confirmar", cancelLabel = "Cancelar", destructive = false, onConfirm, onCancel }: { title: string; description: string; confirmLabel?: string; cancelLabel?: string; destructive?: boolean; onConfirm: () => void; onCancel: () => void }) {
+export function ConfirmDialog({ title, description, confirmLabel = "Confirmar", cancelLabel = "Cancelar", destructive = false, busy = false, error, onConfirm, onCancel }: { title: string; description: string; confirmLabel?: string; cancelLabel?: string; destructive?: boolean; busy?: boolean; error?: string; onConfirm: () => void; onCancel: () => void }) {
   const cancelRef = useRef<HTMLButtonElement>(null);
-  useEffect(() => { cancelRef.current?.focus(); }, []);
-  return <div className="confirm-dialog-backdrop" role="presentation"><section className="confirm-dialog" role="alertdialog" aria-modal="true" aria-labelledby="confirm-dialog-title" aria-describedby="confirm-dialog-description"><h2 id="confirm-dialog-title">{title}</h2><p id="confirm-dialog-description">{description}</p><div><button ref={cancelRef} type="button" className="secondary-button" onClick={onCancel}>{cancelLabel}</button><button type="button" className={destructive ? "delete-button" : "primary-button"} onClick={onConfirm}>{confirmLabel}</button></div></section></div>;
+  useEffect(() => {
+    const trigger = document.activeElement;
+    cancelRef.current?.focus();
+    return () => { if (trigger instanceof HTMLElement && trigger.isConnected) trigger.focus(); };
+  }, []);
+  return <div className="confirm-dialog-backdrop" role="presentation">
+    <section className="confirm-dialog" role="alertdialog" aria-modal="true" aria-labelledby="confirm-dialog-title" aria-describedby="confirm-dialog-description">
+      <h2 id="confirm-dialog-title">{title}</h2>
+      <p id="confirm-dialog-description">{description}</p>
+      {error && <FieldError id="confirm-dialog-error">{error}</FieldError>}
+      <div>
+        <button ref={cancelRef} type="button" className="secondary-button" disabled={busy} onClick={onCancel}>{cancelLabel}</button>
+        <button type="button" className={destructive ? "delete-button" : "primary-button"} disabled={busy} onClick={onConfirm}>{busy ? "Eliminando…" : confirmLabel}</button>
+      </div>
+    </section>
+  </div>;
+}
+
+export function RowDeleteButton({ label, onClick, iconOnly = false }: { label: string; onClick: () => void; iconOnly?: boolean }) {
+  return <button type="button" className={`row-delete-button${iconOnly ? " row-delete-icon" : ""}`} aria-label={label} title={label} onClick={onClick}>{iconOnly ? <Trash2 size={17} aria-hidden="true" /> : "Eliminar"}</button>;
 }
 
 export function ModalShell({ title, description, children, onClose, className = "", initialFocusRef, dirty = false, closeLabel = "Cerrar" }: { title: string; description?: string; children: ReactNode; onClose: () => void; className?: string; initialFocusRef?: RefObject<HTMLElement | null>; dirty?: boolean; closeLabel?: string }) {

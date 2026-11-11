@@ -5,6 +5,7 @@ const isoDate = /^\d{4}-\d{2}-\d{2}$/;
 function parseRule(payload: Record<string, unknown>): ProductionRuleInput | null {
   const resourceId = typeof payload.resourceId === "string" || typeof payload.resourceId === "number" ? payload.resourceId : "";
   const productId = typeof payload.productId === "string" ? payload.productId.trim() : "";
+  const clientProductId = typeof payload.clientProductId === "string" || typeof payload.clientProductId === "number" ? payload.clientProductId : undefined;
   const peopleCount = payload.peopleCount === "" || payload.peopleCount === null || payload.peopleCount === undefined ? undefined : Number(payload.peopleCount);
   const configurationLabel = typeof payload.configurationLabel === "string" ? payload.configurationLabel.trim() : "";
   const normalUnitsPerDay = Number(payload.normalUnitsPerDay);
@@ -13,8 +14,8 @@ function parseRule(payload: Record<string, unknown>): ProductionRuleInput | null
   const validTo = typeof payload.validTo === "string" && payload.validTo ? payload.validTo : undefined;
   const source = typeof payload.source === "string" ? payload.source.trim() : "manual";
   const note = typeof payload.note === "string" ? payload.note.trim() || undefined : undefined;
-  if (!resourceId || !productId || !configurationLabel || !source || !Number.isInteger(normalUnitsPerDay) || normalUnitsPerDay <= 0 || !Number.isInteger(maximumUnitsPerDay) || maximumUnitsPerDay < normalUnitsPerDay || peopleCount !== undefined && (!Number.isInteger(peopleCount) || peopleCount <= 0) || !isoDate.test(validFrom) || validTo !== undefined && (!isoDate.test(validTo) || validTo < validFrom)) return null;
-  return { resourceId, productId, peopleCount, configurationLabel, normalUnitsPerDay, maximumUnitsPerDay, validFrom, validTo, source, note };
+  if (!resourceId || !productId || !clientProductId || !configurationLabel || !source || !Number.isInteger(normalUnitsPerDay) || normalUnitsPerDay <= 0 || !Number.isInteger(maximumUnitsPerDay) || maximumUnitsPerDay < normalUnitsPerDay || peopleCount !== undefined && (!Number.isInteger(peopleCount) || peopleCount <= 0) || !isoDate.test(validFrom) || validTo !== undefined && (!isoDate.test(validTo) || validTo < validFrom)) return null;
+  return { resourceId, productId, clientProductId, peopleCount, configurationLabel, normalUnitsPerDay, maximumUnitsPerDay, validFrom, validTo, source, note };
 }
 
 export async function POST(request: Request) {

@@ -3,16 +3,15 @@ import {
   buildProductionCapacity,
   type ProductionCapacityRule,
   type ProductionCapacitySnapshot,
-  type ProductionDailyOverride,
   type ProductionProduct,
   type ProductionResource,
 } from "./production-capacity.ts";
 
 export const capacityOperationLabels: Record<CapacityOperation, string> = {
   assembly: "Armado",
-  treatment: "Marcado",
-  marking: "Marcado",
-  ht: "Marcado",
+  treatment: "HT",
+  marking: "HT",
+  ht: "HT",
 };
 
 export type CapacityRule = { operation: CapacityOperation; peopleCount: number; palletCapacity: number };
@@ -45,7 +44,7 @@ function adjustedCapacity(base: number | undefined, adjustment: number) {
   return Math.max((base ?? 0) + adjustment, 0);
 }
 
-export function buildCapacitySnapshot(input: { from: string; to: string; rules: CapacityRule[]; internalDefaults: InternalProductionDefault[]; availablePeople?: number; externalDefaults: ExternalProductionDefault[]; transportDefaults: TransportCapacityDefault[]; adjustments: CapacityAdjustment[]; orders: OperationOrder[]; providers: Provider[]; productionResources?: ProductionResource[]; productionRules?: ProductionCapacityRule[]; productionOverrides?: ProductionDailyOverride[]; productionProducts?: ProductionProduct[] }): CapacitySnapshot {
+export function buildCapacitySnapshot(input: { from: string; to: string; rules: CapacityRule[]; internalDefaults: InternalProductionDefault[]; availablePeople?: number; externalDefaults: ExternalProductionDefault[]; transportDefaults: TransportCapacityDefault[]; adjustments: CapacityAdjustment[]; orders: OperationOrder[]; providers: Provider[]; productionResources?: ProductionResource[]; productionRules?: ProductionCapacityRule[]; productionProducts?: ProductionProduct[] }): CapacitySnapshot {
   const providerNames = new Map(input.providers.map((provider) => [provider.id, provider.name]));
   const activeOrders = input.orders.filter((order) => !isOrderClosed(order));
   const logisticsOrders = input.orders.filter((order) => getOrderOperationalStatus(order) !== "cancelled");
@@ -160,7 +159,6 @@ export function buildCapacitySnapshot(input: { from: string; to: string; rules: 
     to: input.to,
     resources: input.productionResources ?? [],
     rules: input.productionRules ?? [],
-    overrides: input.productionOverrides ?? [],
     products: input.productionProducts ?? [],
     orders: input.orders,
   });

@@ -1,8 +1,14 @@
 import { getCapacity, getOrders, getProviders } from "../store";
 import { isOrderClosed } from "../../data";
+import { canonicalProductName, productHeatTreatmentLabel } from "../../classification";
 
 function iso(date: Date) { return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}-${String(date.getDate()).padStart(2, "0")}`; }
-function productLabel(value: string) { return value.replace(/\s*[·/+|-]?\s*\b(?:Tratamiento\s+)?HT\b/giu, " ").replace(/\s+/g, " ").replace(/[·/+|-]+\s*$/g, "").trim(); }
+function productLabel(value: string) { return canonicalProductName(value).trim(); }
+
+function treatmentSummary(lines: Array<{ product: string }>) {
+  const labels = new Set(lines.map((line) => productHeatTreatmentLabel(line.product)).filter(Boolean));
+  return (["Con HT", "Sin HT"] as const).filter((label) => labels.has(label)).join(" y ");
+}
 
 export async function GET(request: Request) {
   const url = new URL(request.url);
@@ -22,11 +28,7 @@ export async function GET(request: Request) {
     totalQuantity: shipment.lines.reduce((sum, line) => sum + line.plannedQuantity, 0),
     productLines: shipment.lines.map((line) => `${productLabel(line.product)} (${line.plannedQuantity})`),
     productSummary: shipment.lines.map((line) => `${productLabel(line.product)} (${line.plannedQuantity})`).join(" · "),
-    treatmentSummary: shipment.lines.some((line) => Boolean(line.treatment)) ? "Marcado" : "Sin marcado",
-    stockRisks: shipment.lines.flatMap((shipmentLine) => {
-      const line = order.lines.find((item) => item.id === shipmentLine.orderLineId);
-      return line?.stockRisk && ["red", "orange", "yellow"].includes(line.stockRisk.level) ? [{ product: shipmentLine.product, ...line.stockRisk }] : [];
-    }),
+    treatmentSummary: treatmentSummary(shipment.lines),
   })));
   return Response.json({ from, to, calendar, capacity, transporters: providers.filter((provider) => provider.type === "Transporte").map((provider) => ({ id: provider.id, name: provider.name })) });
 }

@@ -2,6 +2,24 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import { getOrderOperationalStatus, getOrderStage, isOrderClosed, isOrderOverdue, orders, products, providers } from "../app/data.ts";
 import { buildCapacitySnapshot } from "../app/capacity.ts";
+import { canProduceProductKind } from "../app/production-resource-applicability.ts";
+import { canonicalProductName, productHeatTreatmentLabel } from "../app/classification.ts";
+
+test("los nombres históricos distinguen Con HT de Sin HT", () => {
+  assert.equal(canonicalProductName("Pallet / Sin marcado"), "Pallet / Sin HT");
+  assert.equal(canonicalProductName("Pallet / Marcado"), "Pallet / Con HT");
+  assert.equal(productHeatTreatmentLabel("Pallet / Sin marcado"), "Sin HT");
+  assert.equal(productHeatTreatmentLabel("Pallet / Con HT"), "Con HT");
+  assert.equal(productHeatTreatmentLabel("Pallet sin dato de tratamiento"), "");
+});
+
+test("John y Esteban solo figura para bins", () => {
+  const resource = { name: "John y Esteban" };
+  assert.equal(canProduceProductKind(resource, "Pallet"), false);
+  assert.equal(canProduceProductKind(resource, "Piso"), false);
+  assert.equal(canProduceProductKind(resource, "Bin"), true);
+  assert.equal(canProduceProductKind({ name: "Fábrica John" }, "Pallet"), true);
+});
 
 test("separa los pedidos activos del historial", () => {
   assert.equal(orders.length, 12);
@@ -35,6 +53,8 @@ test("distingue proveedores de aserradero y transporte", () => {
     ["Blanc", "Aserradero"],
     ["Mirasol", "Aserradero"],
     ["Linares", "Transporte"],
+    ["Susalla", "Transporte"],
+    ["Giossa", "Transporte"],
     ["Milton", "Transporte"],
     ["Matías", "Transporte"],
   ]);

@@ -88,9 +88,11 @@ export interface TreatmentDaySummary {
 export interface TreatmentDashboard {
   date: string;
   summary: TreatmentDaySummary;
-  trend: Array<{ date: string; processed: number; rejected: number }>;
   batches: TreatmentBatch[];
 }
+
+export type TreatmentNotPerformed = { orderId: string; orderLineId: string; date: string; responsible: string; note?: string };
+export type TreatmentWeek = { batches: TreatmentBatch[]; notPerformed: TreatmentNotPerformed[] };
 
 export interface TreatmentRecordResult {
   batchId: number | string;

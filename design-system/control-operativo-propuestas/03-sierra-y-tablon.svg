@@ -1,0 +1,4 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" role="img" aria-label="Sierra y tablón">
+  <path fill="#184F37" d="M8 9h48v12H8zM8 21h48v16l-6-6-6 6-6-6-6 6-6-6-6 6-6-6-6 6V21ZM10 43h44v11H10z"/>
+  <path d="M16 57h32" fill="none" stroke="#184F37" stroke-width="3" stroke-linecap="round"/>
+</svg>

@@ -1,4 +1,4 @@
-import { getOrderDetail, getProviders, updateOrder } from "../../store";
+import { deleteOrder, getOrderDetail, getProviders, updateOrder } from "../../store";
 import type { CapacityOperation, ProductionSource, TransportSource } from "../../../data";
 
 export async function GET(_request: Request, context: { params: Promise<{ id: string }> }) {
@@ -43,5 +43,16 @@ export async function PATCH(request: Request, context: { params: Promise<{ id: s
     return Response.json(result);
   } catch (error) {
     return Response.json({ error: error instanceof Error ? error.message : "No se pudo actualizar el pedido." }, { status: 400 });
+  }
+}
+
+export async function DELETE(_request: Request, context: { params: Promise<{ id: string }> }) {
+  const { id } = await context.params;
+  try {
+    await deleteOrder(id);
+    return Response.json({ ok: true });
+  } catch (error) {
+    const message = error instanceof Error ? error.message : "No se pudo eliminar el pedido.";
+    return Response.json({ error: message }, { status: message === "Pedido no encontrado." ? 404 : 409 });
   }
 }

@@ -3,7 +3,7 @@ import { readFile } from "node:fs/promises";
 import test from "node:test";
 
 const uiPath = new URL("../app/components/ui.tsx", import.meta.url);
-const navigationPath = new URL("../app/components/AppNavigation.tsx", import.meta.url);
+const navigationPath = new URL("../app/navigation.ts", import.meta.url);
 const stylesPath = new URL("../app/globals.css", import.meta.url);
 const stockPath = new URL("../app/StockView.tsx", import.meta.url);
 const dashboardPath = new URL("../app/Dashboard.tsx", import.meta.url);
@@ -29,17 +29,17 @@ test("el modal compartido gestiona foco, Escape, bloqueo y descarte", async () =
   assert.match(styles, /\.modal-shell\s*\{[\s\S]*?box-shadow:/i);
 });
 
-test("la navegación mantiene grupos, rutas y habilita stock", async () => {
+test("la navegación sigue el orden del pedido, sin emojis ni rótulos de fase", async () => {
   const source = await readFile(navigationPath, "utf8");
-  for (const group of ["Inicio", "Operación", "Gestión", "Auditoría"]) assert.match(source, new RegExp(group));
-  assert.match(source, /label: "Producción"/);
-  assert.match(source, /label: "Stock"/);
-  assert.match(source, /section: "produccion" as const, href: "\/produccion"/);
-  assert.match(source, /section: "stock" as const, href: "\/stock"/);
-  assert.doesNotMatch(source, /label: "Tratamiento"/);
+  const areas = [...source.matchAll(/icon: "[a-z]+", name: "([^"]+)"/g)].map(([, name]) => name);
+  assert.deepEqual(areas, ["Inicio", "Pedidos", "Productos", "Producción", "Stock", "Secadero", "Logística"]);
+  assert.match(source, /href: "\/", label: "Resumen operativo"/);
+  assert.match(source, /href: "\/calendario", label: "Calendario"/);
+  for (const href of ["/produccion", "/stock", "/secadero", "/logistica", "/clientes", "/productos"]) assert.match(source, new RegExp(`href: "${href}"`));
+  assert.doesNotMatch(source, /emoji|Fase \d/);
+  assert.doesNotMatch(source, /[\u{1F300}-\u{1FAFF}]/u);
   assert.doesNotMatch(source, /href: "\/tratamiento"/);
   assert.doesNotMatch(source, /href: "\/plan"/);
-  assert.doesNotMatch(source, /sidebar-week/);
 });
 
 test("clientes elige uno de los 19 departamentos de Uruguay", async () => {
@@ -49,45 +49,39 @@ test("clientes elige uno de los 19 departamentos de Uruguay", async () => {
   for (const department of ["Artigas", "Montevideo", "San José", "Treinta y Tres"]) assert.ok(departments.includes(department));
 });
 
-test("el brand kit define la paleta operativa y un mínimo tipográfico visible", async () => {
-  const styles = await readFile(stylesPath, "utf8");
+test("Control Operativo usa una identidad y una hoja visual consolidada", async () => {
+  const [styles, main, logo] = await Promise.all([
+    readFile(stylesPath, "utf8"),
+    readFile(new URL("../app/main.tsx", import.meta.url), "utf8"),
+    readFile(new URL("../public/operaciones-mark.svg", import.meta.url), "utf8"),
+  ]);
   for (const [token, color] of [
-    ["brand-green-dark", "#183d31"],
-    ["brand-green-light", "#e8f3ed"],
-    ["brand-brown-dark", "#6b3f29"],
-    ["brand-brown-light", "#fbf4ee"],
-    ["brand-black", "#17221e"],
     ["brand-white", "#ffffff"],
+    ["brand-gray", "#f4f6f8"],
+    ["brand-slate", "#41515e"],
+    ["brand-yellow", "#ffca08"],
+    ["brand-black", "#26343e"],
   ]) assert.match(styles, new RegExp(`--${token}:\\s*${color}`, "i"), token);
-
-  assert.doesNotMatch(styles, /font-size:\s*(?:8|9|10|11)px\b/i);
-  assert.doesNotMatch(styles, /font-size:\s*\.72rem\b/i);
-  assert.match(styles, /\.dashboard-shell\s*\{[^}]*background:\s*var\(--brand-green-dark\)/i);
-  assert.match(styles, /\.client-address-editor select,[\s\S]*?appearance:\s*none/i);
-  assert.match(styles, /\.client-address-editor select,[\s\S]*?background-image:\s*url\(/i);
-  assert.match(styles, /\.operations-calendar\s*\{[^}]*--calendar-wood:\s*var\(--brand-brown-dark\)/i);
-  assert.match(styles, /\.operations-calendar\s*\{[^}]*background:\s*var\(--brand-brown-light\)/i);
-  assert.match(styles, /\.stock-kpis > button\s*\{[^}]*justify-content:\s*center/i);
-  assert.match(styles, /\.stock-kpis strong\s*\{[^}]*font-size:\s*26px/i);
+  assert.match(styles, /--nav-bg:\s*var\(--brand-gray\)/i);
+  assert.match(styles, /\.area-rail\.control-sidebar/);
+  assert.match(styles, /\.home-metrics/);
+  assert.match(main, /@fontsource-variable\/archivo\/wght\.css/);
+  assert.doesNotMatch(main, /apple\.css/);
+  assert.match(logo, /#FFCA08/);
+  assert.match(logo, /Sierra y tablón/);
 });
 
 test("stock deja la información secundaria en el detalle", async () => {
   const source = await readFile(stockPath, "utf8");
   const mainTable = source.slice(source.indexOf('<table className="stock-table">'));
-  assert.match(mainTable, /<th>Artículo<\/th>[\s\S]*?<th>Código Zeta<\/th>[\s\S]*?<th>Medida<\/th>/);
+  assert.match(mainTable, /<th>Artículo<\/th>[\s\S]*?<th>Código<\/th>[\s\S]*?<th>Medida<\/th>/);
   assert.match(mainTable, /row\.product\.zetaCode \?\? row\.product\.sourceCode/);
   assert.doesNotMatch(mainTable, /<small>\{row\.product\.sourceCode\}/);
-  assert.match(mainTable, /Días de stock/);
-  assert.doesNotMatch(mainTable, /<th>Consumo\/día<\/th>/);
   assert.doesNotMatch(mainTable, /<th>Próxima entrega<\/th>/);
-  assert.match(source, /<strong>Consumo<\/strong>/);
-  assert.match(source, /<strong>Proyección<\/strong>/);
+  assert.match(source, /<strong>Movimientos<\/strong>/);
   assert.match(source, /stock-detail-section/);
-  assert.doesNotMatch(source, /Sin consumo informado: el riesgo queda gris/);
-  assert.doesNotMatch(source, /Falta cargar consumo/);
-  assert.match(source, /type StockSummaryFilter = "alert" \| "ready" \| "reserved" \| "pending" \| ""/);
-  assert.match(source, /aria-pressed=\{summaryFilter === "ready"\}/);
-  assert.match(source, /matchesSummaryFilter\(row, summaryFilter\)/);
+  assert.match(source, /aria-pressed=\{summaryFilter === field\}/);
+  assert.match(source, /row\[summaryFilter\] > 0/);
 });
 
 test("los indicadores de pedidos funcionan como filtros accesibles", async () => {

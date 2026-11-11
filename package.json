@@ -6,40 +6,51 @@
     "node": ">=22.13.0"
   },
   "scripts": {
-    "dev": "next dev --webpack",
-    "build": "next build",
-    "start": "next start",
-    "test": "npm run test:data && npm run build && node --test tests/rendered-html.test.mjs",
-    "test:data": "node --test tests/data-invariants.test.mjs tests/ui-foundations.test.mjs tests/stage03-invariants.test.mjs tests/stage04-invariants.test.mjs tests/stage05-invariants.test.mjs tests/stage06-invariants.test.mjs",
+    "dev": "npm run routes:generate && vite",
+    "dev:api": "tsx watch --clear-screen=false --include \"app/**/*.ts\" --env-file-if-exists=.env.local server/node.ts",
+    "dev:web": "vite",
+    "build": "npm run routes:generate && tsc --noEmit && vite build",
+    "start": "node --env-file-if-exists=.env.local --import tsx server/node.ts --serve-dist",
+    "routes:generate": "node server/generate-routes.mjs",
+    "test": "npm run test:data && npm run test:mcp && npm run build && node --test tests/app-server.test.mjs",
+    "test:e2e": "npm run build && playwright test",
+    "test:data": "tsx --test tests/data-invariants.test.mjs tests/product-catalog-sync.test.mjs tests/ui-foundations.test.mjs tests/stage03-invariants.test.mjs tests/stage04-invariants.test.mjs tests/stage05-invariants.test.mjs tests/stage06-invariants.test.mjs tests/logistics.test.mjs",
+    "test:mcp": "tsx --test tests/mcp-operational.test.mjs",
     "lint": "eslint . --ignore-pattern dist --ignore-pattern .next",
     "db:generate": "drizzle-kit generate"
   },
   "dependencies": {
+    "@fontsource-variable/archivo": "^5.3.0",
+    "@modelcontextprotocol/sdk": "^1.32.1",
     "@tanstack/react-table": "9.2.4",
+    "@types/leaflet": "^1.9.21",
     "@vercel/analytics": "^2.0.1",
     "drizzle-orm": "0.45.2",
+    "leaflet": "^1.9.4",
     "lucide-react": "^1.33.0",
-    "next": "16.3.3",
     "react": "19.2.6",
     "react-dom": "19.2.6",
-    "recharts": "3.10.1"
+    "recharts": "3.10.1",
+    "zod": "^4.6.7"
   },
   "devDependencies": {
     "@eslint/js": "9.39.4",
-    "@next/eslint-plugin-next": "16.3.3",
-    "@tailwindcss/postcss": "4.2.1",
+    "@playwright/test": "^1.58.0",
     "@types/node": "22.19.19",
     "@types/react": "19.2.14",
     "@types/react-dom": "19.2.3",
+    "@vitejs/plugin-react": "^5.1.1",
+    "concurrently": "^9.2.1",
     "drizzle-kit": "0.31.10",
     "eslint": "9.39.4",
     "eslint-plugin-jsx-a11y": "6.10.2",
     "eslint-plugin-react": "7.37.5",
     "eslint-plugin-react-hooks": "7.1.1",
     "globals": "16.4.0",
-    "tailwindcss": "4.2.1",
+    "tsx": "^4.23.15",
     "typescript": "5.9.3",
-    "typescript-eslint": "8.59.3"
+    "typescript-eslint": "8.59.3",
+    "vite": "^7.2.2"
   },
   "type": "module"
 }

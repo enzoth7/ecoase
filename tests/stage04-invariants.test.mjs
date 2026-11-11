@@ -9,17 +9,17 @@ const resources = [
   { id: 2, name: "Blanc", resourceType: "external_supplier", providerId: "blanc", active: true, displayOrder: 20 },
 ];
 const rules = [
-  { id: 11, resourceId: 1, productId: "bins-x2", productName: "Bins ×2", peopleCount: 2, configurationLabel: "Fábrica ×2", normalUnitsPerDay: 100, maximumUnitsPerDay: 150, validFrom: "2026-09-01", source: "prueba" },
-  { id: 12, resourceId: 1, productId: "bins-x3", productName: "Bins ×3", peopleCount: 2, configurationLabel: "Fábrica ×2", normalUnitsPerDay: 50, maximumUnitsPerDay: 100, validFrom: "2026-09-01", source: "prueba" },
-  { id: 21, resourceId: 2, productId: "bins-x2", productName: "Bins ×2", peopleCount: 1, configurationLabel: "Blanc ×1", normalUnitsPerDay: 60, maximumUnitsPerDay: 80, validFrom: "2026-09-01", source: "prueba" },
+  { id: 11, resourceId: 1, productId: "bins-x2", clientProductId: 101, productName: "Bins ×2", peopleCount: 2, configurationLabel: "Fábrica ×2", normalUnitsPerDay: 100, maximumUnitsPerDay: 150, validFrom: "2026-09-01", source: "prueba" },
+  { id: 12, resourceId: 1, productId: "bins-x3", clientProductId: 102, productName: "Bins ×3", peopleCount: 2, configurationLabel: "Fábrica ×2", normalUnitsPerDay: 50, maximumUnitsPerDay: 100, validFrom: "2026-09-01", source: "prueba" },
+  { id: 21, resourceId: 2, productId: "bins-x2", clientProductId: 101, productName: "Bins ×2", peopleCount: 1, configurationLabel: "Blanc ×1", normalUnitsPerDay: 60, maximumUnitsPerDay: 80, validFrom: "2026-09-01", source: "prueba" },
 ];
 
 function order(allocations) {
-  return { id: "o-1", reference: "Pedido 1", client: "Cliente", product: "Mixto", requested: 200, delivered: 0, pending: 200, dateLabel: "", transport: "", supply: "", preparation: "", logistics: "", delivery: "", action: "", source: "", lines: allocations.map((entry, index) => ({ id: `l-${index}`, product: entry.productName, productId: entry.productId, quantity: entry.quantity, productionAllocations: [{ id: `a-${index}`, orderLineId: `l-${index}`, productionResourceId: entry.resourceId, capacityRuleId: entry.ruleId, plannedDate: "2026-09-07", plannedQuantity: entry.quantity, actualQuantity: entry.actualQuantity, status: entry.status ?? "draft", createdAt: "", updatedAt: "" }] })) };
+  return { id: "o-1", reference: "Pedido 1", client: "Cliente", product: "Mixto", requested: 200, delivered: 0, pending: 200, dateLabel: "", transport: "", supply: "", preparation: "", logistics: "", delivery: "", action: "", source: "", lines: allocations.map((entry, index) => ({ id: `l-${index}`, product: entry.productName, productId: entry.productId, clientProductId: entry.clientProductId ?? (entry.productId === "bins-x2" ? 101 : 102), quantity: entry.quantity, productionAllocations: [{ id: `a-${index}`, orderLineId: `l-${index}`, productionResourceId: entry.resourceId, capacityRuleId: entry.ruleId, plannedDate: "2026-09-07", plannedQuantity: entry.quantity, actualQuantity: entry.actualQuantity, status: entry.status ?? "draft", createdAt: "", updatedAt: "" }] })) };
 }
 
-function snapshot(allocations, overrides = []) {
-  return buildProductionCapacity({ from: "2026-09-07", to: "2026-09-07", resources, rules, overrides, products: [], orders: [order(allocations)] });
+function snapshot(allocations) {
+  return buildProductionCapacity({ from: "2026-09-07", to: "2026-09-07", resources, rules, products: [], orders: [order(allocations)] });
 }
 
 test("calcula mezcla de productos como fracciones y no suma unidades crudas", () => {
@@ -39,10 +39,16 @@ test("distingue capacidad normal, exigida, máxima superada y sin regla", () => 
   assert.equal(snapshot([{ productId: "sin-regla", productName: "Otro", quantity: 10, resourceId: 1 }]).days[0].resources[0].status, "missing_rule");
 });
 
-test("el ajuste diario afecta solo su fecha y puede marcar indisponibilidad", () => {
-  const result = buildProductionCapacity({ from: "2026-09-07", to: "2026-09-08", resources, rules, products: [], orders: [order([{ productId: "bins-x2", productName: "Bins ×2", quantity: 40, resourceId: 1, ruleId: 11 }])], overrides: [{ id: 1, date: "2026-09-07", resourceId: 1, available: false, reason: "Mantenimiento", responsible: "Encargado" }] });
-  assert.equal(result.days[0].resources[0].status, "unavailable");
-  assert.equal(result.days[1].resources[0].status, "normal");
+test("la capacidad de producción usa solo las reglas de rendimiento", () => {
+  const result = snapshot([{ productId: "bins-x2", productName: "Bins ×2", quantity: 40, resourceId: 1, ruleId: 11 }]);
+  assert.equal(result.days[0].resources[0].normalLoad, 0.4);
+  assert.equal(result.days[0].resources[0].status, "normal");
+  assert.equal("overrides" in result, false);
+});
+
+test("un producto igual de otro cliente no hereda su rendimiento", () => {
+  const result = snapshot([{ productId: "bins-x2", clientProductId: 999, productName: "Bins ×2", quantity: 40, resourceId: 1 }]);
+  assert.equal(result.days[0].resources[0].status, "missing_rule");
 });
 
 test("usa producción real al cerrar y expone el saldo pendiente", () => {
@@ -64,55 +70,60 @@ test("la migración protege vigencias, evidencia y mutaciones de servidor", asyn
   assert.doesNotMatch(sql, /grant execute on function public\.confirm_production_allocation_v1[\s\S]*to anon/i);
 });
 
-test("la pantalla resume la producción semanal en una tabla de acciones", async () => {
-  const view = await read("app/CapacityView.tsx");
-  for (const column of ["Fecha", "Origen / recurso", "Cliente / pedido", "Producto", "Palets planificados", "Personas", "Estado", "Acción"]) assert.match(view, new RegExp(column));
-  for (const action of ["Confirmar", "Registrar producción", "Configurar"]) assert.match(view, new RegExp(action));
-  assert.match(view, /Sin asignar/);
-  assert.match(view, /production-week-summary/);
-  assert.match(view, /requieren apoyo/);
-  assert.match(view, /configurationTypeLabel/);
-  assert.doesNotMatch(view, /Revisar capacidad del proveedor/);
-  assert.match(view, /production-rule-people-heading">Personas/);
-  assert.match(view, /production-rule-people-cell/);
-  assert.match(view, /configurationTypeLabel\(rule\.configurationLabel\)/);
-  for (const filter of ["ruleResourceFilter", "ruleProductFilter", "ruleConfigurationFilter"]) assert.match(view, new RegExp(filter));
-  for (const label of ["Filtrar reglas por recurso", "Filtrar reglas por producto", "Filtrar reglas por configuración"]) assert.match(view, new RegExp(label));
-  assert.match(view, /visibleRules\.map/);
-  assert.match(view, /Requiere ayuda o redistribución/);
-  assert.doesNotMatch(view, /function ResourceCard/);
-  assert.doesNotMatch(view, /Carga sobre normal/);
-  assert.doesNotMatch(view, /Carga sobre máxima/);
-  assert.doesNotMatch(view, /Personas disponibles/);
+test("la migración retira las excepciones del servidor y conserva sus datos históricos", async () => {
+  const sql = await read("supabase/migrations/20261105181105_remove_production_daily_overrides.sql");
+  assert.match(sql, /drop function if exists public\.upsert_production_daily_override_v1/);
+  assert.match(sql, /revoke select on public\.production_daily_overrides/);
+  assert.doesNotMatch(sql, /drop table/i);
+  assert.match(sql, /drop constraint if exists production_daily_overrides_product_id_fkey/);
+  const deleteProduct = sql.split("create or replace function public.delete_catalog_product_v2(")[1]?.split("create or replace function public.confirm_production_allocation_v1(")[0];
+  assert.ok(deleteProduct);
+  assert.doesNotMatch(deleteProduct, /delete from public\.production_daily_overrides/);
+  const confirm = sql.split("create or replace function public.confirm_production_allocation_v1(")[1];
+  assert.ok(confirm);
+  assert.doesNotMatch(confirm, /production_daily_overrides/);
+  assert.match(confirm, /v_normal := v_rule\.normal_units_per_day/);
 });
 
-test("las reglas de rendimiento se pueden editar y eliminar desde acciones accesibles", async () => {
-  const [view, route, store] = await Promise.all([
+test("la pantalla parte del plan y ofrece un registro simple del resultado", async () => {
+  const view = await read("app/CapacityView.tsx");
+  const resultModal = await read("app/components/ProductionResultModal.tsx");
+  for (const label of ["Producción real", "Planificado", "Real", "Registrar resultado", "de esta asignación"]) assert.match(view, new RegExp(label));
+  for (const label of ["Se produjo", "No se produjo", "Unidades producidas", "Stock", "Guardar resultado"]) assert.match(resultModal, new RegExp(label));
+  assert.match(resultModal, /\/api\/production-allocations\/\$\{assignment.id\}\/result/);
+  assert.match(view, /production-week-summary/);
+  assert.match(view, /import ClientProductionRules/);
+  assert.match(view, /<ClientProductionRules clients=\{clients\}/);
+  assert.doesNotMatch(view, /rulesViewMode|Reglas individuales/);
+  assert.doesNotMatch(view, /function ResourceCard/);
+});
+
+test("las reglas por cliente se guardan y se validan en el servidor", async () => {
+  const [view, clientRules, route, store, migration] = await Promise.all([
     read("app/CapacityView.tsx"),
+    read("app/components/ClientProductionRules.tsx"),
     read("app/api/capacity/rules/route.ts"),
     read("app/api/store.ts"),
+    read("supabase/migrations/20261105181126_client_product_production_rules.sql"),
   ]);
-  for (const text of ["Acciones", "Editar regla", "Eliminar regla", "Guardar cambios"]) assert.match(view, new RegExp(text));
-  assert.match(view, /<Pencil/);
-  assert.match(view, /<Trash2/);
-  assert.match(view, /aria-label={`Editar regla de/);
-  assert.match(view, /aria-label={`Eliminar regla de/);
+  assert.match(view, /ClientProductionRules/);
+  assert.match(clientRules, /\/api\/capacity\/rules/);
+  assert.match(clientRules, /clientProductId/);
   assert.match(route, /export async function PATCH/);
   assert.match(route, /export async function DELETE/);
+  assert.match(route, /clientProductId/);
   assert.match(store, /export async function updateProductionRule/);
   assert.match(store, /export async function deleteProductionRule/);
+  assert.match(migration, /production_allocation_client_rule_guard/);
 });
 
-test("las excepciones se recorren desde un calendario semanal", async () => {
-  const view = await read("app/CapacityView.tsx");
-  const styles = await read("app/globals.css");
-  assert.match(view, /aria-label="Excepciones de la semana"/);
-  assert.match(view, /capacity\.production\.days\.map/);
-  assert.match(view, /Sin excepciones/);
-  assert.match(view, /aria-selected=\{active\}/);
-  assert.doesNotMatch(view, /"Sin excepciones cargadas"/);
-  assert.doesNotMatch(view, /<strong>\{formatDate\(selectedDate, true\)\}<\/strong>/);
-  assert.doesNotMatch(view, /className="production-config-date"/);
-  assert.doesNotMatch(view, /<label>Fecha<input type="date"/);
-  assert.match(styles, /\.production-exception-week\s*\{[^}]*grid-template-columns:\s*repeat\(7,/i);
+test("la pantalla y el cálculo ya no ofrecen excepciones por fecha", async () => {
+  const [view, capacity, store] = await Promise.all([
+    read("app/CapacityView.tsx"),
+    read("app/production-capacity.ts"),
+    read("app/api/store.ts"),
+  ]);
+  assert.doesNotMatch(view, /OverrideModal|daily-overrides|Excepciones por fecha/);
+  assert.doesNotMatch(capacity, /ProductionDailyOverride|scopedOverride|productionOverrides/);
+  assert.doesNotMatch(store, /saveProductionOverride|\/rest\/v1\/production_daily_overrides/);
 });

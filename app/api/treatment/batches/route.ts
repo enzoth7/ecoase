@@ -25,6 +25,6 @@ export async function POST(request: Request) {
     return Response.json({ result: await recordTreatmentBatch(input) }, { status: 201 });
   } catch (error) {
     const status = typeof error === "object" && error && "status" in error ? Number(error.status) : 400;
-    return Response.json({ error: error instanceof Error ? error.message : "No se pudo registrar el marcado." }, { status: Number.isFinite(status) ? status : 400 });
+    return Response.json({ error: error instanceof Error ? error.message : "No se pudo registrar el HT." }, { status: Number.isFinite(status) ? status : 400 });
   }
 }

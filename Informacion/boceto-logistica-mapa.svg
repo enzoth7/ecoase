@@ -1,0 +1,38 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1440" height="960" viewBox="0 0 1440 960" role="img" aria-labelledby="title desc" font-family="Arial, sans-serif">
+  <title id="title">Boceto de la pestaña Mapa de Logística</title>
+  <desc id="desc">Mapa esquemático desde el centro de distribución de Paysandú hacia un destino, con una tarjeta que explica qué datos hacen falta para calcular una o dos vueltas.</desc>
+  <style>
+    text{font-family:Inter,Arial,sans-serif;fill:#19261f}.muted{fill:#6c796f}.small{font-size:13px}.body{font-size:15px}.caption{font-size:11px;font-weight:700;letter-spacing:.5px}.h1{font-size:30px;font-weight:760;letter-spacing:-.8px}.semibold{font-weight:700}.white{fill:#fff}.nav{fill:#d0ddd3;font-size:14px}.green{fill:#20523c}.amber{fill:#8e631a}
+  </style>
+  <rect width="1440" height="960" fill="#f4f6f2"/><rect width="216" height="960" fill="#15271f"/>
+  <rect x="22" y="25" width="39" height="39" rx="10" fill="#e7efe8"/><text x="41.5" y="51" text-anchor="middle" font-size="17" font-weight="800" fill="#15271f">E</text><text x="75" y="51" fill="#ffffff" class="white" font-size="20" font-weight="750">Ecoase</text>
+  <text x="24" y="112" fill="#d0ddd3" class="nav" font-size="11" letter-spacing="1.3">OPERACIONES</text><text x="24" y="160" fill="#d0ddd3" class="nav">Calendario</text><text x="24" y="205" fill="#d0ddd3" class="nav">Pedidos</text><text x="24" y="250" fill="#d0ddd3" class="nav">Productos</text><text x="24" y="295" fill="#d0ddd3" class="nav">Producción</text><text x="24" y="340" fill="#d0ddd3" class="nav">Stock</text><text x="24" y="385" fill="#d0ddd3" class="nav">Secadero</text><rect x="12" y="412" width="192" height="42" rx="10" fill="#315543"/><text x="24" y="439" fill="#ffffff" class="white semibold" font-size="14">Logística</text>
+  <rect x="216" width="1224" height="70" fill="#fff"/><text x="248" y="44" class="muted small">Operaciones  /  Logística</text><text x="1340" y="44" class="muted small">Boceto · ruta esquemática</text>
+  <text x="248" y="116" class="h1">Mapa de viajes</text><text x="248" y="141" class="muted small">Centro de distribución → destino → regreso. La segunda vuelta depende del horario disponible.</text>
+  <rect x="248" y="164" width="1158" height="55" rx="12" fill="#fff"/><text x="270" y="198" class="muted small">Asignar</text><text x="388" y="198" class="muted small">Calendario</text><rect x="504" y="173" width="84" height="38" rx="9" fill="#e4efe7"/><text x="526" y="198" class="green small semibold">Mapa</text><text x="624" y="198" class="muted small">Límites</text>
+  <rect x="248" y="235" width="1158" height="78" rx="14" fill="#fff"/><text x="270" y="265" class="muted caption">ORIGEN</text><text x="270" y="290" class="body semibold">Centro de distribución · Paysandú</text>
+  <text x="714" y="265" class="muted caption">DESTINO</text><text x="714" y="290" class="body semibold">Seleccionar proveedor o cliente</text>
+  <rect x="1130" y="251" width="256" height="46" rx="9" fill="#1d3b2f"/><text x="1151" y="280" fill="#ffffff" class="white small semibold">Evaluar recorrido</text>
+  <rect x="248" y="331" width="738" height="550" rx="16" fill="#e9efe8"/>
+  <path d="M287 429C367 394 381 406 458 442S581 501 634 461 761 362 949 396" fill="none" stroke="#d7e4d5" stroke-width="29" stroke-linecap="round"/>
+  <path d="M287 758C369 706 460 728 535 660S632 626 734 667 860 751 949 709" fill="none" stroke="#d7e4d5" stroke-width="24" stroke-linecap="round"/>
+  <path d="M355 362C387 443 408 532 352 624S354 758 418 824" fill="none" stroke="#d7e4d5" stroke-width="22" stroke-linecap="round"/>
+  <path d="M835 355C803 432 848 494 903 538S948 668 884 806" fill="none" stroke="#d7e4d5" stroke-width="21" stroke-linecap="round"/>
+  <path d="M434 666C488 634 510 586 566 574S687 537 737 493" fill="none" stroke="#fff" stroke-width="13" stroke-linecap="round"/>
+  <path d="M434 666C488 634 510 586 566 574S687 537 737 493" fill="none" stroke="#30775a" stroke-width="6" stroke-linecap="round"/>
+  <circle cx="434" cy="666" r="24" fill="#1d3b2f"/><circle cx="434" cy="666" r="8" fill="#fff"/>
+  <circle cx="737" cy="493" r="24" fill="#d79f44"/><circle cx="737" cy="493" r="8" fill="#fff"/>
+  <rect x="318" y="700" width="242" height="68" rx="12" fill="#fff"/><text x="335" y="728" class="body semibold">Paysandú</text><text x="335" y="750" class="small muted">Centro de distribución</text>
+  <rect x="758" y="421" width="180" height="68" rx="12" fill="#fff"/><text x="775" y="449" class="body semibold">Destino</text><text x="775" y="471" class="small muted">Ubicación por definir</text>
+  <rect x="268" y="347" width="245" height="37" rx="8" fill="#fff"/><text x="281" y="371" class="small muted">Esquema · sin trazado real</text>
+  <rect x="1003" y="331" width="403" height="550" rx="16" fill="#fff"/><rect x="1003" y="331" width="403" height="58" rx="16" fill="#15271f"/><text x="1024" y="368" fill="#ffffff" class="white" font-size="18" font-weight="700">Viabilidad del día</text>
+  <text x="1025" y="426" class="muted caption">VEHÍCULO</text><text x="1025" y="454" class="body semibold">Elegir camión y chofer</text>
+  <rect x="1024" y="478" width="361" height="86" rx="11" fill="#f2f5f1"/><text x="1041" y="505" class="muted caption">VIAJE 1</text><text x="1041" y="532" class="body semibold">Tiempo por carretera: —</text><text x="1041" y="550" class="small muted">Incluye carga, parada y regreso</text>
+  <rect x="1024" y="576" width="361" height="86" rx="11" fill="#fff1d9"/><text x="1041" y="603" class="amber caption">VIAJE 2</text><text x="1041" y="630" class="body semibold amber">Todavía no evaluable</text><text x="1041" y="648" class="small amber">Faltan horarios y ubicación exacta</text>
+  <text x="1025" y="702" class="muted caption">PARA DAR UNA RESPUESTA</text>
+  <circle cx="1031" cy="730" r="4" fill="#49745a"/><text x="1045" y="735" class="small">Dirección exacta del origen y destino</text>
+  <circle cx="1031" cy="760" r="4" fill="#49745a"/><text x="1045" y="765" class="small">Horario del chofer y del cliente</text>
+  <circle cx="1031" cy="790" r="4" fill="#49745a"/><text x="1045" y="795" class="small">Tiempo de carga y descarga</text>
+  <rect x="1024" y="821" width="361" height="43" rx="9" fill="#e8f0e9"/><text x="1041" y="848" class="green small semibold">Resultado: sin datos suficientes</text>
+  <text x="248" y="920" class="muted small">Los tiempos y la ruta se completan con datos reales. El boceto muestra únicamente la disposición de la pantalla.</text>
+</svg>

@@ -3,6 +3,7 @@ import {
   formatPlannedDate,
   getOrderPlannedDate,
   getOrderStage,
+  isActiveProvider,
   isOrderClosed,
   orders as seededOrders,
   products as seededProducts,
@@ -26,6 +27,7 @@ import {
   type Shipment,
   type ShipmentStatus,
 } from "../data";
+import { palletProductionDefaults, PALLET_RULE_START_DATE } from "../production-rule-defaults";
 import {
   buildCapacitySnapshot,
   type CapacityAdjustment,
@@ -37,11 +39,11 @@ import {
 } from "../capacity";
 import type {
   ProductionCapacityRule,
-  ProductionDailyOverride,
   ProductionProduct,
   ProductionResource,
   ProductionResourceType,
 } from "../production-capacity";
+import { MEASURE_LEVEL, TREATMENT_LEVEL, applyLevelRules, attributesFromLegacy, buildProductName, canonicalProductName, cleanAttributes, cleanOptions, defaultProductLevels, levelSlug, levelValue, productHeatTreatmentLabel, productKey, requiresHeatTreatment, type ProductAttributes, type ProductLevel } from "../classification";
 import { createPrivateAssetUrl, deletePrivateAsset, supabaseRequest, supabaseServerRequest, uploadPrivateAsset } from "../lib/supabase";
 import {
   allowedAssetTypes,
@@ -65,35 +67,30 @@ import {
   type TreatmentControlCheck,
   type TreatmentDashboard,
   type TreatmentDestination,
+  type TreatmentNotPerformed,
   type TreatmentProductOption,
   type TreatmentRecordResult,
+  type TreatmentWeek,
 } from "../treatment";
 import {
-  classifyStockRisk,
-  type StockConsumptionRule,
+  orderStockReservations,
   type StockDetail,
-  type StockProjectionPoint,
-  type StockRiskLevel,
   type StockSummaryRow,
+  scopeStockInventory,
 } from "../stock";
 
 export type CreateOrderInput = {
   lines: Array<{ clientProductId: number | string; quantity: number }>;
   orderDate: string;
-  requestedDeliveryDate: string;
   plannedDate: string;
-  transport: string;
-  reference?: string;
+  deliveryDateNote?: string;
   notes?: string;
-  stage?: Exclude<OperationStage, "completado">;
-  productionSource: ProductionSource;
-  producerProviderId?: string;
-  productionDate?: string;
-  importArrivalDate?: string;
   requiredOperations: CapacityOperation[];
-  transportSource: TransportSource;
-  transportProviderId?: string;
 };
+
+export type ProductionPlanInput = Array<{ orderLineId: string; resourceId: string; plannedDate: string; plannedQuantity: number }>;
+export type TransportAssignmentInput = { source: TransportSource; providerId?: string; newProviderName?: string };
+export type DryingPlanInput = { startDate: string; endDate?: string; note?: string };
 
 export type UpdateOrderInput = Partial<Pick<OperationOrder, "transport" | "requested" | "stage" | "productionSource" | "producerProviderId" | "productionDate" | "importArrivalDate" | "requiredOperations" | "transportSource" | "transportProviderId">> & {
   plannedDate?: string;
@@ -112,13 +109,17 @@ export type RecordOrderUpdateInput = {
 export type UpdateProductInput = {
   kind: ProductKind;
   measure?: string;
-  requiresTreatment: boolean;
+  heightCm?: number | null;
+  attributes?: ProductAttributes;
+  /** Sólo para clientes viejos de la API que no mandan el nivel Tratamiento. */
+  requiresTreatment?: boolean;
   stockName?: string;
   zetaCode?: string;
   clientId?: string;
+  clientIds?: string[];
 };
 
-export type CreateProductInput = Omit<UpdateProductInput, "clientId" | "stockName">;
+export type CreateProductInput = Omit<UpdateProductInput, "clientId"> & { clientIds?: string[] };
 export type CreateClientInput = { name: string; address?: string; department?: string };
 
 type DbLine = { id: string; product: string; product_id: string | null; client_product_id: number | null; quantity: number; requested_quantity?: number; preparation: string | null; position: number };
@@ -156,6 +157,13 @@ type DbOrder = {
   required_operations: CapacityOperation[] | null;
   transport_source: TransportSource | null;
   transport_provider_id: string | null;
+  delivery_date_note?: string | null;
+  production_defined?: boolean | null;
+  production_end_date?: string | null;
+  transport_defined?: boolean | null;
+  drying_start_date?: string | null;
+  drying_end_date?: string | null;
+  drying_note?: string | null;
   order_lines: DbLine[];
 };
 type DbChange = {
@@ -170,6 +178,7 @@ const useMemoryStore = process.env.ECOASE_DATA_BACKEND === "memory";
 const memoryOrders: OperationOrder[] = structuredClone(seededOrders);
 const memoryHistory = new Map<string, OrderChange[]>();
 const memoryProducts: Product[] = structuredClone(seededProducts);
+const memoryProductLevels: ProductLevel[] = structuredClone(defaultProductLevels);
 const memoryProviders: Provider[] = structuredClone(seededProviders);
 const memoryClients: ClientMaster[] = [...new Set(seededOrders.map((order) => order.client))].map((name, index) => {
   const address = seededOrders.find((order) => order.client === name)?.deliveryAddress;
@@ -196,11 +205,30 @@ const memoryProductionResources: ProductionResource[] = [
   { id: "lito", name: "Lito", resourceType: "internal_crew", active: true, displayOrder: 90 },
 ];
 const memoryProductionRules: ProductionCapacityRule[] = [];
-const memoryProductionOverrides: ProductionDailyOverride[] = [];
 let memoryProductionId = 1;
+
+function seedMemoryPalletProductionRules(relation: ClientProduct) {
+  if (!relation.active || relation.product.kind !== "Pallet") return;
+  for (const baseline of palletProductionDefaults(relation.product.attributes?.modelo)) {
+    const resource = memoryProductionResources.find((item) => item.id === baseline.resourceId && item.active);
+    if (!resource || memoryProductionRules.some((rule) => String(rule.clientProductId) === String(relation.id) && String(rule.resourceId) === String(resource.id))) continue;
+    memoryProductionRules.push({
+      id: `rule-${memoryProductionId++}`,
+      resourceId: resource.id,
+      productId: relation.productId,
+      clientProductId: relation.id,
+      productName: productLabel(relation.product),
+      configurationLabel: "Base para pallets",
+      normalUnitsPerDay: baseline.normal,
+      maximumUnitsPerDay: baseline.maximum,
+      validFrom: PALLET_RULE_START_DATE,
+      source: "planilla de rendimiento inicial",
+      createdAt: new Date().toISOString(),
+    });
+  }
+}
 const memoryStockMovements: StockMovement[] = [];
 const memoryStockReservations: Array<{ id: string; shipmentLineId: number | string; productId: string; quantity: number; status: "active" | "consumed" | "released" }> = [];
-const memoryConsumptionRules: Array<StockConsumptionRule & { productId: string }> = [];
 const memoryTreatmentBatches: TreatmentBatch[] = [];
 let memoryTreatmentId = 1;
 
@@ -209,15 +237,17 @@ function canonicalOperations(operations: CapacityOperation[] | null | undefined)
 }
 
 function treatmentFromLabel(label: string) {
-  if (/HT|Marcado/i.test(label)) return "Marcado" as const;
+  if (productHeatTreatmentLabel(label) === "Con HT") return "Marcado" as const;
   return undefined;
 }
 
 for (const order of memoryOrders) {
   const createdAt = new Date(0).toISOString();
   order.requiredOperations = canonicalOperations(order.requiredOperations);
+  order.product = canonicalProductName(order.product);
   for (const line of order.lines) {
     line.treatment = treatmentFromLabel(line.product);
+    line.product = canonicalProductName(line.product);
     const resourceId = order.producerProviderId ?? (order.productionSource === "internal" ? "internal" : undefined);
     line.productionAllocations = [{ id: `pa-${line.id}`, orderLineId: line.id, resourceId, productionResourceId: resourceId, plannedDate: order.productionDate ?? order.importArrivalDate ?? getOrderPlannedDate(order), plannedQuantity: line.quantity, status: "draft", note: "Planificación histórica", createdAt, updatedAt: createdAt }];
   }
@@ -236,9 +266,9 @@ for (const order of memoryOrders) {
   }];
 }
 
-type DbAllocation = { id: number; order_line_id: string; resource_id: string | null; production_resource_id: number | null; capacity_rule_id: number | null; planned_date: string; planned_quantity: number; actual_quantity: number | null; status: ProductionAllocationStatus; note: string | null; completed_at: string | null; completion_note: string | null; created_at: string; updated_at: string };
+type DbAllocation = { id: number; order_line_id: string; resource_id: string | null; production_resource_id: number | null; capacity_rule_id: number | null; planned_date: string; planned_quantity: number; actual_quantity: number | null; actual_date: string | null; result_destination: "client" | "stock" | null; status: ProductionAllocationStatus; note: string | null; completed_at: string | null; completion_note: string | null; created_at: string; updated_at: string };
 type DbLineTreatmentProgress = { id: number; order_line_id: string | null; quantity: number; status: TreatmentBatchStatus; reversal_of_batch_id: number | null };
-type DbShipmentLine = { id: number; shipment_id: number; order_line_id: string; planned_quantity: number; delivered_quantity: number };
+type DbShipmentLine = { id: number; shipment_id: number; order_line_id: string; planned_quantity: number; loaded_quantity: number | null; delivered_quantity: number };
 type DbShipmentEvent = { id: number; shipment_id: number; event_type: Shipment["events"][number]["eventType"]; previous_status: ShipmentStatus | null; next_status: ShipmentStatus | null; previous_date: string | null; next_date: string | null; reason: RescheduleReason | null; note: string | null; previous_remittance: string | null; next_remittance: string | null; responsible: string; created_at: string };
 type DbShipment = { id: number; order_id: string; planned_date: string; status: ShipmentStatus; transport_source: TransportSource; transport_provider_id: string | null; remittance: string | null; shared_remittance_reason: string | null; delivery_address_snapshot: string | null; loaded_at: string | null; dispatched_at: string | null; delivered_at: string | null; created_at: string; updated_at: string; shipment_lines: DbShipmentLine[]; shipment_events: DbShipmentEvent[] };
 function mapOrder(row: DbOrder): OperationOrder {
@@ -246,7 +276,7 @@ function mapOrder(row: DbOrder): OperationOrder {
     id: row.id,
     reference: row.reference,
     client: row.client,
-    product: row.product,
+    product: canonicalProductName(row.product),
     productId: row.order_lines?.[0]?.product_id ?? undefined,
     clientProductId: row.order_lines?.[0]?.client_product_id ?? undefined,
     requested: row.requested,
@@ -279,9 +309,16 @@ function mapOrder(row: DbOrder): OperationOrder {
     requiredOperations: canonicalOperations(row.required_operations),
     transportSource: row.transport_source ?? (row.transport.toLocaleLowerCase() === "interno" || row.transport.toLocaleLowerCase() === "propio" ? "internal" : "external"),
     transportProviderId: row.transport_provider_id ?? undefined,
+    deliveryDateNote: row.delivery_date_note ?? undefined,
+    productionDefined: row.production_defined ?? true,
+    productionEndDate: row.production_end_date ?? undefined,
+    transportDefined: row.transport_defined ?? true,
+    dryingStartDate: row.drying_start_date ?? undefined,
+    dryingEndDate: row.drying_end_date ?? undefined,
+    dryingNote: row.drying_note ?? undefined,
     lines: [...(row.order_lines ?? [])]
       .sort((a, b) => a.position - b.position)
-      .map((line) => ({ id: line.id, product: line.product, productId: line.product_id ?? undefined, clientProductId: line.client_product_id ?? undefined, quantity: line.requested_quantity ?? line.quantity, preparation: line.preparation ?? undefined, treatment: treatmentFromLabel(line.product) })),
+      .map((line) => ({ id: line.id, product: canonicalProductName(line.product), productId: line.product_id ?? undefined, clientProductId: line.client_product_id ?? undefined, quantity: line.requested_quantity ?? line.quantity, preparation: line.preparation ?? undefined, treatment: treatmentFromLabel(line.product) })),
   };
 }
 
@@ -289,34 +326,31 @@ async function attachDatabaseOperations(orders: OperationOrder[]) {
   const orderIds = orders.map((order) => order.id);
   const lineIds = orders.flatMap((order) => order.lines.map((line) => line.id));
   if (!orderIds.length) return orders;
-  const [allocations, shipments, providers, treatmentProgress, reservations, stockRisks] = await Promise.all([
+  const [allocations, shipments, providers, treatmentProgress, reservations] = await Promise.all([
     lineIds.length ? supabaseRequest<DbAllocation[]>(`/rest/v1/production_allocations?select=*&order_line_id=in.(${lineIds.map(encodeURIComponent).join(",")})&order=planned_date.asc,id.asc`) : Promise.resolve([]),
     supabaseRequest<DbShipment[]>(`/rest/v1/shipments?select=*,shipment_lines(*),shipment_events(*)&order_id=in.(${orderIds.map(encodeURIComponent).join(",")})&order=planned_date.asc,id.asc&shipment_events.order=created_at.asc,id.asc`),
-    getProviders(),
+    getProviders({ includeRetired: true }),
     lineIds.length ? supabaseRequest<DbLineTreatmentProgress[]>(`/rest/v1/treatment_batches?select=id,order_line_id,quantity,status,reversal_of_batch_id&order_line_id=in.(${lineIds.map(encodeURIComponent).join(",")})`) : Promise.resolve([]),
     lineIds.length ? supabaseRequest<Array<{ shipment_line_id: number; quantity: number; status: string; shipment_lines: { order_line_id: string } | null }>>(`/rest/v1/stock_reservations?select=shipment_line_id,quantity,status,shipment_lines(order_line_id)&status=eq.active`) : Promise.resolve([]),
-    supabaseRequest<Array<{ product_id: string; risk_level: StockRiskLevel; available_quantity: number; days_to_break: number | null; estimated_break_date: string | null }>>(`/rest/v1/stock_risk?select=product_id,risk_level,available_quantity,days_to_break,estimated_break_date`),
   ]);
   const providerNames = new Map(providers.map((provider) => [provider.id, provider.name]));
   const lineMap = new Map(orders.flatMap((order) => order.lines.map((line) => [line.id, line] as const)));
   for (const order of orders) {
     for (const line of order.lines) {
-      line.productionAllocations = allocations.filter((item) => item.order_line_id === line.id).map<ProductionAllocation>((item) => ({ id: item.id, orderLineId: item.order_line_id, resourceId: item.resource_id ?? undefined, productionResourceId: item.production_resource_id ?? undefined, capacityRuleId: item.capacity_rule_id ?? undefined, plannedDate: item.planned_date, plannedQuantity: item.planned_quantity, actualQuantity: item.actual_quantity ?? undefined, status: item.status, note: item.note ?? undefined, completedAt: item.completed_at ?? undefined, completionNote: item.completion_note ?? undefined, createdAt: item.created_at, updatedAt: item.updated_at }));
+      line.productionAllocations = allocations.filter((item) => item.order_line_id === line.id).map<ProductionAllocation>((item) => ({ id: item.id, orderLineId: item.order_line_id, resourceId: item.resource_id ?? undefined, productionResourceId: item.production_resource_id ?? undefined, capacityRuleId: item.capacity_rule_id ?? undefined, plannedDate: item.planned_date, plannedQuantity: item.planned_quantity, actualQuantity: item.actual_quantity ?? undefined, actualDate: item.actual_date ?? undefined, resultDestination: item.result_destination ?? undefined, status: item.status, note: item.note ?? undefined, completedAt: item.completed_at ?? undefined, completionNote: item.completion_note ?? undefined, createdAt: item.created_at, updatedAt: item.updated_at }));
       const lineBatches = treatmentProgress.filter((batch) => batch.order_line_id === line.id);
       const treated = lineBatches.reduce((sum, batch) => sum + (batch.status === "posted" ? batch.quantity : batch.status === "reversal" ? -batch.quantity : 0), 0);
       line.treatedQuantity = Math.max(treated, 0);
       line.treatmentPendingQuantity = Math.max(line.quantity - line.treatedQuantity, 0);
       line.readyReservedQuantity = 0;
       line.readyReservedQuantity = reservations.filter((reservation) => reservation.shipment_lines?.order_line_id === line.id).reduce((sum, reservation) => sum + reservation.quantity, 0);
-      const stockRisk = stockRisks.find((risk) => risk.product_id === line.productId);
-      line.stockRisk = stockRisk ? { level: stockRisk.risk_level, available: stockRisk.available_quantity, daysToBreak: stockRisk.days_to_break ?? undefined, estimatedBreakDate: stockRisk.estimated_break_date ?? undefined } : undefined;
     }
     order.shipments = shipments.filter((item) => item.order_id === order.id).map<Shipment>((item) => ({
       id: item.id, orderId: item.order_id, plannedDate: item.planned_date, status: item.status, transportSource: item.transport_source,
-      transportProviderId: item.transport_provider_id ?? undefined, transportLabel: item.transport_source === "internal" ? "Transporte interno" : providerNames.get(item.transport_provider_id ?? "") ?? "Transportista",
+      transportProviderId: item.transport_provider_id ?? undefined, transportLabel: item.transport_source === "internal" ? providerNames.get(item.transport_provider_id ?? "") ?? "Transporte interno" : providerNames.get(item.transport_provider_id ?? "") ?? "Transportista",
       remittance: item.remittance ?? undefined, sharedRemittanceReason: item.shared_remittance_reason ?? undefined, deliveryAddressSnapshot: item.delivery_address_snapshot ?? undefined,
       loadedAt: item.loaded_at ?? undefined, dispatchedAt: item.dispatched_at ?? undefined, deliveredAt: item.delivered_at ?? undefined, createdAt: item.created_at, updatedAt: item.updated_at,
-      lines: item.shipment_lines.map((line) => ({ id: line.id, shipmentId: line.shipment_id, orderLineId: line.order_line_id, product: lineMap.get(line.order_line_id)?.product ?? "Producto", treatment: lineMap.get(line.order_line_id)?.treatment, plannedQuantity: line.planned_quantity, deliveredQuantity: line.delivered_quantity })),
+      lines: item.shipment_lines.map((line) => ({ id: line.id, shipmentId: line.shipment_id, orderLineId: line.order_line_id, product: lineMap.get(line.order_line_id)?.product ?? "Producto", treatment: lineMap.get(line.order_line_id)?.treatment, plannedQuantity: line.planned_quantity, loadedQuantity: line.loaded_quantity ?? undefined, deliveredQuantity: line.delivered_quantity })),
       events: [...item.shipment_events].sort((a, b) => a.created_at.localeCompare(b.created_at)).map((event) => ({ id: event.id, shipmentId: event.shipment_id, eventType: event.event_type, previousStatus: event.previous_status ?? undefined, nextStatus: event.next_status ?? undefined, previousDate: event.previous_date ?? undefined, nextDate: event.next_date ?? undefined, reason: event.reason ?? undefined, note: event.note ?? undefined, previousRemittance: event.previous_remittance ?? undefined, nextRemittance: event.next_remittance ?? undefined, responsible: event.responsible, createdAt: event.created_at })),
     }));
   }
@@ -333,7 +367,10 @@ export async function getOrders() {
   if (useMemoryStore) return memoryOrders;
   const query = new URLSearchParams({ select: "*,order_lines(*)", order: "created_at.asc", "order_lines.order": "position.asc" });
   const rows = await supabaseRequest<DbOrder[]>(`/rest/v1/orders?${query}`);
-  return attachDatabaseOperations(rows.map(mapOrder));
+  const clientProductIds = [...new Set(rows.flatMap((row) => (row.order_lines ?? []).map((line) => line.client_product_id).filter((id): id is number => id !== null)))];
+  const links = clientProductIds.length ? await supabaseRequest<Array<{ id: number; client_id: string }>>(`/rest/v1/client_products?select=id,client_id&id=in.(${clientProductIds.join(",")})`) : [];
+  const clientByProduct = new Map(links.map((link) => [String(link.id), link.client_id]));
+  return attachDatabaseOperations(rows.map((row) => { const order = mapOrder(row); order.clientId = clientByProduct.get(String(order.clientProductId)); return order; }));
 }
 
 export type CreateProviderInput = {
@@ -359,10 +396,12 @@ export function generateProviderSlug(name: string): string {
   return normalized || `prov-${crypto.randomUUID().slice(0, 8)}`;
 }
 
-export async function getProviders() {
-  if (useMemoryStore) return memoryProviders;
-  const query = new URLSearchParams({ select: "id,name,type,supplies", order: "type.asc,name.asc" });
-  return supabaseRequest<Provider[]>(`/rest/v1/providers?${query}`);
+export async function getProviders({ includeRetired = false } = {}) {
+  if (useMemoryStore) return includeRetired ? memoryProviders : memoryProviders.filter(isActiveProvider);
+  const query = new URLSearchParams({ select: "*", order: "type.asc,name.asc" });
+  const rows = await supabaseRequest<Array<Provider & { internal_transport?: boolean }>>(`/rest/v1/providers?${query}`);
+  return (includeRetired ? rows : rows.filter(isActiveProvider))
+    .map((row) => ({ id: row.id, name: row.name, type: row.type, supplies: row.supplies, internalTransport: Boolean(row.internal_transport) }));
 }
 
 export async function createProvider(input: CreateProviderInput): Promise<Provider> {
@@ -390,7 +429,7 @@ export async function createProvider(input: CreateProviderInput): Promise<Provid
     return provider;
   }
 
-  const existing = await getProviders();
+  const existing = await getProviders({ includeRetired: true });
   if (existing.some((p) => p.name.localeCompare(name, "es", { sensitivity: "accent" }) === 0)) {
     throw new Error("Ya existe un proveedor con ese nombre.");
   }
@@ -447,7 +486,7 @@ export async function updateProvider(id: string, input: UpdateProviderInput): Pr
   if (input.name !== undefined) {
     const name = input.name.trim();
     if (!name) throw new Error("El nombre no puede estar vacío.");
-    const existing = await getProviders();
+    const existing = await getProviders({ includeRetired: true });
     if (existing.some((p) => p.id !== trimmedId && p.name.localeCompare(name, "es", { sensitivity: "accent" }) === 0)) {
       throw new Error("Ya existe otro proveedor con ese nombre.");
     }
@@ -545,16 +584,17 @@ export async function getProducts() {
     const clientNameById = new Map(memoryClients.map((client) => [client.id, client.name]));
     return memoryProducts.map((product) => ({
       ...product,
-      clientNames: [...new Set(memoryClientProducts.filter((item) => item.productId === product.id).map((item) => clientNameById.get(item.clientId)).filter((name): name is string => Boolean(name)))].sort((a, b) => a.localeCompare(b, "es")),
+      heightCm: product.kind === "Pallet" ? product.heightCm ?? 10 : product.heightCm,
+      clientNames: [...new Set(memoryClientProducts.filter((item) => item.productId === product.id && item.active).map((item) => clientNameById.get(item.clientId)).filter((name): name is string => Boolean(name)))].sort((a, b) => a.localeCompare(b, "es")),
     })).sort(compareProductsByInternalCode);
   }
   const query = new URLSearchParams({
-    select: "id,kind,measure,treatment,requires_treatment,stock_name,source_catalog,source_code,zeta_code,stock_active",
+    select: "*",
     order: "stock_name.asc,kind.asc,measure.asc",
   });
   const [rows, assignments, clients] = await Promise.all([
     supabaseRequest<DbProductRow[]>(`/rest/v1/products?${query}`),
-    supabaseRequest<Array<{ product_id: string; client_id: string }>>("/rest/v1/client_products?select=product_id,client_id&order=display_order.asc,id.asc"),
+    supabaseRequest<Array<{ product_id: string; client_id: string }>>("/rest/v1/client_products?select=product_id,client_id&active=eq.true&order=display_order.asc,id.asc"),
     supabaseRequest<Array<{ id: string; name: string }>>("/rest/v1/clients?select=id,name&order=name.asc"),
   ]);
   const clientNameById = new Map(clients.map((client) => [client.id, client.name]));
@@ -628,6 +668,9 @@ export async function deleteClient(id: string): Promise<{ ok: boolean }> {
     const nextClientProducts = memoryClientProducts.filter((cp) => cp.clientId !== trimmedId);
     memoryClientProducts.length = 0;
     memoryClientProducts.push(...nextClientProducts);
+    const keptRules = memoryProductionRules.filter((rule) => !clientProductIds.has(String(rule.clientProductId)));
+    memoryProductionRules.length = 0;
+    memoryProductionRules.push(...keptRules);
 
     const clientIndex = memoryClients.findIndex((c) => c.id === trimmedId);
     if (clientIndex !== -1) {
@@ -660,10 +703,6 @@ export async function deleteClient(id: string): Promise<{ ok: boolean }> {
       ).catch(() => undefined);
     }
 
-    await supabaseServerRequest<unknown>(
-      `/rest/v1/client_product_consumption?client_id=eq.${encodeURIComponent(trimmedId)}`,
-      { method: "DELETE" }
-    ).catch(() => undefined);
 
     await supabaseServerRequest<unknown>(
       `/rest/v1/client_products?client_id=eq.${encodeURIComponent(trimmedId)}`,
@@ -685,9 +724,13 @@ export async function deleteClient(id: string): Promise<{ ok: boolean }> {
   return { ok: true };
 }
 
-type DbProductRow = { id: string; kind: ProductKind; measure: string | null; treatment: Product["treatment"] | null; requires_treatment: boolean; stock_name?: string | null; source_catalog?: Product["sourceCatalog"] | null; source_code?: string | null; zeta_code?: string | null; stock_active?: boolean };
+type DbProductRow = { id: string; kind: ProductKind; measure: string | null; height_cm?: number | null; treatment: Product["treatment"] | null; requires_treatment: boolean; stock_name?: string | null; source_catalog?: Product["sourceCatalog"] | null; source_code?: string | null; zeta_code?: string | null; stock_active?: boolean; attributes?: Record<string, string> | null; model?: string | null; reinforcement?: string | null; board_count?: number | null; quality?: string | null; finish?: string | null; heat_treatment?: string | null };
 function mapProduct(row: DbProductRow): Product {
-  return { id: row.id, kind: row.kind, measure: row.measure ?? undefined, treatment: row.treatment ?? undefined, requiresTreatment: row.requires_treatment, stockName: row.stock_name ?? undefined, sourceCatalog: row.source_catalog ?? undefined, sourceCode: row.source_code ?? undefined, zetaCode: row.zeta_code ?? undefined, stockActive: row.stock_active ?? true };
+  // Antes de aplicar la migración de niveles los valores viven en las columnas viejas: se pasan a niveles al leer.
+  const stored = cleanAttributes(row.attributes);
+  const hasLegacy = Boolean(row.model || row.reinforcement || row.board_count || row.quality || row.finish || row.heat_treatment);
+  const attributes = row.attributes != null ? stored : hasLegacy ? attributesFromLegacy(row) : undefined;
+  return { id: row.id, kind: row.kind, measure: row.measure ?? undefined, heightCm: row.kind === "Pallet" ? row.height_cm ?? 10 : row.height_cm ?? undefined, treatment: row.treatment ?? undefined, requiresTreatment: row.requires_treatment, stockName: row.stock_name ?? undefined, sourceCatalog: row.source_catalog ?? undefined, sourceCode: row.source_code ?? undefined, zetaCode: row.zeta_code ?? undefined, stockActive: row.stock_active ?? true, ...(attributes !== undefined ? { attributes } : {}) };
 }
 
 type DbClientProductRow = {
@@ -727,7 +770,7 @@ function mapClientProduct(row: DbClientProductRow): ClientProduct {
   };
 }
 
-const masterSelect = "id,client_id,product_id,zeta_code,operational_name,active,display_order,created_at,updated_at,products(id,kind,measure,treatment,requires_treatment,stock_name,source_catalog,source_code,zeta_code,stock_active),client_product_controls(id,client_product_id,title,detail,display_order,active),client_product_assets(id,client_product_id,storage_path,file_name,asset_type,mime_type,size_bytes,alt_text,is_primary,active,created_at)";
+const masterSelect = "id,client_id,product_id,zeta_code,operational_name,active,display_order,created_at,updated_at,products(*),client_product_controls(id,client_product_id,title,detail,display_order,active),client_product_assets(id,client_product_id,storage_path,file_name,asset_type,mime_type,size_bytes,alt_text,is_primary,active,created_at)";
 
 async function getClientProduct(id: number | string) {
   if (useMemoryStore) return memoryClientProducts.find((item) => String(item.id) === String(id)) ?? null;
@@ -748,9 +791,10 @@ export async function getClientDetail(clientId: string): Promise<ClientDetail | 
 export async function getClientProductOptions(clientId: string, activeOnly = true): Promise<ClientProductOption[]> {
   const detail = await getClientDetail(clientId);
   if (!detail || (activeOnly && !detail.client.active)) return [];
-  return detail.products.filter((item) => !activeOnly || (item.active && clientProductReady(item))).map((item) => ({
+  return detail.products.filter((item) => !activeOnly || (item.active && item.product.stockActive !== false && clientProductReady(item))).map((item) => ({
     id: item.id,
     productId: item.productId,
+    kind: item.product.kind,
     label: productLabel(item.product, item.operationalName),
     zetaCode: item.product.zetaCode ?? item.zetaCode,
     clientAddress: detail.client.address,
@@ -773,6 +817,7 @@ export async function createClientProduct(clientId: string, input: CreateClientP
     const now = new Date().toISOString();
     const item: ClientProduct = { id, clientId, productId: product.id, zetaCode, operationalName: input.operationalName?.trim() || undefined, active: true, displayOrder: input.displayOrder ?? memoryClientProducts.filter((entry) => entry.clientId === clientId).length, createdAt: now, updatedAt: now, product, controls: initialControl ? [{ id: memoryMasterId++, clientProductId: id, title: initialControl, displayOrder: 0, active: true }] : [], assets: [] };
     memoryClientProducts.push(item);
+    seedMemoryPalletProductionRules(item);
     return item;
   }
   const id = await supabaseServerRequest<number>("/rest/v1/rpc/create_client_product_master_v2", { method: "POST", body: JSON.stringify({ p_client_id: clientId, p_product_id: input.productId, p_operational_name: input.operationalName?.trim() || null, p_control_title: initialControl, p_control_detail: null }) });
@@ -787,9 +832,10 @@ export async function updateClientProduct(id: number | string, input: UpdateClie
   if (!current) return null;
   const zetaCode = current.product.zetaCode ?? current.zetaCode;
   const next = { ...current, zetaCode, operationalName: input.operationalName === undefined ? current.operationalName : input.operationalName.trim() || undefined, active: input.active ?? current.active, displayOrder: input.displayOrder ?? current.displayOrder };
-  if (!next.zetaCode) throw new Error("El código Zeta es obligatorio.");
+  if (!next.zetaCode) throw new Error("El código es obligatorio.");
   if (useMemoryStore) {
     Object.assign(current, next, { updatedAt: new Date().toISOString() });
+    if (next.active) seedMemoryPalletProductionRules(current);
     return current;
   }
   await supabaseServerRequest<unknown>("/rest/v1/rpc/update_client_product_master_v2", { method: "POST", body: JSON.stringify({ p_id: Number(id), p_operational_name: next.operationalName ?? null, p_active: next.active, p_display_order: next.displayOrder }) });
@@ -863,23 +909,145 @@ export function getMemoryClientProductAssetContent(assetId: number | string) {
   return useMemoryStore ? memoryAssetFiles.get(String(assetId)) ?? null : null;
 }
 
+function dbErrorCode(error: unknown) {
+  return typeof error === "object" && error && "code" in error ? String((error as { code?: unknown }).code) : "";
+}
+
+/** Si falta aplicar la migración de niveles, el error lo dice en vez de mostrar un mensaje técnico. */
+function levelsMigrationError(error: unknown): never {
+  if (["PGRST202", "PGRST204", "PGRST205", "42703", "42P01", "42883"].includes(dbErrorCode(error))) throw new Error("La base todavía no tiene los niveles de producto: falta aplicar la migración 20261104165453_product_levels_and_catalog_20261104.");
+  throw error;
+}
+
+type DbLevelRow = { id: string; label: string; position: number; options: unknown; system: boolean };
+
+export async function getProductLevels(): Promise<ProductLevel[]> {
+  if (useMemoryStore) return structuredClone(memoryProductLevels);
+  try {
+    const rows = await supabaseServerRequest<DbLevelRow[]>("/rest/v1/product_levels?select=id,label,position,options,system&order=position.asc");
+    return rows.length ? rows.map((row) => ({ id: row.id, label: row.label, system: row.system, options: cleanOptions(row.options) })) : structuredClone(defaultProductLevels);
+  } catch (error) {
+    // Sin la migración los productos siguen funcionando con los niveles de partida.
+    if (["PGRST205", "42P01"].includes(dbErrorCode(error))) return structuredClone(defaultProductLevels);
+    throw error;
+  }
+}
+
+/** Cuántos productos usan cada opción de cada nivel (se muestra en la tabla de niveles). */
+export function countLevelUsage(products: Product[], levels: ProductLevel[]) {
+  const usage: Record<string, Record<string, number>> = {};
+  for (const level of levels) {
+    const counts: Record<string, number> = {};
+    for (const product of products) {
+      const value = levelValue(product, level.id).toLocaleLowerCase("es");
+      if (value) counts[value] = (counts[value] ?? 0) + 1;
+    }
+    usage[level.id] = counts;
+  }
+  return usage;
+}
+
+async function persistProductLevels(levels: ProductLevel[]) {
+  if (useMemoryStore) {
+    memoryProductLevels.length = 0;
+    memoryProductLevels.push(...structuredClone(levels));
+    return;
+  }
+  await supabaseServerRequest<boolean>("/rest/v1/rpc/save_product_levels_v1", {
+    method: "POST",
+    body: JSON.stringify({ p_levels: levels.map((level) => ({ id: level.id, label: level.label, options: level.options })) }),
+  }).catch(levelsMigrationError);
+}
+
+/** Guarda la lista completa de niveles y sus opciones, en el orden recibido. La Medida siempre va primera. */
+export async function saveProductLevels(input: Array<{ id?: string; label?: string; options?: unknown }>) {
+  const [current, products] = await Promise.all([getProductLevels(), getProducts()]);
+  const taken = new Set(current.map((level) => level.id));
+  const next: ProductLevel[] = [];
+  for (const item of input) {
+    const label = typeof item.label === "string" ? item.label.trim() : "";
+    if (!label) throw new Error("Cada nivel necesita un nombre.");
+    const existing = typeof item.id === "string" ? current.find((level) => level.id === item.id) : undefined;
+    const id = existing?.id ?? levelSlug(label, taken);
+    taken.add(id);
+    next.push({ id, label, system: existing?.system ?? false, options: cleanOptions(item.options) });
+  }
+  if (next[0]?.id !== MEASURE_LEVEL) throw new Error("La Medida es siempre el primer nivel.");
+  const duplicate = next.find((level, index) => next.findIndex((other) => other.label.toLocaleLowerCase("es") === level.label.toLocaleLowerCase("es")) !== index);
+  if (duplicate) throw new Error(`Hay dos niveles llamados «${duplicate.label}».`);
+  for (const level of current) {
+    if (next.some((item) => item.id === level.id)) continue;
+    if (level.system) throw new Error(`No se puede quitar el nivel «${level.label}».`);
+    const used = products.filter((product) => levelValue(product, level.id)).length;
+    if (used) throw new Error(`No se puede eliminar el nivel «${level.label}»: ${used} ${used === 1 ? "producto lo usa" : "productos lo usan"}.`);
+  }
+  await persistProductLevels(next);
+  return next;
+}
+
+/** Un valor nuevo escrito en un producto pasa a ser una opción del nivel (son sugerencias; si falla no frena el alta). */
+async function rememberLevelOptions(measure: string | undefined, attributes: ProductAttributes) {
+  const levels = await getProductLevels();
+  let changed = false;
+  const next = levels.map((level) => {
+    const value = level.id === MEASURE_LEVEL ? measure?.trim() : attributes[level.id];
+    if (!value || level.options.some((option) => option.toLocaleLowerCase("es") === value.toLocaleLowerCase("es"))) return level;
+    changed = true;
+    return { ...level, options: [...level.options, value] };
+  });
+  if (changed) await persistProductLevels(next).catch(() => undefined);
+}
+
+/** Valores por nivel listos para guardar: sólo niveles que existen y Exportación ⇒ Con HT. */
+function resolveAttributes(input: { attributes?: ProductAttributes; requiresTreatment?: boolean }, levels: ProductLevel[]) {
+  const attributes = cleanAttributes(input.attributes);
+  const known = new Set(levels.map((level) => level.id));
+  const unknown = Object.keys(attributes).find((key) => key === MEASURE_LEVEL || !known.has(key));
+  if (unknown) throw new Error(`El nivel «${unknown}» no existe.`);
+  if (!attributes[TREATMENT_LEVEL] && typeof input.requiresTreatment === "boolean") {
+    attributes[TREATMENT_LEVEL] = input.requiresTreatment ? "Con HT" : "Sin HT";
+  }
+  const resolved = applyLevelRules(attributes);
+  if (resolved[TREATMENT_LEVEL] && resolved[TREATMENT_LEVEL] !== "Sin HT" && !requiresHeatTreatment(resolved[TREATMENT_LEVEL])) throw new Error("El tratamiento tiene que ser Sin HT o Con HT.");
+  return resolved;
+}
+
+function validateProductHeight(heightCm?: number | null) {
+  if (heightCm !== undefined && heightCm !== null
+    && (!Number.isFinite(heightCm) || heightCm <= 0 || heightCm > 99_999.99 || Math.abs(heightCm * 100 - Math.round(heightCm * 100)) > 1e-8))
+    throw new Error("La altura debe ser positiva y tener como máximo dos decimales.");
+}
+
 export async function createProduct(input: CreateProductInput) {
-  const measure = input.measure?.trim() || undefined;
+  validateProductHeight(input.heightCm);
+  const heightCm = input.kind === "Pallet" ? input.heightCm ?? 10 : input.heightCm ?? null;
+  const levels = await getProductLevels();
   const zetaCode = input.zetaCode?.trim().toLocaleUpperCase("es");
-  if (!zetaCode) throw new Error("Indique el código Zeta.");
+  if (!zetaCode || !/^[1-9]\d*$/.test(zetaCode)) throw new Error("Indique un código numérico.");
+  const measure = input.measure?.trim();
+  if (!measure) throw new Error("Indique la medida.");
+  const attributes = resolveAttributes(input, levels);
+  const requiresTreatment = requiresHeatTreatment(attributes[TREATMENT_LEVEL]);
+  const stockName = input.stockName?.trim() || buildProductName({ kind: input.kind, measure, attributes, requiresTreatment }, levels);
+  const clientIds = [...new Set(input.clientIds ?? [])].filter(Boolean);
   if (!useMemoryStore) {
-    const id = await supabaseServerRequest<string>("/rest/v1/rpc/create_catalog_product_v3", {
+    const id = await supabaseServerRequest<string>("/rest/v1/rpc/create_catalog_product_v7", {
       method: "POST",
-      body: JSON.stringify({ p_kind: input.kind, p_measure: measure ?? null, p_requires_treatment: input.requiresTreatment, p_zeta_code: zetaCode }),
-    });
+      body: JSON.stringify({ p_kind: input.kind, p_measure: measure, p_height_cm: heightCm, p_attributes: attributes, p_zeta_code: zetaCode, p_stock_name: stockName, p_client_ids: clientIds }),
+    }).catch(levelsMigrationError);
+    await rememberLevelOptions(measure, attributes);
     const product = (await getProducts()).find((item) => item.id === id);
     if (!product) throw new Error("El producto se creó pero no pudo recuperarse.");
     return product;
   }
-  if (memoryProducts.some((product) => product.kind === input.kind && (product.measure ?? "") === (measure ?? ""))) throw new Error("Ya existe un producto con ese tipo y medida.");
-  const product = { id: `producto-${crypto.randomUUID()}`, kind: input.kind, measure, requiresTreatment: input.requiresTreatment, zetaCode } satisfies Product;
-  memoryProducts.push(product);
-  return product;
+  if (memoryProducts.some((product) => product.zetaCode?.toLocaleUpperCase("es") === zetaCode)) throw new Error(`Ya existe un producto con el código ${zetaCode}.`);
+  const draft = { id: `producto-${crypto.randomUUID()}`, kind: input.kind, measure, heightCm: heightCm ?? undefined, attributes, requiresTreatment, zetaCode, stockName } satisfies Product;
+  const twin = memoryProducts.find((product) => productKey(product) === productKey(draft));
+  if (twin) throw new Error(`Ya existe un producto con esa clasificación (código ${twin.zetaCode ?? twin.id}).`);
+  memoryProducts.push(draft);
+  await rememberLevelOptions(measure, attributes);
+  for (const clientId of clientIds) await assignClientToProduct(draft.id, clientId);
+  return (await getProducts()).find((item) => item.id === draft.id) ?? draft;
 }
 
 async function assignClientToProduct(productId: string, clientId: string) {
@@ -897,7 +1065,7 @@ async function assignClientToProduct(productId: string, clientId: string) {
       clientId,
       productId,
       zetaCode: product.zetaCode ?? "",
-      active: false,
+      active: true,
       displayOrder: memoryClientProducts.filter((item) => item.clientId === clientId).length,
       createdAt: now,
       updatedAt: now,
@@ -905,6 +1073,7 @@ async function assignClientToProduct(productId: string, clientId: string) {
       controls: [],
       assets: [],
     });
+    seedMemoryPalletProductionRules(memoryClientProducts[memoryClientProducts.length - 1]);
     return;
   }
 
@@ -914,42 +1083,31 @@ async function assignClientToProduct(productId: string, clientId: string) {
   await supabaseServerRequest<unknown>("/rest/v1/client_products", {
     method: "POST",
     prefer: "return=minimal",
-    body: JSON.stringify({ client_id: clientId, product_id: productId, zeta_code: null, active: false }),
+    body: JSON.stringify({ client_id: clientId, product_id: productId, zeta_code: null, active: true }),
   });
 }
 
 export async function updateProduct(id: string, input: UpdateProductInput) {
-  const measure = input.measure?.trim() || undefined;
+  validateProductHeight(input.heightCm);
+  const heightCm = input.kind === "Pallet" && input.heightCm === null ? 10 : input.heightCm;
+  const levels = await getProductLevels();
   const stockName = input.stockName?.trim();
   const zetaCode = input.zetaCode?.trim().toLocaleUpperCase("es");
   if (input.stockName !== undefined && !stockName) throw new Error("Indique el nombre del producto.");
-  if (input.zetaCode !== undefined && !zetaCode) throw new Error("Indique el código Zeta.");
+  if (input.zetaCode !== undefined && (!zetaCode || !/^[1-9]\d*$/.test(zetaCode))) throw new Error("Indique un código numérico.");
+  const measure = input.measure?.trim();
+  if (!measure) throw new Error("Indique la medida.");
+  const attributes = resolveAttributes(input, levels);
+  const requiresTreatment = requiresHeatTreatment(attributes[TREATMENT_LEVEL]);
 
   if (!useMemoryStore) {
-    await supabaseServerRequest<string>("/rest/v1/rpc/update_catalog_product_v2", {
+    await supabaseServerRequest<string>("/rest/v1/rpc/update_catalog_product_v5", {
       method: "POST",
-      body: JSON.stringify({
-        p_id: id,
-        p_kind: input.kind,
-        p_measure: measure ?? null,
-        p_requires_treatment: input.requiresTreatment,
-      }),
-    });
-    if (stockName) {
-      await supabaseServerRequest<unknown>(`/rest/v1/products?id=eq.${encodeURIComponent(id)}`, {
-        method: "PATCH",
-        prefer: "return=minimal",
-        body: JSON.stringify({ stock_name: stockName }),
-      });
-    }
-    if (zetaCode) {
-      await supabaseServerRequest<unknown>(`/rest/v1/products?id=eq.${encodeURIComponent(id)}`, {
-        method: "PATCH",
-        prefer: "return=minimal",
-        body: JSON.stringify({ zeta_code: zetaCode }),
-      });
-    }
-    if (input.clientId) await assignClientToProduct(id, input.clientId);
+      body: JSON.stringify({ p_id: id, p_kind: input.kind, p_measure: measure, p_height_cm: heightCm ?? null, p_height_provided: heightCm !== undefined, p_attributes: attributes, p_zeta_code: zetaCode ?? null, p_stock_name: stockName ?? null }),
+    }).catch(levelsMigrationError);
+    await rememberLevelOptions(measure, attributes);
+    if (input.clientIds) await supabaseServerRequest<boolean>("/rest/v1/rpc/set_product_clients_v1", { method: "POST", body: JSON.stringify({ p_product_id: id, p_client_ids: [...new Set(input.clientIds)] }) });
+    else if (input.clientId) await assignClientToProduct(id, input.clientId);
     const products = await getProducts();
     const product = products.find((item) => item.id === id);
     if (!product) throw new Error("El producto se actualizó pero no pudo recuperarse.");
@@ -958,9 +1116,26 @@ export async function updateProduct(id: string, input: UpdateProductInput) {
 
   const product = memoryProducts.find((item) => item.id === id);
   if (!product) throw new Error("Producto no encontrado.");
-  Object.assign(product, { kind: input.kind, measure, requiresTreatment: input.requiresTreatment, ...(stockName ? { stockName } : {}), ...(zetaCode ? { zetaCode } : {}) });
+  if (zetaCode && memoryProducts.some((item) => item.id !== id && item.zetaCode?.toLocaleUpperCase("es") === zetaCode)) throw new Error(`Ya existe otro producto con el código ${zetaCode}.`);
+  const candidate = { ...product, kind: input.kind, measure, attributes, requiresTreatment };
+  const twin = memoryProducts.find((item) => item.id !== id && productKey(item) === productKey(candidate));
+  if (twin) throw new Error(`Ya existe un producto con esa clasificación (código ${twin.zetaCode ?? twin.id}).`);
+  Object.assign(product, { kind: input.kind, measure, attributes, requiresTreatment, ...(heightCm !== undefined ? { heightCm: heightCm ?? undefined } : {}), ...(stockName ? { stockName } : {}), ...(zetaCode ? { zetaCode } : {}) });
+  await rememberLevelOptions(measure, attributes);
   if (zetaCode) memoryClientProducts.filter((item) => item.productId === id).forEach((item) => { item.zetaCode = zetaCode; item.product.zetaCode = zetaCode; });
-  if (input.clientId) await assignClientToProduct(id, input.clientId);
+  if (input.clientIds) {
+    const wanted = new Set(input.clientIds);
+    for (const clientId of wanted) await assignClientToProduct(id, clientId);
+    const usedLink = (linkId: number | string) => memoryOrders.some((order) => order.lines.some((line) => String(line.clientProductId) === String(linkId)));
+    memoryClientProducts.filter((item) => item.productId === id && !wanted.has(item.clientId)).forEach((item) => { item.active = false; });
+    const kept = memoryClientProducts.filter((item) => item.productId !== id || wanted.has(item.clientId) || usedLink(item.id));
+    const keptIds = new Set(kept.map((item) => String(item.id)));
+    const keptRules = memoryProductionRules.filter((rule) => rule.clientProductId === undefined || keptIds.has(String(rule.clientProductId)));
+    memoryProductionRules.length = 0;
+    memoryProductionRules.push(...keptRules);
+    memoryClientProducts.length = 0;
+    memoryClientProducts.push(...kept);
+  } else if (input.clientId) await assignClientToProduct(id, input.clientId);
   const updated = (await getProducts()).find((item) => item.id === id);
   if (!updated) throw new Error("El producto se actualizó pero no pudo recuperarse.");
   return updated;
@@ -968,7 +1143,7 @@ export async function updateProduct(id: string, input: UpdateProductInput) {
 
 export async function deleteProduct(id: string) {
   if (!useMemoryStore) {
-    await supabaseRequest<string>("/rest/v1/rpc/delete_catalog_product", {
+    await supabaseServerRequest<string>("/rest/v1/rpc/delete_catalog_product_v2", {
       method: "POST",
       body: JSON.stringify({ p_id: id }),
     });
@@ -977,7 +1152,46 @@ export async function deleteProduct(id: string) {
 
   const index = memoryProducts.findIndex((item) => item.id === id);
   if (index === -1) throw new Error("Producto no encontrado.");
+  const usedBy = memoryOrders.filter((order) => order.lines.some((line) => line.productId === id));
+  if (usedBy.length) throw new Error(`No se puede eliminar: el producto figura en ${usedBy.length} pedido(s) de ${[...new Set(usedBy.map((order) => order.client))].join(", ")}. Cancelá o eliminá esos pedidos primero.`);
+  const remaining = memoryClientProducts.filter((item) => item.productId !== id);
+  const keptRules = memoryProductionRules.filter((rule) => rule.productId !== id);
+  memoryProductionRules.length = 0;
+  memoryProductionRules.push(...keptRules);
+  memoryClientProducts.length = 0;
+  memoryClientProducts.push(...remaining);
   memoryProducts.splice(index, 1);
+}
+
+/** Elimina un pedido con sus viajes y su producción. Si ya tiene stock o tratamientos HT registrados, hay que cancelarlo en su lugar. */
+export async function deleteOrder(id: string) {
+  if (!useMemoryStore) {
+    try {
+      await supabaseServerRequest<string>("/rest/v1/rpc/delete_operation_order_v1", {
+        method: "POST",
+        body: JSON.stringify({ p_order_id: id }),
+      });
+    } catch (error) {
+      const code = typeof error === "object" && error && "code" in error ? String((error as { code?: unknown }).code) : "";
+      if (code === "PGRST202") throw new Error("La base todavía no permite eliminar pedidos: falta aplicar la migración 20261030120000_delete_order.");
+      throw error;
+    }
+    return;
+  }
+
+  const index = memoryOrders.findIndex((item) => item.id === id);
+  if (index === -1) throw new Error("Pedido no encontrado.");
+  const order = memoryOrders[index];
+  const lineIds = new Set(order.lines.map((line) => String(line.id)));
+  const shipmentLineIds = new Set((order.shipments ?? []).flatMap((shipment) => shipment.lines.map((line) => String(line.id))));
+  const hasLedger = memoryStockMovements.some((movement) => (movement.orderLineId !== undefined && lineIds.has(String(movement.orderLineId))) || (movement.shipmentLineId !== undefined && shipmentLineIds.has(String(movement.shipmentLineId))))
+    || memoryTreatmentBatches.some((batch) => lineIds.has(String(batch.orderLineId)));
+  if (hasLedger) throw new Error("El pedido ya tiene movimientos de stock o tratamientos HT registrados. Cancelalo para conservar el historial.");
+  const keptReservations = memoryStockReservations.filter((item) => !shipmentLineIds.has(String(item.shipmentLineId)));
+  memoryStockReservations.length = 0;
+  memoryStockReservations.push(...keptReservations);
+  memoryHistory.delete(id);
+  memoryOrders.splice(index, 1);
 }
 
 export async function createOrder(input: CreateOrderInput) {
@@ -985,23 +1199,15 @@ export async function createOrder(input: CreateOrderInput) {
     throw new Error("Indique al menos un producto con una cantidad mayor a cero.");
   }
   if (!useMemoryStore) {
-    const id = await supabaseServerRequest<string>("/rest/v1/rpc/create_operation_order_v6", {
+    const id = await supabaseServerRequest<string>("/rest/v1/rpc/create_operation_order_v7", {
       method: "POST",
       body: JSON.stringify({
         p_lines: input.lines.map((line) => ({ clientProductId: Number(line.clientProductId), quantity: line.quantity })),
         p_order_date: input.orderDate,
-        p_requested_delivery_date: input.requestedDeliveryDate,
         p_planned_date: input.plannedDate,
-        p_reference: input.reference?.trim() || null,
+        p_delivery_date_note: input.deliveryDateNote?.trim() || null,
         p_notes: input.notes?.trim() || null,
-        p_stage: input.stage ?? "negociacion",
-        p_production_source: input.productionSource,
-        p_producer_provider_id: input.producerProviderId ?? null,
-        p_production_date: input.productionDate ?? null,
-        p_import_arrival_date: input.importArrivalDate ?? null,
         p_required_operations: canonicalOperations(input.requiredOperations),
-        p_transport_source: input.transportSource,
-        p_transport_provider_id: input.transportProviderId ?? null,
       }),
     });
     const order = await getDatabaseOrder(id);
@@ -1019,7 +1225,7 @@ export async function createOrder(input: CreateOrderInput) {
   const id = `pedido-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
   const order: OperationOrder = {
     id,
-    reference: input.reference?.trim() || `Pedido ${memoryOrders.length + 1}`,
+    reference: `Pedido ${memoryOrders.length + 1}`,
     client: client.name,
     clientId: client.id,
     product: resolvedProduct,
@@ -1028,33 +1234,90 @@ export async function createOrder(input: CreateOrderInput) {
     requested,
     delivered: 0,
     pending: requested,
-    stage: input.stage ?? "negociacion",
+    stage: "negociacion",
     orderDate: input.orderDate,
-    requestedDeliveryDate: input.requestedDeliveryDate,
+    requestedDeliveryDate: input.plannedDate,
+    deliveryDateNote: input.deliveryDateNote?.trim() || undefined,
     zetaCode: selected.map(({ relation }) => relation!.zetaCode).join(" · "),
     plannedDate: input.plannedDate,
     dateLabel: formatPlannedDate(input.plannedDate),
-    transport: input.transport.trim(),
-    transportSource: input.transportSource,
-    transportProviderId: input.transportProviderId,
-    productionSource: input.productionSource,
-    producerProviderId: input.producerProviderId,
-    productionDate: input.productionDate,
-    importArrivalDate: input.importArrivalDate,
+    transport: "Sin definir",
+    transportSource: "internal",
+    transportDefined: false,
+    productionSource: "internal",
+    productionDefined: false,
     requiredOperations: canonicalOperations(input.requiredOperations),
-    supply: input.stage === "produccion" ? "Producción planificada" : "Pendiente de asignación",
+    supply: "Producción sin planificar",
     preparation: "Pendiente de preparación",
-    logistics: `${input.transport.trim()} · entrega planificada`,
+    logistics: "Transporte sin definir",
     delivery: `0 de ${requested} entregados`,
-    action: input.stage === "logistica" ? "Coordinar la entrega." : "Preparar y coordinar la entrega.",
+    action: "Preparar y coordinar la entrega.",
     deliveryAddress: client.address,
     notes: input.notes?.trim() || undefined,
-    lines: resolvedLines.map((line) => { const resourceId = input.producerProviderId ?? (input.productionSource === "internal" ? "internal" : undefined); return { ...line, id: `${id}-${line.index + 1}`, productionAllocations: [{ id: `pa-${id}-${line.index + 1}`, orderLineId: `${id}-${line.index + 1}`, resourceId, productionResourceId: resourceId, plannedDate: input.productionDate ?? input.importArrivalDate ?? input.plannedDate, plannedQuantity: line.quantity, status: "draft", note: input.stage === "produccion" ? "Pendiente de confirmar capacidad" : undefined, createdAt: new Date().toISOString(), updatedAt: new Date().toISOString() }] }; }),
+    lines: resolvedLines.map((line) => ({ ...line, id: `${id}-${line.index + 1}`, productionAllocations: [] })),
     source: "Alta desde dashboard",
   };
-  order.shipments = [{ id: `shipment-${crypto.randomUUID()}`, orderId: id, plannedDate: input.plannedDate, status: "planned", transportSource: input.transportSource, transportProviderId: input.transportProviderId, transportLabel: input.transport, createdAt: new Date().toISOString(), updatedAt: new Date().toISOString(), lines: order.lines.map((line) => ({ id: `sl-${crypto.randomUUID()}`, shipmentId: `shipment-${id}`, orderLineId: line.id, product: line.product, treatment: line.treatment, plannedQuantity: line.quantity, deliveredQuantity: 0 })), events: [] }];
+  order.shipments = [{ id: `shipment-${crypto.randomUUID()}`, orderId: id, plannedDate: input.plannedDate, status: "planned", transportSource: "internal", transportLabel: "Sin definir", createdAt: new Date().toISOString(), updatedAt: new Date().toISOString(), lines: order.lines.map((line) => ({ id: `sl-${crypto.randomUUID()}`, shipmentId: `shipment-${id}`, orderLineId: line.id, product: line.product, treatment: line.treatment, plannedQuantity: line.quantity, deliveredQuantity: 0 })), events: [] }];
   order.shipments[0].events.push({ id: `se-${crypto.randomUUID()}`, shipmentId: order.shipments[0].id, eventType: "created", nextStatus: "planned", nextDate: input.plannedDate, responsible: "Sistema", createdAt: new Date().toISOString() });
   memoryOrders.unshift(order);
+  return order;
+}
+
+export async function planOrderProduction(orderId: string, allocations: ProductionPlanInput) {
+  if (allocations.some((item) => !/^\d{4}-\d{2}-\d{2}$/.test(item.plannedDate) || !Number.isInteger(item.plannedQuantity) || item.plannedQuantity <= 0 || !item.resourceId)) throw new Error("Revisá recursos, fechas y cantidades.");
+  if (!useMemoryStore) {
+    const currentOrder = await getDatabaseOrder(orderId);
+    if (!currentOrder) return null;
+    for (const line of currentOrder.lines) {
+      const fixed = Math.min(line.quantity, (line.productionAllocations ?? []).reduce((sum, item) => sum + (item.status === "completed" ? item.actualQuantity ?? 0 : item.status === "confirmed" ? item.plannedQuantity : 0), 0));
+      const planned = allocations.filter((item) => item.orderLineId === line.id).reduce((sum, item) => sum + item.plannedQuantity, 0);
+      if (fixed + planned > line.quantity) throw new Error(`La producción asignada supera la cantidad de ${line.product}.`);
+    }
+    await supabaseServerRequest<boolean>("/rest/v1/rpc/plan_order_production_v1", { method: "POST", body: JSON.stringify({ p_order_id: orderId, p_allocations: allocations.map((item) => ({ ...item, status: "draft" })) }) });
+    return getDatabaseOrder(orderId);
+  }
+  const order = memoryOrders.find((item) => item.id === orderId);
+  if (!order) return null;
+  for (const line of order.lines) {
+    await replaceProductionAllocations(line.id, allocations.filter((item) => item.orderLineId === line.id).map((item) => ({ resourceId: item.resourceId, plannedDate: item.plannedDate, plannedQuantity: item.plannedQuantity, status: "draft" })));
+  }
+  const dates = order.lines.flatMap((line) => (line.productionAllocations ?? []).filter((item) => item.status !== "cancelled").map((item) => item.plannedDate)).sort();
+  order.productionDefined = dates.length > 0;
+  order.productionDate = dates[0];
+  order.productionEndDate = dates.at(-1);
+  order.supply = dates.length ? "Producción planificada" : "Producción sin planificar";
+  return order;
+}
+
+export async function assignOrderTransport(orderId: string, input: TransportAssignmentInput) {
+  const providerId = input.providerId?.trim() || generateProviderSlug(input.newProviderName ?? "");
+  if (!isActiveProvider({ id: providerId })) throw new Error("El transportista Linares está retirado.");
+  if (!useMemoryStore) {
+    await supabaseServerRequest<boolean>("/rest/v1/rpc/assign_order_transport_v1", { method: "POST", body: JSON.stringify({ p_order_id: orderId, p_source: input.source, p_provider_id: input.providerId?.trim() || null, p_new_provider_name: input.newProviderName?.trim() || null }) });
+    return getDatabaseOrder(orderId);
+  }
+  const order = memoryOrders.find((item) => item.id === orderId);
+  if (!order) return null;
+  let provider = input.newProviderName?.trim() ? memoryProviders.find((item) => item.name.localeCompare(input.newProviderName!.trim(), "es", { sensitivity: "accent" }) === 0) : memoryProviders.find((item) => item.id === input.providerId);
+  if (!provider && input.newProviderName?.trim()) {
+    provider = { id: generateProviderSlug(input.newProviderName), name: input.newProviderName.trim(), type: "Transporte", supplies: "Transporte", internalTransport: input.source === "internal" };
+    memoryProviders.push(provider);
+  }
+  if (!provider || provider.type !== "Transporte") throw new Error("Seleccioná un transporte.");
+  Object.assign(order, { transportSource: input.source, transportProviderId: provider.id, transport: provider.name, logistics: `${provider.name} · entrega planificada`, transportDefined: true });
+  (order.shipments ?? []).filter((shipment) => shipment.status === "planned").forEach((shipment) => Object.assign(shipment, { transportSource: input.source, transportProviderId: provider!.id, transportLabel: provider!.name }));
+  return order;
+}
+
+export async function planOrderDrying(orderId: string, input: DryingPlanInput) {
+  if (!useMemoryStore) {
+    await supabaseServerRequest<boolean>("/rest/v1/rpc/plan_order_drying_v1", { method: "POST", body: JSON.stringify({ p_order_id: orderId, p_start: input.startDate, p_end: input.endDate || null, p_note: input.note?.trim() || null }) });
+    return getDatabaseOrder(orderId);
+  }
+  const order = memoryOrders.find((item) => item.id === orderId);
+  if (!order) return null;
+  if (input.endDate && input.endDate < input.startDate) throw new Error("La fecha de fin no puede ser anterior al inicio.");
+  Object.assign(order, { dryingStartDate: input.startDate, dryingEndDate: input.endDate || input.startDate, dryingNote: input.note?.trim() || undefined });
   return order;
 }
 
@@ -1079,6 +1342,11 @@ function refreshMemoryOrder(order: OperationOrder) {
 
 export async function replaceProductionAllocations(orderLineId: string, allocations: AllocationInput[]) {
   if (!useMemoryStore) {
+    const currentOrder = (await getOrders()).find((item) => item.lines.some((line) => line.id === orderLineId));
+    const currentLine = currentOrder?.lines.find((line) => line.id === orderLineId);
+    if (!currentLine) throw new Error("Línea no encontrada.");
+    const fixedQuantity = Math.min(currentLine.quantity, (currentLine.productionAllocations ?? []).reduce((sum, item) => sum + (item.status === "completed" ? item.actualQuantity ?? 0 : item.status === "confirmed" ? item.plannedQuantity : 0), 0));
+    if (fixedQuantity + allocations.reduce((sum, item) => sum + item.plannedQuantity, 0) > currentLine.quantity) throw new Error("La producción asignada supera la cantidad de la línea.");
     await supabaseServerRequest<boolean>("/rest/v1/rpc/replace_production_allocations_v1", { method: "POST", body: JSON.stringify({ p_order_line_id: orderLineId, p_allocations: allocations }) });
     const order = (await getOrders()).find((item) => item.lines.some((line) => line.id === orderLineId));
     return order?.lines.find((line) => line.id === orderLineId) ?? null;
@@ -1089,7 +1357,8 @@ export async function replaceProductionAllocations(orderLineId: string, allocati
   const fixed = (line.productionAllocations ?? []).filter((item) => item.status === "confirmed" || item.status === "completed");
   const previousDrafts = (line.productionAllocations ?? []).filter((item) => item.status === "draft");
   if (allocations.some((item) => item.status !== "draft" || !/^\d{4}-\d{2}-\d{2}$/.test(item.plannedDate) || !Number.isInteger(item.plannedQuantity) || item.plannedQuantity <= 0)) throw new Error("Las asignaciones nuevas se guardan en borrador con fecha y cantidad válidas.");
-  if ([...fixed, ...allocations].reduce((sum, item) => sum + item.plannedQuantity, 0) > line.quantity) throw new Error("La producción asignada supera la cantidad de la línea.");
+  const fixedQuantity = Math.min(line.quantity, fixed.reduce((sum, item) => sum + (item.status === "completed" ? item.actualQuantity ?? 0 : item.plannedQuantity), 0));
+  if (fixedQuantity + allocations.reduce((sum, item) => sum + item.plannedQuantity, 0) > line.quantity) throw new Error("La producción asignada supera la cantidad de la línea.");
   const now = new Date().toISOString();
   line.productionAllocations = [...fixed, ...allocations.map((item) => { const resourceId = item.resourceId?.trim() || undefined; const resource = memoryProductionResources.find((entry) => String(entry.id) === resourceId || entry.providerId === resourceId || resourceId === "internal" && entry.resourceType === "internal_factory"); return { ...item, id: `pa-${crypto.randomUUID()}`, orderLineId, resourceId, productionResourceId: resource?.id, status: "draft" as const, note: item.note?.trim() || undefined, createdAt: now, updatedAt: now }; })];
   const describe = (entries: Array<{ plannedDate: string; plannedQuantity: number; resourceId?: string }>) => entries.length ? entries.map((entry) => `${formatPlannedDate(entry.plannedDate)} · ${entry.plannedQuantity} palets · ${entry.resourceId ?? "Sin recurso"}`).join(" | ") : "Sin distribuir";
@@ -1104,12 +1373,12 @@ function validateMemoryShipmentLines(order: OperationOrder, shipmentId: number |
   for (const input of lines) {
     const line = order.lines.find((item) => item.id === input.orderLineId);
     if (!line || !Number.isInteger(input.plannedQuantity) || input.plannedQuantity <= 0) throw new Error("Revise las líneas y cantidades del viaje.");
-    const committed = (order.shipments ?? []).filter((shipment) => shipment.status !== "cancelled" && String(shipment.id) !== String(shipmentId)).flatMap((shipment) => shipment.lines).filter((item) => item.orderLineId === line.id).reduce((sum, item) => sum + item.plannedQuantity, 0);
-    if (committed + input.plannedQuantity > line.quantity) throw new Error(`Los viajes superan la cantidad de ${line.product}.`);
+    void shipmentId;
   }
 }
 
 export async function createShipment(orderId: string, input: ShipmentInput) {
+  if (input.transportProviderId && !isActiveProvider({ id: input.transportProviderId })) throw new Error("El transportista Linares está retirado.");
   if (!useMemoryStore) {
     const id = await supabaseServerRequest<number>("/rest/v1/rpc/create_shipment_v1", { method: "POST", body: JSON.stringify({ p_order_id: orderId, p_planned_date: input.plannedDate, p_transport_source: input.transportSource, p_transport_provider_id: input.transportProviderId ?? null, p_lines: input.lines, p_responsible: input.responsible?.trim() || "Operación" }) });
     return (await getDatabaseOrder(orderId))?.shipments?.find((item) => String(item.id) === String(id)) ?? null;
@@ -1118,7 +1387,7 @@ export async function createShipment(orderId: string, input: ShipmentInput) {
   if (!order) return null;
   validateMemoryShipmentLines(order, undefined, input.lines);
   const provider = memoryProviders.find((item) => item.id === input.transportProviderId);
-  if (input.transportSource === "external" && provider?.type !== "Transporte") throw new Error("Seleccione un transportista registrado.");
+  if (input.transportSource === "external" && input.transportProviderId && provider?.type !== "Transporte") throw new Error("Seleccione un transportista registrado.");
   const now = new Date().toISOString();
   const id = `shipment-${crypto.randomUUID()}`;
   const shipment: Shipment = { id, orderId, plannedDate: input.plannedDate, status: "planned", transportSource: input.transportSource, transportProviderId: input.transportProviderId, transportLabel: input.transportSource === "internal" ? "Transporte interno" : provider?.name ?? "Transportista", createdAt: now, updatedAt: now, lines: input.lines.map((item) => { const line = order.lines.find((entry) => entry.id === item.orderLineId)!; return { id: `sl-${crypto.randomUUID()}`, shipmentId: id, orderLineId: line.id, product: line.product, treatment: line.treatment, plannedQuantity: item.plannedQuantity, deliveredQuantity: 0 }; }), events: [{ id: `se-${crypto.randomUUID()}`, shipmentId: id, eventType: "created", nextStatus: "planned", nextDate: input.plannedDate, responsible: input.responsible?.trim() || "Operación", createdAt: now }] };
@@ -1141,9 +1410,9 @@ export async function updatePlannedShipment(shipmentId: number | string, input: 
   refreshMemoryOrder(order); return shipment;
 }
 
-export async function transitionShipment(shipmentId: number | string, input: { nextStatus: ShipmentStatus; remittance?: string; sharedRemittanceReason?: string; deliveredLines?: Array<{ shipmentLineId: number | string; deliveredQuantity: number }>; responsible?: string }) {
+export async function transitionShipment(shipmentId: number | string, input: { nextStatus: ShipmentStatus; remittance?: string; sharedRemittanceReason?: string; deliveredLines?: Array<{ shipmentLineId: number | string; deliveredQuantity: number }>; loadedLines?: Array<{ shipmentLineId: number | string; loadedQuantity: number }>; responsible?: string }) {
   if (!useMemoryStore) {
-    await supabaseServerRequest<boolean>("/rest/v1/rpc/transition_shipment_v2", { method: "POST", body: JSON.stringify({ p_shipment_id: Number(shipmentId), p_next_status: input.nextStatus, p_remittance: input.remittance?.trim() || null, p_shared_remittance_reason: input.sharedRemittanceReason?.trim() || null, p_delivered_lines: input.deliveredLines ?? [], p_responsible: input.responsible?.trim() || "Operación" }) });
+    await supabaseServerRequest<boolean>("/rest/v1/rpc/transition_shipment_v3", { method: "POST", body: JSON.stringify({ p_shipment_id: Number(shipmentId), p_next_status: input.nextStatus, p_remittance: input.remittance?.trim() || null, p_shared_remittance_reason: input.sharedRemittanceReason?.trim() || null, p_delivered_lines: input.deliveredLines ?? [], p_loaded_lines: input.loadedLines ?? null, p_responsible: input.responsible?.trim() || "Operación" }) });
     return (await getOrders()).flatMap((order) => order.shipments ?? []).find((item) => String(item.id) === String(shipmentId)) ?? null;
   }
   const order = memoryOrders.find((item) => item.shipments?.some((shipment) => String(shipment.id) === String(shipmentId)));
@@ -1152,31 +1421,69 @@ export async function transitionShipment(shipmentId: number | string, input: { n
   const expected: Partial<Record<ShipmentStatus, ShipmentStatus>> = { planned: "ready", ready: "loaded", loaded: "dispatched", dispatched: "delivered" };
   if (input.nextStatus !== expected[shipment.status] && !(input.nextStatus === "cancelled" && !["dispatched", "delivered", "cancelled"].includes(shipment.status))) throw new Error("La transición del viaje no es válida.");
   const remittance = input.remittance?.trim() || shipment.remittance;
-  if (!["cancelled"].includes(input.nextStatus) && !remittance) throw new Error("El número de remito es obligatorio.");
+  const actor = input.responsible?.trim() || "Operación";
+  if (["ready", "loaded", "dispatched"].includes(input.nextStatus)) {
+  }
   if (input.nextStatus === "ready") {
-    if (!order.deliveryAddress) throw new Error("El cliente no tiene dirección de entrega.");
     shipment.deliveryAddressSnapshot = order.deliveryAddress;
     for (const shipmentLine of shipment.lines) {
       const orderLine = order.lines.find((line) => line.id === shipmentLine.orderLineId);
       if (!orderLine?.productId) throw new Error("Una línea del viaje no tiene producto canónico.");
-      const balance = calculateStockBalances(memoryStockMovements).get(orderLine.productId) ?? { pending: 0, ready: 0 };
-      const reserved = memoryStockReservations.filter((item) => item.productId === orderLine.productId && item.status === "active").reduce((sum, item) => sum + item.quantity, 0);
-      if (balance.ready - reserved < shipmentLine.plannedQuantity) throw new Error(`Stock listo insuficiente para reservar ${shipmentLine.plannedQuantity} unidades.`);
-      memoryStockReservations.push({ id: `reservation-${crypto.randomUUID()}`, shipmentLineId: shipmentLine.id, productId: orderLine.productId, quantity: shipmentLine.plannedQuantity, status: "active" });
-      orderLine.readyReservedQuantity = (orderLine.readyReservedQuantity ?? 0) + shipmentLine.plannedQuantity;
+      const stock = (await getStockSummary()).find((item) => item.product.id === orderLine.productId);
+      const ownClaim = orderStockReservations([order], memoryProducts).get(orderLine.productId)?.ready ?? 0;
+      const ownReserved = order.lines.filter((item) => item.productId === orderLine.productId)
+        .reduce((sum, item) => sum + (item.readyReservedQuantity ?? 0), 0);
+      const activeReserved = memoryStockReservations.filter((item) => item.productId === orderLine.productId && item.status === "active")
+        .reduce((sum, item) => sum + item.quantity, 0);
+      const quantity = Math.min(Math.max((stock?.available ?? 0) + ownClaim - ownReserved, 0),
+        Math.max((stock?.ready ?? 0) - activeReserved, 0), shipmentLine.plannedQuantity);
+      if (quantity > 0) memoryStockReservations.push({ id: `reservation-${crypto.randomUUID()}`, shipmentLineId: shipmentLine.id, productId: orderLine.productId, quantity, status: "active" });
+      orderLine.readyReservedQuantity = (orderLine.readyReservedQuantity ?? 0) + quantity;
     }
   }
-  if (input.nextStatus === "cancelled") for (const reservation of memoryStockReservations.filter((item) => shipment.lines.some((line) => String(line.id) === String(item.shipmentLineId)) && item.status === "active")) reservation.status = "released";
+  if (input.nextStatus === "loaded") {
+    const loads = shipment.lines.map((shipmentLine) => ({ shipmentLine,
+      loaded: input.loadedLines?.find((item) => String(item.shipmentLineId) === String(shipmentLine.id))?.loadedQuantity ?? shipmentLine.plannedQuantity }));
+    if (loads.some(({ shipmentLine, loaded }) => !Number.isInteger(loaded) || loaded < 0 || loaded > shipmentLine.plannedQuantity))
+      throw new Error("Cantidad cargada inválida.");
+    for (const { shipmentLine, loaded } of loads) {
+      shipmentLine.loadedQuantity = loaded;
+      const orderLine = order.lines.find((item) => item.id === shipmentLine.orderLineId);
+      if (!orderLine?.productId) throw new Error("Una línea del viaje no tiene producto canónico.");
+      const previous = memoryStockReservations.find((item) => String(item.shipmentLineId) === String(shipmentLine.id) && item.status === "active");
+      if (previous) { previous.status = "released"; orderLine.readyReservedQuantity = Math.max((orderLine.readyReservedQuantity ?? 0) - previous.quantity, 0); }
+      const stock = (await getStockSummary()).find((item) => item.product.id === orderLine.productId);
+      const ownClaim = orderStockReservations([order], memoryProducts).get(orderLine.productId)?.ready ?? 0;
+      const ownReserved = order.lines.filter((item) => item.productId === orderLine.productId)
+        .reduce((sum, item) => sum + (item.readyReservedQuantity ?? 0), 0);
+      const activeReserved = memoryStockReservations.filter((item) => item.productId === orderLine.productId && item.status === "active")
+        .reduce((sum, item) => sum + item.quantity, 0);
+      const reserved = Math.min(Math.max((stock?.available ?? 0) + ownClaim - ownReserved, 0),
+        Math.max((stock?.ready ?? 0) - activeReserved, 0), loaded);
+      if (reserved > 0) memoryStockReservations.push({ id: `reservation-${crypto.randomUUID()}`, shipmentLineId: shipmentLine.id,
+        productId: orderLine.productId, quantity: reserved, status: "active" });
+      orderLine.readyReservedQuantity = (orderLine.readyReservedQuantity ?? 0) + reserved;
+    }
+  }
+  if (input.nextStatus === "cancelled") for (const shipmentLine of shipment.lines) {
+    const reservation = memoryStockReservations.find((item) => String(item.shipmentLineId) === String(shipmentLine.id) && item.status === "active");
+    if (!reservation) continue;
+    reservation.status = "released";
+    const orderLine = order.lines.find((line) => line.id === shipmentLine.orderLineId);
+    if (orderLine) orderLine.readyReservedQuantity = Math.max((orderLine.readyReservedQuantity ?? 0) - reservation.quantity, 0);
+  }
   if (input.nextStatus === "dispatched") for (const shipmentLine of shipment.lines) {
     const reservation = memoryStockReservations.find((item) => String(item.shipmentLineId) === String(shipmentLine.id) && item.status === "active");
     const orderLine = order.lines.find((line) => line.id === shipmentLine.orderLineId);
-    if (!reservation || !orderLine?.productId || reservation.quantity !== shipmentLine.plannedQuantity) throw new Error("La línea no tiene una reserva activa completa.");
+    if (!orderLine?.productId) throw new Error("Una línea del viaje no tiene producto canónico.");
+    const actual = shipmentLine.loadedQuantity ?? shipmentLine.plannedQuantity;
+    if (actual === 0) continue;
+    const before = calculateStockBalances(memoryStockMovements).get(orderLine.productId)?.ready ?? 0;
     const now = new Date().toISOString();
-    memoryStockMovements.push({ id: `movement-${memoryTreatmentId++}`, productId: orderLine.productId, stockState: "ready", quantity: -shipmentLine.plannedQuantity, movementType: "dispatch", orderLineId: orderLine.id, shipmentLineId: shipmentLine.id, remittance, transformationId: crypto.randomUUID(), performedAt: now, responsible: input.responsible?.trim() || "Operación", note: `Despacho de viaje ${shipment.id}`, createdAt: now });
-    reservation.status = "consumed";
-    orderLine.readyReservedQuantity = Math.max((orderLine.readyReservedQuantity ?? 0) - shipmentLine.plannedQuantity, 0);
+    memoryStockMovements.push({ id: `movement-${memoryTreatmentId++}`, productId: orderLine.productId, stockState: "ready", quantity: -actual, movementType: "dispatch", orderLineId: orderLine.id, shipmentLineId: shipmentLine.id, remittance, transformationId: crypto.randomUUID(), performedAt: now, responsible: input.responsible?.trim() || "Operación", note: `Despacho de viaje ${shipment.id}`, createdAt: now });
+    if (reservation) { reservation.status = "consumed"; orderLine.readyReservedQuantity = Math.max((orderLine.readyReservedQuantity ?? 0) - reservation.quantity, 0); }
   }
-  if (input.nextStatus === "delivered") for (const delivered of input.deliveredLines ?? []) { const line = shipment.lines.find((item) => String(item.id) === String(delivered.shipmentLineId)); if (!line || delivered.deliveredQuantity < 0 || delivered.deliveredQuantity > line.plannedQuantity) throw new Error("Cantidad entregada inválida."); line.deliveredQuantity = delivered.deliveredQuantity; }
+  if (input.nextStatus === "delivered") for (const delivered of input.deliveredLines ?? []) { const line = shipment.lines.find((item) => String(item.id) === String(delivered.shipmentLineId)); if (!line || !Number.isInteger(delivered.deliveredQuantity) || delivered.deliveredQuantity < 0 || delivered.deliveredQuantity > (line.loadedQuantity ?? line.plannedQuantity)) throw new Error("Cantidad entregada inválida."); line.deliveredQuantity = delivered.deliveredQuantity; }
   const previousStatus = shipment.status; const previousRemittance = shipment.remittance; const now = new Date().toISOString(); shipment.status = input.nextStatus; shipment.remittance = remittance; shipment.sharedRemittanceReason = input.sharedRemittanceReason?.trim() || shipment.sharedRemittanceReason; shipment.updatedAt = now;
   if (input.nextStatus === "loaded") shipment.loadedAt = now; if (input.nextStatus === "dispatched") shipment.dispatchedAt = now; if (input.nextStatus === "delivered") shipment.deliveredAt = now;
   shipment.events.push({ id: `se-${crypto.randomUUID()}`, shipmentId, eventType: "transition", previousStatus, nextStatus: input.nextStatus, previousRemittance, nextRemittance: remittance, responsible: input.responsible?.trim() || "Operación", createdAt: now });
@@ -1429,28 +1736,25 @@ type DbExternalDefault = { id: string; provider_id: string; operation: CapacityO
 type DbTransportDefault = { id: string; source: TransportSource; provider_id: string | null; pallet_capacity: number; trip_capacity: number | null; status: TransportCapacityDefault["status"] };
 type DbCapacityAdjustment = { adjustment_date: string; resource_type: CapacityAdjustment["resourceType"]; operation: CapacityOperation | null; source: TransportSource | null; provider_id: string | null; pallet_adjustment: number; trip_adjustment: number; people_count: number | null; responsible: string | null; status: CapacityStatus | null };
 type DbProductionResource = { id: number; name: string; resource_type: ProductionResourceType; provider_id: string | null; active: boolean; display_order: number };
-type DbProductionRule = { id: number; resource_id: number; product_id: string; people_count: number | null; configuration_label: string; normal_units_per_day: number; maximum_units_per_day: number; valid_from: string; valid_to: string | null; source: string; note: string | null; created_at: string };
-type DbProductionOverride = { id: number; override_date: string; resource_id: number; capacity_rule_id: number | null; product_id: string | null; normal_units_per_day: number | null; maximum_units_per_day: number | null; available: boolean; external_status: "estimated" | "confirmed" | null; reason: string; responsible: string };
+type DbProductionRule = { id: number; resource_id: number; product_id: string; client_product_id: number | null; people_count: number | null; configuration_label: string; normal_units_per_day: number; maximum_units_per_day: number; valid_from: string; valid_to: string | null; source: string; note: string | null; created_at: string };
 
 function productionProducts(products: Product[]): ProductionProduct[] {
   return products.map((product) => ({ id: product.id, name: productLabel(product) }));
 }
 
 export async function getCapacity(from: string, to: string) {
-  if (useMemoryStore) return buildCapacitySnapshot({ from, to, rules: memoryCapacityRules, internalDefaults: memoryInternalDefaults, availablePeople: memoryAvailablePeople, externalDefaults: memoryExternalDefaults, transportDefaults: memoryTransportDefaults, adjustments: memoryCapacityAdjustments, orders: memoryOrders, providers: memoryProviders, productionResources: memoryProductionResources, productionRules: memoryProductionRules, productionOverrides: memoryProductionOverrides, productionProducts: productionProducts(memoryProducts) });
+  if (useMemoryStore) return buildCapacitySnapshot({ from, to, rules: memoryCapacityRules, internalDefaults: memoryInternalDefaults, availablePeople: memoryAvailablePeople, externalDefaults: memoryExternalDefaults, transportDefaults: memoryTransportDefaults, adjustments: memoryCapacityAdjustments, orders: memoryOrders, providers: memoryProviders, productionResources: memoryProductionResources, productionRules: memoryProductionRules, productionProducts: productionProducts(memoryProducts) });
   const range = `adjustment_date=gte.${from}&adjustment_date=lte.${to}`;
-  const productionRange = `override_date=gte.${from}&override_date=lte.${to}`;
-  const [rules, internal, team, external, transport, adjustments, orders, providers, resources, productionRules, overrides, products] = await Promise.all([
+  const [rules, internal, team, external, transport, adjustments, orders, providers, resources, productionRules, products] = await Promise.all([
     supabaseRequest<DbCapacityRule[]>("/rest/v1/capacity_rules?select=operation,people_count,pallet_capacity&order=operation.asc,people_count.asc"),
     supabaseRequest<DbInternalDefault[]>("/rest/v1/internal_production_defaults?select=operation,people_count,manual_capacity"),
     supabaseRequest<DbInternalTeam[]>("/rest/v1/internal_team_capacity?select=available_people&id=eq.true"),
     supabaseRequest<DbExternalDefault[]>("/rest/v1/external_production_defaults?select=id,provider_id,operation,pallet_capacity,status"),
     supabaseRequest<DbTransportDefault[]>("/rest/v1/transport_capacity_defaults?select=id,source,provider_id,pallet_capacity,trip_capacity,status"),
     supabaseRequest<DbCapacityAdjustment[]>(`/rest/v1/capacity_daily_adjustments?select=adjustment_date,resource_type,operation,source,provider_id,pallet_adjustment,trip_adjustment,people_count,responsible,status&${range}`),
-    getOrders(), getProviders(),
+    getOrders(), getProviders({ includeRetired: true }),
     supabaseRequest<DbProductionResource[]>("/rest/v1/production_resources?select=id,name,resource_type,provider_id,active,display_order&order=display_order.asc,id.asc"),
     supabaseRequest<DbProductionRule[]>("/rest/v1/production_capacity_rules?select=*&order=valid_from.desc,id.desc"),
-    supabaseRequest<DbProductionOverride[]>(`/rest/v1/production_daily_overrides?select=*&${productionRange}&order=override_date.asc,id.asc`),
     getProducts(),
   ]);
   const productOptions = productionProducts(products);
@@ -1464,8 +1768,7 @@ export async function getCapacity(from: string, to: string) {
     transportDefaults: transport.map((item) => ({ id: item.id, source: item.source, providerId: item.provider_id ?? undefined, palletCapacity: item.pallet_capacity, tripCapacity: item.trip_capacity ?? undefined, status: item.status })),
     adjustments: adjustments.map((item) => ({ date: item.adjustment_date, resourceType: item.resource_type, operation: item.operation ?? undefined, source: item.source ?? undefined, providerId: item.provider_id ?? undefined, palletAdjustment: item.pallet_adjustment, tripAdjustment: item.trip_adjustment, peopleCount: item.people_count ?? undefined, responsible: item.responsible ?? undefined, status: item.status ?? undefined })),
     productionResources: resources.map((item) => ({ id: item.id, name: item.name, resourceType: item.resource_type, providerId: item.provider_id ?? undefined, active: item.active, displayOrder: item.display_order })),
-    productionRules: productionRules.map((item) => ({ id: item.id, resourceId: item.resource_id, productId: item.product_id, productName: productNames.get(item.product_id) ?? item.product_id, peopleCount: item.people_count ?? undefined, configurationLabel: item.configuration_label, normalUnitsPerDay: item.normal_units_per_day, maximumUnitsPerDay: item.maximum_units_per_day, validFrom: item.valid_from, validTo: item.valid_to ?? undefined, source: item.source, note: item.note ?? undefined, createdAt: item.created_at })),
-    productionOverrides: overrides.map((item) => ({ id: item.id, date: item.override_date, resourceId: item.resource_id, capacityRuleId: item.capacity_rule_id ?? undefined, productId: item.product_id ?? undefined, normalUnitsPerDay: item.normal_units_per_day ?? undefined, maximumUnitsPerDay: item.maximum_units_per_day ?? undefined, available: item.available, externalStatus: item.external_status ?? undefined, reason: item.reason, responsible: item.responsible })),
+    productionRules: productionRules.map((item) => ({ id: item.id, resourceId: item.resource_id, productId: item.product_id, clientProductId: item.client_product_id ?? undefined, productName: productNames.get(item.product_id) ?? item.product_id, peopleCount: item.people_count ?? undefined, configurationLabel: item.configuration_label, normalUnitsPerDay: item.normal_units_per_day, maximumUnitsPerDay: item.maximum_units_per_day, validFrom: item.valid_from, validTo: item.valid_to ?? undefined, source: item.source, note: item.note ?? undefined, createdAt: item.created_at })),
     productionProducts: productOptions,
   });
 }
@@ -1545,6 +1848,7 @@ function productionRuleFromRow(row: DbProductionRule, product?: Product): Produc
     id: row.id,
     resourceId: row.resource_id,
     productId: row.product_id,
+    clientProductId: row.client_product_id ?? undefined,
     productName: product ? productLabel(product) : row.product_id,
     peopleCount: row.people_count ?? undefined,
     configurationLabel: row.configuration_label,
@@ -1557,7 +1861,6 @@ function productionRuleFromRow(row: DbProductionRule, product?: Product): Produc
     createdAt: row.created_at,
   };
 }
-export type ProductionOverrideInput = Omit<ProductionDailyOverride, "id">;
 
 export async function createProductionResource(input: ProductionResourceInput) {
   const value = { name: input.name.trim(), resourceType: input.resourceType, providerId: input.providerId?.trim() || undefined, active: input.active ?? true, displayOrder: input.displayOrder ?? 100 };
@@ -1592,15 +1895,16 @@ export async function updateProductionResource(id: number | string, changes: { n
 
 export async function createProductionRule(input: ProductionRuleInput) {
   const value = { ...input, configurationLabel: input.configurationLabel.trim(), source: input.source.trim(), note: input.note?.trim() || undefined };
+  if (value.clientProductId !== undefined) { const link = await getClientProduct(value.clientProductId); if (!link || link.productId !== value.productId) throw new Error("El producto no pertenece al cliente seleccionado."); }
   if (useMemoryStore) {
-    const overlaps = memoryProductionRules.some((item) => String(item.resourceId) === String(value.resourceId) && item.productId === value.productId && (item.peopleCount ?? 0) === (value.peopleCount ?? 0) && item.validFrom <= (value.validTo ?? "9999-12-31") && value.validFrom <= (item.validTo ?? "9999-12-31"));
+    const overlaps = memoryProductionRules.some((item) => String(item.resourceId) === String(value.resourceId) && String(item.clientProductId ?? "") === String(value.clientProductId ?? "") && item.productId === value.productId && (item.peopleCount ?? 0) === (value.peopleCount ?? 0) && item.validFrom <= (value.validTo ?? "9999-12-31") && value.validFrom <= (item.validTo ?? "9999-12-31"));
     if (overlaps) throw new Error("Ya existe una regla vigente para ese recurso, producto y configuración.");
     const product = memoryProducts.find((item) => item.id === value.productId);
     const rule: ProductionCapacityRule = { id: `rule-${memoryProductionId++}`, ...value, productName: product ? productLabel(product) : value.productId, createdAt: new Date().toISOString() };
     memoryProductionRules.push(rule);
     return rule;
   }
-  const rows = await supabaseServerRequest<DbProductionRule[]>("/rest/v1/production_capacity_rules?select=*", { method: "POST", prefer: "return=representation", body: JSON.stringify({ resource_id: value.resourceId, product_id: value.productId, people_count: value.peopleCount ?? null, configuration_label: value.configurationLabel, normal_units_per_day: value.normalUnitsPerDay, maximum_units_per_day: value.maximumUnitsPerDay, valid_from: value.validFrom, valid_to: value.validTo ?? null, source: value.source, note: value.note ?? null }) });
+  const rows = await supabaseServerRequest<DbProductionRule[]>("/rest/v1/production_capacity_rules?select=*", { method: "POST", prefer: "return=representation", body: JSON.stringify({ resource_id: value.resourceId, product_id: value.productId, client_product_id: value.clientProductId ?? null, people_count: value.peopleCount ?? null, configuration_label: value.configurationLabel, normal_units_per_day: value.normalUnitsPerDay, maximum_units_per_day: value.maximumUnitsPerDay, valid_from: value.validFrom, valid_to: value.validTo ?? null, source: value.source, note: value.note ?? null }) });
   const row = rows[0];
   const product = (await getProducts()).find((item) => item.id === row.product_id);
   return productionRuleFromRow(row, product);
@@ -1608,10 +1912,11 @@ export async function createProductionRule(input: ProductionRuleInput) {
 
 export async function updateProductionRule(id: number | string, input: ProductionRuleInput) {
   const value = { ...input, configurationLabel: input.configurationLabel.trim(), source: input.source.trim(), note: input.note?.trim() || undefined };
+  if (value.clientProductId !== undefined) { const link = await getClientProduct(value.clientProductId); if (!link || link.productId !== value.productId) throw new Error("El producto no pertenece al cliente seleccionado."); }
   if (useMemoryStore) {
     const rule = memoryProductionRules.find((item) => String(item.id) === String(id));
     if (!rule) return null;
-    const overlaps = memoryProductionRules.some((item) => String(item.id) !== String(id) && String(item.resourceId) === String(value.resourceId) && item.productId === value.productId && (item.peopleCount ?? 0) === (value.peopleCount ?? 0) && item.validFrom <= (value.validTo ?? "9999-12-31") && value.validFrom <= (item.validTo ?? "9999-12-31"));
+    const overlaps = memoryProductionRules.some((item) => String(item.id) !== String(id) && String(item.resourceId) === String(value.resourceId) && String(item.clientProductId ?? "") === String(value.clientProductId ?? "") && item.productId === value.productId && (item.peopleCount ?? 0) === (value.peopleCount ?? 0) && item.validFrom <= (value.validTo ?? "9999-12-31") && value.validFrom <= (item.validTo ?? "9999-12-31"));
     if (overlaps) throw new Error("Ya existe una regla vigente para ese recurso, producto y configuración.");
     const product = memoryProducts.find((item) => item.id === value.productId);
     Object.assign(rule, value, { productName: product ? productLabel(product) : value.productId });
@@ -1620,7 +1925,7 @@ export async function updateProductionRule(id: number | string, input: Productio
   const rows = await supabaseServerRequest<DbProductionRule[]>(`/rest/v1/production_capacity_rules?id=eq.${encodeURIComponent(String(id))}&select=*`, {
     method: "PATCH",
     prefer: "return=representation",
-    body: JSON.stringify({ resource_id: value.resourceId, product_id: value.productId, people_count: value.peopleCount ?? null, configuration_label: value.configurationLabel, normal_units_per_day: value.normalUnitsPerDay, maximum_units_per_day: value.maximumUnitsPerDay, valid_from: value.validFrom, valid_to: value.validTo ?? null, source: value.source, note: value.note ?? null }),
+    body: JSON.stringify({ resource_id: value.resourceId, product_id: value.productId, client_product_id: value.clientProductId ?? null, people_count: value.peopleCount ?? null, configuration_label: value.configurationLabel, normal_units_per_day: value.normalUnitsPerDay, maximum_units_per_day: value.maximumUnitsPerDay, valid_from: value.validFrom, valid_to: value.validTo ?? null, source: value.source, note: value.note ?? null }),
   });
   const row = rows[0];
   if (!row) return null;
@@ -1641,20 +1946,9 @@ export async function deleteProductionRule(id: number | string) {
     const rows = await supabaseServerRequest<Array<{ id: number | string }>>(`/rest/v1/production_capacity_rules?id=eq.${encodeURIComponent(String(id))}&select=id`, { method: "DELETE", prefer: "return=representation" });
     return rows.length > 0;
   } catch (error) {
-    if ((error as Error & { code?: string }).code === "23503") throw new Error("No se puede eliminar la regla porque está siendo utilizada por una asignación o una excepción de producción.");
+    if ((error as Error & { code?: string }).code === "23503") throw new Error("No se puede eliminar la regla porque está siendo utilizada por una asignación de producción.");
     throw error;
   }
-}
-
-export async function saveProductionOverride(input: ProductionOverrideInput) {
-  if (useMemoryStore) {
-    const existing = memoryProductionOverrides.find((item) => item.date === input.date && String(item.resourceId) === String(input.resourceId) && String(item.capacityRuleId ?? "") === String(input.capacityRuleId ?? "") && (item.productId ?? "") === (input.productId ?? ""));
-    const value: ProductionDailyOverride = { ...input, id: existing?.id ?? `override-${memoryProductionId++}` };
-    if (existing) Object.assign(existing, value); else memoryProductionOverrides.push(value);
-    return value;
-  }
-  const id = await supabaseServerRequest<number>("/rest/v1/rpc/upsert_production_daily_override_v1", { method: "POST", body: JSON.stringify({ p_date: input.date, p_resource_id: input.resourceId, p_capacity_rule_id: input.capacityRuleId ?? null, p_product_id: input.productId ?? null, p_normal_units: input.normalUnitsPerDay ?? null, p_maximum_units: input.maximumUnitsPerDay ?? null, p_available: input.available, p_external_status: input.externalStatus ?? null, p_reason: input.reason.trim(), p_responsible: input.responsible.trim() }) });
-  return { ...input, id };
 }
 
 function findMemoryAllocation(id: number | string) {
@@ -1665,6 +1959,47 @@ function findMemoryAllocation(id: number | string) {
   return null;
 }
 
+export async function moveProductionAllocation(id: number | string, plannedDate: string) {
+  const parsed = new Date(`${plannedDate}T12:00:00Z`);
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(plannedDate) || Number.isNaN(parsed.getTime()) || parsed.toISOString().slice(0, 10) !== plannedDate) throw new Error("Seleccione una fecha válida.");
+  if (useMemoryStore) {
+    const found = findMemoryAllocation(id);
+    if (!found) return null;
+    if (found.allocation.status !== "draft" && found.allocation.status !== "confirmed") throw new Error("Solo se pueden mover asignaciones pendientes de producir.");
+    if (found.allocation.plannedDate === plannedDate) return found.order.id;
+    const previousDate = found.allocation.plannedDate;
+    found.allocation.plannedDate = plannedDate;
+    found.allocation.status = "draft";
+    found.allocation.capacityRuleId = undefined;
+    found.allocation.updatedAt = new Date().toISOString();
+    const dates = found.order.lines.flatMap((line) => (line.productionAllocations ?? []).filter((item) => item.status !== "cancelled").map((item) => item.plannedDate)).sort();
+    found.order.productionDefined = dates.length > 0;
+    found.order.productionDate = dates[0];
+    found.order.productionEndDate = dates.at(-1);
+    found.order.supply = dates.length ? "Producción planificada" : "Producción sin planificar";
+    memoryHistory.set(found.order.id, [{ id: `produccion-${crypto.randomUUID()}`, changedAt: new Intl.DateTimeFormat("es-UY", { dateStyle: "short", timeStyle: "short" }).format(new Date()), kind: "cambio", note: `${found.line.product}: fecha de producción actualizada`, changes: [{ field: "Fecha de producción", from: formatPlannedDate(previousDate), to: formatPlannedDate(plannedDate) }] }, ...(memoryHistory.get(found.order.id) ?? [])]);
+    return found.order.id;
+  }
+  const rows = await supabaseServerRequest<DbAllocation[]>(`/rest/v1/production_allocations?id=eq.${encodeURIComponent(String(id))}&select=*`);
+  const allocation = rows[0];
+  if (!allocation) return null;
+  if (allocation.status !== "draft" && allocation.status !== "confirmed") throw new Error("Solo se pueden mover asignaciones pendientes de producir.");
+  const order = (await getOrders()).find((item) => item.lines.some((line) => line.id === allocation.order_line_id));
+  if (!order) return null;
+  if (allocation.planned_date !== plannedDate) {
+    const updated = await supabaseServerRequest<DbAllocation[]>(`/rest/v1/production_allocations?id=eq.${encodeURIComponent(String(id))}&status=in.(draft,confirmed)&select=id`, { method: "PATCH", prefer: "return=representation", body: JSON.stringify({ planned_date: plannedDate, status: "draft", capacity_rule_id: null }) });
+    if (!updated.length) throw new Error("La asignación cambió mientras se movía. Actualice el calendario.");
+    const dates = order.lines.flatMap((line) => (line.productionAllocations ?? []).filter((item) => item.status !== "cancelled").map((item) => String(item.id) === String(id) ? plannedDate : item.plannedDate)).sort();
+    try {
+      await supabaseServerRequest(`/rest/v1/orders?id=eq.${encodeURIComponent(order.id)}`, { method: "PATCH", body: JSON.stringify({ production_defined: dates.length > 0, production_date: dates[0] ?? null, production_end_date: dates.at(-1) ?? null, supply: dates.length ? "Producción planificada" : "Producción sin planificar", updated_at: new Date().toISOString() }) });
+    } catch (error) {
+      await supabaseServerRequest(`/rest/v1/production_allocations?id=eq.${encodeURIComponent(String(id))}`, { method: "PATCH", body: JSON.stringify({ planned_date: allocation.planned_date, status: allocation.status, capacity_rule_id: allocation.capacity_rule_id }) });
+      throw error;
+    }
+  }
+  return order.id;
+}
+
 export async function confirmProductionAllocation(id: number | string, resourceId: number | string, capacityRuleId: number | string, overloadNote?: string) {
   if (!useMemoryStore) {
     await supabaseServerRequest<boolean>("/rest/v1/rpc/confirm_production_allocation_v1", { method: "POST", body: JSON.stringify({ p_allocation_id: id, p_resource_id: resourceId, p_capacity_rule_id: capacityRuleId, p_overload_note: overloadNote?.trim() || null }) });
@@ -1673,17 +2008,17 @@ export async function confirmProductionAllocation(id: number | string, resourceI
   const found = findMemoryAllocation(id);
   if (!found || found.allocation.status !== "draft") throw new Error("Solo se confirman asignaciones en borrador.");
   const rule = memoryProductionRules.find((item) => String(item.id) === String(capacityRuleId));
-  if (!rule || String(rule.resourceId) !== String(resourceId) || rule.productId !== found.line.productId || rule.validFrom > found.allocation.plannedDate || rule.validTo && rule.validTo < found.allocation.plannedDate) throw new Error("Seleccione una regla vigente para el recurso y producto.");
+  if (!rule || String(rule.resourceId) !== String(resourceId) || rule.productId !== found.line.productId || String(rule.clientProductId) !== String(found.line.clientProductId) || rule.validFrom > found.allocation.plannedDate || rule.validTo && rule.validTo < found.allocation.plannedDate) throw new Error("Seleccione una regla vigente para el recurso y producto del cliente.");
   const previousResource = found.allocation.productionResourceId;
   const previousRule = found.allocation.capacityRuleId;
   found.allocation.productionResourceId = resourceId;
   found.allocation.capacityRuleId = capacityRuleId;
   const snapshot = await getCapacity(found.allocation.plannedDate, found.allocation.plannedDate);
   const resource = snapshot.production.days[0].resources.find((item) => String(item.resource.id) === String(resourceId));
-  if (!resource || resource.status === "unavailable" || resource.status === "missing_rule" || resource.status === "overloaded") {
+  if (!resource || resource.status === "missing_rule" || resource.status === "overloaded") {
     found.allocation.productionResourceId = previousResource;
     found.allocation.capacityRuleId = previousRule;
-    throw new Error(resource?.status === "unavailable" ? "El recurso no está disponible en esa fecha." : resource?.status === "overloaded" ? "La asignación supera la capacidad máxima del recurso." : "No se pudo calcular la capacidad de la asignación.");
+    throw new Error(resource?.status === "overloaded" ? "La asignación supera la capacidad máxima del recurso." : "No se pudo calcular la capacidad de la asignación.");
   }
   if (resource.status === "stretched" && !overloadNote?.trim()) {
     found.allocation.productionResourceId = previousResource;
@@ -1733,6 +2068,42 @@ export async function completeProductionAllocation(id: number | string, actualQu
   return true;
 }
 
+export async function recordProductionResult(id: number | string, actualQuantity: number, actualDate: string, destination?: "client" | "stock", note?: string) {
+  const parsedDate = new Date(`${actualDate}T12:00:00Z`);
+  if (!Number.isInteger(actualQuantity) || actualQuantity < 0) throw new Error("Indique una cantidad real válida.");
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(actualDate) || Number.isNaN(parsedDate.getTime()) || parsedDate.toISOString().slice(0, 10) !== actualDate) throw new Error("Indique una fecha real válida.");
+  const today = new Intl.DateTimeFormat("en-CA", { timeZone: "America/Montevideo", year: "numeric", month: "2-digit", day: "2-digit" }).format(new Date());
+  if (actualDate > today) throw new Error("La fecha real no puede ser futura.");
+  if (actualQuantity > 0 && destination !== "client" && destination !== "stock") throw new Error("Indique si la producción va al cliente o a stock.");
+  if (!useMemoryStore) {
+    await supabaseServerRequest<boolean>("/rest/v1/rpc/record_production_result_v1", { method: "POST", body: JSON.stringify({ p_allocation_id: id, p_actual_quantity: actualQuantity, p_actual_date: actualDate, p_destination: actualQuantity ? destination : null, p_note: note?.trim() || null }) });
+    return true;
+  }
+  const found = findMemoryAllocation(id);
+  if (!found || (found.allocation.status !== "draft" && found.allocation.status !== "confirmed")) throw new Error("Esta asignación ya tiene un resultado o fue cancelada.");
+  if (!found.allocation.productionResourceId) throw new Error("Indique quién realizó la producción.");
+  const product = memoryProducts.find((item) => item.id === found.line.productId);
+  if (!product) throw new Error("La línea no está vinculada a un producto del maestro.");
+  const now = new Date().toISOString();
+  if (actualQuantity > 0) memoryStockMovements.push({
+    id: `movement-${memoryTreatmentId++}`, productId: product.id,
+    stockState: product.requiresTreatment ? "pending_treatment" : "ready",
+    quantity: actualQuantity, movementType: "production_receipt", productionAllocationId: id,
+    orderLineId: destination === "client" ? found.line.id : undefined,
+    clientId: destination === "client" ? found.order.clientId : undefined,
+    transformationId: crypto.randomUUID(), performedAt: new Date(`${actualDate}T12:00:00-03:00`).toISOString(),
+    responsible: "Producción", note: note?.trim() || "Producción registrada", createdAt: now,
+  });
+  found.allocation.actualQuantity = actualQuantity;
+  found.allocation.actualDate = actualDate;
+  found.allocation.resultDestination = actualQuantity ? destination : undefined;
+  found.allocation.completedAt = now;
+  found.allocation.completionNote = note?.trim() || undefined;
+  found.allocation.status = "completed";
+  found.allocation.updatedAt = now;
+  return true;
+}
+
 type DbStockMovementRow = {
   id: number; product_id: string; stock_state: StockMovement["stockState"]; quantity: number;
   movement_type: StockMovement["movementType"]; treatment_batch_id: number | null;
@@ -1776,7 +2147,11 @@ async function loadDatabaseTreatmentBatches(filters: string) {
   const clientProductMap = new Map(clientProducts.map((item) => [String(item.id), item.client_id]));
   const lineMap = new Map(lines.map((line) => [line.id, line.order_id]));
   const orderMap = new Map(orders.map((order) => [order.id, order.reference]));
-  const reversedBy = new Map(rows.filter((row) => row.reversal_of_batch_id !== null).map((row) => [String(row.reversal_of_batch_id), row.id]));
+  const postedIds = rows.filter((row) => row.status === "posted").map((row) => row.id);
+  const reversals = postedIds.length
+    ? await supabaseRequest<Array<{ id: number; reversal_of_batch_id: number }>>(`/rest/v1/treatment_batches?select=id,reversal_of_batch_id&reversal_of_batch_id=in.(${postedIds.join(",")})`)
+    : [];
+  const reversedBy = new Map(reversals.map((row) => [String(row.reversal_of_batch_id), row.id]));
   return rows.map<TreatmentBatch>((row) => ({
     id: row.id,
     productId: row.product_id,
@@ -1800,8 +2175,22 @@ async function loadDatabaseTreatmentBatches(filters: string) {
 
 export async function getStockMovements() {
   if (useMemoryStore) return memoryStockMovements;
-  const rows = await supabaseRequest<DbStockMovementRow[]>("/rest/v1/stock_movements?select=*&order=performed_at.asc,id.asc");
+  const rows: DbStockMovementRow[] = [];
+  const pageSize = 1000;
+  for (let offset = 0; ; offset += pageSize) {
+    const page = await supabaseRequest<DbStockMovementRow[]>(`/rest/v1/stock_movements?select=*&order=performed_at.asc,id.asc&limit=${pageSize}&offset=${offset}`);
+    rows.push(...page);
+    if (page.length < pageSize) break;
+  }
   return rows.map(mapStockMovement);
+}
+
+export async function getLogisticsTreatmentProgress() {
+  if (useMemoryStore) return memoryTreatmentBatches.map((batch) => ({ orderLineId: batch.orderLineId, quantity: batch.quantity, status: batch.status }));
+  const rows = await supabaseServerRequest<Array<{ order_line_id: string | null; quantity: number; status: TreatmentBatchStatus }>>(
+    "/rest/v1/treatment_batches?select=order_line_id,quantity,status&order_line_id=not.is.null",
+  );
+  return rows.map((row) => ({ orderLineId: row.order_line_id ?? undefined, quantity: row.quantity, status: row.status }));
 }
 
 function addDays(date: string, days: number) {
@@ -1814,24 +2203,58 @@ function treatmentDateKey(value: string) {
   return new Intl.DateTimeFormat("en-CA", { timeZone: "America/Montevideo", year: "numeric", month: "2-digit", day: "2-digit" }).format(new Date(value));
 }
 
+function getTreatmentBatchesBetween(from: string, until: string) {
+  if (useMemoryStore) return Promise.resolve(memoryTreatmentBatches.filter((batch) => treatmentDateKey(batch.performedAt) >= from && treatmentDateKey(batch.performedAt) < until));
+  return loadDatabaseTreatmentBatches(`performed_at=gte.${encodeURIComponent(`${from}T00:00:00-03:00`)}&performed_at=lt.${encodeURIComponent(`${until}T00:00:00-03:00`)}`);
+}
+
 export async function getTreatmentDashboard(date: string): Promise<TreatmentDashboard> {
-  const start = addDays(date, -6);
-  const end = addDays(date, 1);
-  const batches = useMemoryStore
-    ? memoryTreatmentBatches.filter((batch) => treatmentDateKey(batch.performedAt) >= start && treatmentDateKey(batch.performedAt) < end)
-    : await loadDatabaseTreatmentBatches(`performed_at=gte.${encodeURIComponent(`${start}T00:00:00-03:00`)}&performed_at=lt.${encodeURIComponent(`${end}T00:00:00-03:00`)}`);
+  const batches = await getTreatmentBatchesBetween(date, addDays(date, 1));
   const balances = calculateStockBalances(await getStockMovements());
   const dayBatches = batches.filter((batch) => treatmentDateKey(batch.performedAt) === date);
   const summary = summarizeTreatmentDay(date, dayBatches.map((batch) => ({ ...batch, performedAt: `${date}T12:00:00Z` })), balances);
-  const trend = Array.from({ length: 7 }, (_, index) => addDays(start, index)).map((trendDate) => {
-    const entries = batches.filter((batch) => treatmentDateKey(batch.performedAt) === trendDate);
-    return {
-      date: trendDate,
-      processed: entries.filter((batch) => batch.status === "posted").reduce((sum, batch) => sum + batch.quantity, 0),
-      rejected: entries.filter((batch) => batch.status === "rejected").reduce((sum, batch) => sum + batch.quantity, 0),
-    };
-  });
-  return { date, summary, trend, batches: dayBatches.sort((a, b) => b.performedAt.localeCompare(a.performedAt)) };
+  return { date, summary, batches: dayBatches.sort((a, b) => b.performedAt.localeCompare(a.performedAt)) };
+}
+
+const treatmentNotPerformedPrefix = "HT no realizado · ";
+
+async function getTreatmentNotPerformed(from: string, until: string): Promise<TreatmentNotPerformed[]> {
+  const rows = useMemoryStore
+    ? [...memoryHistory.entries()].flatMap(([order_id, history]) => history.filter((change) => change.kind === "incidencia").map(({ note }) => ({ order_id, note })))
+    : await supabaseRequest<Array<{ order_id: string; note: string }>>(`/rest/v1/order_changes?${new URLSearchParams([
+      ["select", "order_id,note"], ["kind", "eq.incidencia"], ["note", `gte.${treatmentNotPerformedPrefix}${from}`],
+      ["note", `lt.${treatmentNotPerformedPrefix}${until}`], ["order", "changed_at.desc,id.desc"],
+    ])}`);
+  const results = new Map<string, TreatmentNotPerformed>();
+  for (const { order_id: orderId, note: event } of rows) {
+    if (!event?.startsWith(treatmentNotPerformedPrefix)) continue;
+    const [key, responsibleLine, ...details] = event.slice(treatmentNotPerformedPrefix.length).split("\n");
+    const [date, orderLineId] = key.split(" · ");
+    const responsible = responsibleLine?.replace(/^Responsable: /, "");
+    if (!orderLineId || !responsible || date < from || date >= until || results.has(key)) continue;
+    results.set(key, { orderId, orderLineId, date, responsible, note: details.join("\n") || undefined });
+  }
+  return [...results.values()];
+}
+
+export async function getTreatmentWeek(from: string, to: string): Promise<TreatmentWeek> {
+  const until = addDays(to, 1);
+  const [batches, notPerformed] = await Promise.all([getTreatmentBatchesBetween(from, until), getTreatmentNotPerformed(from, until)]);
+  return { batches, notPerformed };
+}
+
+export async function recordTreatmentNotPerformed(input: TreatmentNotPerformed) {
+  const order = await getOrderDetail(input.orderId);
+  const line = order?.lines.find((item) => item.id === input.orderLineId);
+  if (!order?.dryingStartDate || !line || isOrderClosed(order) || input.date < order.dryingStartDate || input.date > (order.dryingEndDate ?? order.dryingStartDate)) {
+    throw new Error("El lote ya no está programado para esa fecha.");
+  }
+  if (!line.treatment && !(await getProducts()).some((product) => product.id === line.productId && product.requiresTreatment)) throw new Error("El producto no requiere HT.");
+  const existing = await getTreatmentNotPerformed(input.date, addDays(input.date, 1));
+  if (existing.some((result) => result.orderLineId === input.orderLineId)) return;
+  // A missed operation is an incident on the order, with no treatment batch or stock movement.
+  const note = [`${treatmentNotPerformedPrefix}${input.date} · ${input.orderLineId}`, `Responsable: ${input.responsible}`, input.note].filter(Boolean).join("\n");
+  await recordOrderUpdate(input.orderId, { kind: "incidencia", note });
 }
 
 export async function getTreatmentOptions(): Promise<TreatmentProductOption[]> {
@@ -1876,7 +2299,6 @@ function refreshMemoryTreatmentProgress(orderLineId?: string) {
   const treated = memoryTreatmentBatches.filter((batch) => batch.orderLineId === orderLineId).reduce((sum, batch) => sum + (batch.status === "posted" ? batch.quantity : batch.status === "reversal" ? -batch.quantity : 0), 0);
   line.treatedQuantity = Math.max(treated, 0);
   line.treatmentPendingQuantity = Math.max(line.quantity - line.treatedQuantity, 0);
-  line.readyReservedQuantity = 0;
 }
 
 export async function recordTreatmentBatch(input: CreateTreatmentBatchInput): Promise<TreatmentRecordResult> {
@@ -1893,9 +2315,9 @@ export async function recordTreatmentBatch(input: CreateTreatmentBatchInput): Pr
     }) });
   }
   const product = memoryProducts.find((item) => item.id === input.productId);
-  if (!product || !product.requiresTreatment) throw new Error("El producto no requiere Marcado.");
+  if (!product || !product.requiresTreatment) throw new Error("El producto no requiere HT.");
   if (!Number.isInteger(input.quantity) || input.quantity <= 0) throw new Error("La cantidad debe ser mayor a cero.");
-  if (!input.responsible.trim()) throw new Error("Indique quién realizó el marcado.");
+  if (!input.responsible.trim()) throw new Error("Indique quién realizó el HT.");
   let relation = input.clientProductId === undefined ? undefined : memoryClientProducts.find((item) => String(item.id) === String(input.clientProductId));
   if (input.orderLineId) {
     const order = memoryOrders.find((item) => item.lines.some((line) => line.id === input.orderLineId));
@@ -1917,7 +2339,7 @@ export async function recordTreatmentBatch(input: CreateTreatmentBatchInput): Pr
   const balances = calculateStockBalances(memoryStockMovements);
   const previous = balances.get(product.id) ?? { pending: 0, ready: 0 };
   const status: TreatmentBatchStatus = failed.length ? "rejected" : "posted";
-  if (status === "posted" && previous.pending < input.quantity) throw new Error("El stock pendiente no alcanza para confirmar el marcado.");
+  if (status === "posted" && previous.pending < input.quantity) throw new Error("El stock pendiente no alcanza para confirmar el HT.");
   const id = `batch-${memoryTreatmentId++}`;
   const transformationId = crypto.randomUUID();
   const checks: TreatmentControlCheck[] = input.controls.map((check) => {
@@ -1980,84 +2402,85 @@ export async function getTreatmentBatchDetail(id: number | string) {
   };
 }
 
-type DbStockRiskRow = {
+type DbStockBalanceRow = {
   product_id: string;
   pending_quantity: number;
   ready_quantity: number;
   reserved_quantity: number;
   available_quantity: number;
   physical_quantity: number;
-  daily_consumption: number | string;
-  weekly_consumption: number | string;
-  safety_stock: number;
-  days_to_break: number | string | null;
-  risk_level: StockRiskLevel;
-  estimated_break_date: string | null;
   last_movement_at: string | null;
 };
 
-export async function getStockSummary(): Promise<StockSummaryRow[]> {
-  const products = (await getProducts()).filter((product) => product.stockActive !== false);
+export async function getStockSummary(includeOrderCommitments = false): Promise<StockSummaryRow[]> {
+  const allProducts = await getProducts();
   if (useMemoryStore) {
     const balances = calculateStockBalances(memoryStockMovements);
-    return products.map((product) => {
+    const products = allProducts.filter((product) => product.stockActive !== false || ((balances.get(product.id)?.pending ?? 0) + (balances.get(product.id)?.ready ?? 0)) > 0);
+    const orderReservations = orderStockReservations(memoryOrders, products);
+    const rows = products.map<StockSummaryRow>((product) => {
       const balance = balances.get(product.id) ?? { pending: 0, ready: 0 };
-      const reserved = memoryStockReservations.filter((item) => item.productId === product.id && item.status === "active").reduce((sum, item) => sum + item.quantity, 0);
-      const rules = memoryConsumptionRules.filter((item) => item.productId === product.id);
-      const dailyConsumption = rules.reduce((sum, item) => sum + item.dailyConsumption, 0);
-      const safetyStock = rules.reduce((sum, item) => sum + item.safetyStock, 0);
-      const available = balance.ready - reserved;
-      const daysToBreak = dailyConsumption > 0 ? Math.max(available - safetyStock, 0) / dailyConsumption : undefined;
-      return { product, pending: balance.pending, ready: balance.ready, reserved, available, physical: balance.pending + balance.ready, dailyConsumption, weeklyConsumption: rules.reduce((sum, item) => sum + item.dailyConsumption * item.workdaysPerWeek, 0), safetyStock, daysToBreak, riskLevel: classifyStockRisk(daysToBreak) };
+      const shipmentReserved = memoryStockReservations.filter((item) => item.productId === product.id && item.status === "active").reduce((sum, item) => sum + item.quantity, 0);
+      const assigned = orderReservations.get(product.id) ?? { pending: 0, ready: 0, orders: [] };
+      const readyReserved = Math.min(Math.max(balance.ready, 0), Math.max(shipmentReserved, assigned.ready));
+      const pendingReserved = Math.min(balance.pending, assigned.pending);
+      const reserved = readyReserved + pendingReserved;
+      const available = Math.max(balance.ready - readyReserved, 0);
+      return { product, pending: balance.pending, ready: balance.ready, reserved, available, physical: balance.pending + balance.ready, ...(includeOrderCommitments ? { orderCommitments: assigned.orders } : {}) };
     });
+    return includeOrderCommitments ? scopeStockInventory(rows, memoryOrders) : rows;
   }
-  const [rows, orders] = await Promise.all([
-    supabaseRequest<DbStockRiskRow[]>("/rest/v1/stock_risk?select=*&order=risk_level.asc,days_to_break.asc.nullslast,product_id.asc"),
+  const [rows, orders, movements] = await Promise.all([
+    supabaseRequest<DbStockBalanceRow[]>("/rest/v1/stock_balances?select=*&order=product_id.asc"),
     getOrders(),
+    getStockMovements(),
   ]);
-  const productMap = new Map(products.map((product) => [product.id, product]));
-  return rows.map<StockSummaryRow>((row) => {
+  const balances = calculateStockBalances(movements);
+  const balanceProductIds = new Set(rows.map((row) => row.product_id));
+  const extraProducts = allProducts.filter((product) => !balanceProductIds.has(product.id) && ((balances.get(product.id)?.pending ?? 0) + (balances.get(product.id)?.ready ?? 0)) > 0);
+  const productMap = new Map(allProducts.map((product) => [product.id, product]));
+  const orderReservations = orderStockReservations(orders, allProducts);
+  const balanceRows = rows.map<StockSummaryRow>((row) => {
     const deliveries = orders.flatMap((order) => (order.shipments ?? []).filter((shipment) => !["cancelled", "delivered"].includes(shipment.status)).flatMap((shipment) => shipment.lines.flatMap((shipmentLine) => {
       const orderLine = order.lines.find((line) => line.id === shipmentLine.orderLineId);
       return orderLine?.productId === row.product_id ? [{ date: shipment.plannedDate, quantity: shipmentLine.plannedQuantity, client: order.client }] : [];
     }))).sort((a, b) => a.date.localeCompare(b.date));
+    const assigned = orderReservations.get(row.product_id) ?? { pending: 0, ready: 0, orders: [] };
+    const readyReserved = Math.min(Math.max(row.ready_quantity, 0), Math.max(row.reserved_quantity, assigned.ready));
+    const pendingReserved = Math.min(row.pending_quantity, assigned.pending);
+    const available = Math.max(row.ready_quantity - readyReserved, 0);
     return {
       product: productMap.get(row.product_id) ?? { id: row.product_id, kind: "Pallet", requiresTreatment: false, stockName: row.product_id },
       pending: row.pending_quantity,
       ready: row.ready_quantity,
-      reserved: row.reserved_quantity,
-      available: row.available_quantity,
+      reserved: readyReserved + pendingReserved,
+      available,
       physical: row.physical_quantity,
-      dailyConsumption: Number(row.daily_consumption),
-      weeklyConsumption: Number(row.weekly_consumption),
-      safetyStock: row.safety_stock,
-      daysToBreak: row.days_to_break === null ? undefined : Number(row.days_to_break),
-      estimatedBreakDate: row.estimated_break_date ?? undefined,
-      riskLevel: row.risk_level,
       nextDelivery: deliveries[0],
       lastMovementAt: row.last_movement_at ?? undefined,
+      ...(includeOrderCommitments ? { orderCommitments: assigned.orders } : {}),
     };
   });
+  const extraRows = extraProducts.map<StockSummaryRow>((product) => {
+    const balance = balances.get(product.id)!;
+    const assigned = orderReservations.get(product.id) ?? { pending: 0, ready: 0, orders: [] };
+    const pending = Math.max(balance.pending, 0);
+    const ready = balance.ready;
+    const reserved = Math.min(pending, assigned.pending) + Math.min(Math.max(ready, 0), assigned.ready);
+    return { product, pending, ready, reserved, available: Math.max(ready - assigned.ready, 0), physical: pending + ready, ...(includeOrderCommitments ? { orderCommitments: assigned.orders } : {}) };
+  });
+  const summary = [...balanceRows, ...extraRows];
+  return includeOrderCommitments ? scopeStockInventory(summary, orders) : summary;
 }
 
 export async function getStockDetail(productId: string): Promise<StockDetail | null> {
   const summary = (await getStockSummary()).find((row) => row.product.id === productId);
   if (!summary) return null;
   if (useMemoryStore) {
-    const projection = Array.from({ length: 30 }, (_, index) => {
-      const date = new Date(); date.setDate(date.getDate() + index);
-      return { date: date.toISOString().slice(0, 10), incoming: 0, plannedOutgoing: 0, dailyOutgoing: summary.dailyConsumption, projectedAvailable: summary.available - summary.dailyConsumption * (index + 1) };
-    });
-    return { summary, movements: memoryStockMovements.filter((movement) => movement.productId === productId).sort((a, b) => b.performedAt.localeCompare(a.performedAt)), projection, consumption: memoryConsumptionRules.filter((rule) => rule.productId === productId) };
+    return { summary, movements: memoryStockMovements.filter((movement) => movement.productId === productId).sort((a, b) => b.performedAt.localeCompare(a.performedAt)) };
   }
-  const [movementRows, projectionRows, consumptionRows] = await Promise.all([
-    supabaseRequest<DbStockMovementRow[]>(`/rest/v1/stock_movements?select=*&product_id=eq.${encodeURIComponent(productId)}&order=performed_at.desc,id.desc&limit=150`),
-    supabaseRequest<Array<{ projection_date: string; incoming: number | string; planned_outgoing: number | string; daily_outgoing: number | string; projected_available: number | string }>>(`/rest/v1/stock_daily_projection?select=*&product_id=eq.${encodeURIComponent(productId)}&order=projection_date.asc`),
-    supabaseRequest<Array<{ id: number; client_id: string; daily_consumption: number | string; workdays_per_week: number; safety_stock: number; valid_from: string; valid_to: string | null; source: string; note: string | null; clients: { name: string } | Array<{ name: string }> }>>(`/rest/v1/client_product_consumption?select=*,clients(name)&product_id=eq.${encodeURIComponent(productId)}&order=valid_from.desc,id.desc`),
-  ]);
-  const projection: StockProjectionPoint[] = projectionRows.map((row) => ({ date: row.projection_date, incoming: Number(row.incoming), plannedOutgoing: Number(row.planned_outgoing), dailyOutgoing: Number(row.daily_outgoing), projectedAvailable: Number(row.projected_available) }));
-  const consumption: StockConsumptionRule[] = consumptionRows.map((row) => ({ id: row.id, clientId: row.client_id, clientName: (Array.isArray(row.clients) ? row.clients[0]?.name : row.clients?.name) ?? row.client_id, dailyConsumption: Number(row.daily_consumption), workdaysPerWeek: row.workdays_per_week, safetyStock: row.safety_stock, validFrom: row.valid_from, validTo: row.valid_to ?? undefined, source: row.source, note: row.note ?? undefined }));
-  return { summary, movements: movementRows.map(mapStockMovement), projection, consumption };
+  const movementRows = await supabaseRequest<DbStockMovementRow[]>(`/rest/v1/stock_movements?select=*&product_id=eq.${encodeURIComponent(productId)}&order=performed_at.desc,id.desc&limit=150`);
+  return { summary, movements: movementRows.map(mapStockMovement) };
 }
 
 export async function getStockImportReport() {
@@ -2092,9 +2515,3 @@ export async function reverseStockMovement(id: number | string, input: { occurre
   return recordStockAdjustment({ productId: original.productId, stockState: original.stockState, quantityDelta: -original.quantity, occurredAt: input.occurredAt, responsible: input.responsible, reason: input.reason }).then((newId) => { const movement = memoryStockMovements.find((item) => String(item.id) === String(newId)); if (movement) { movement.movementType = "reversal"; movement.correctionOfMovementId = original.id; } return newId; });
 }
 
-export async function createConsumptionRule(input: { clientId: string; productId: string; dailyConsumption: number; workdaysPerWeek: number; safetyStock: number; validFrom: string; validTo?: string; source: string; note?: string }) {
-  if (!useMemoryStore) return supabaseServerRequest<number>("/rest/v1/rpc/upsert_client_product_consumption_v1", { method: "POST", body: JSON.stringify({ p_client_id: input.clientId, p_product_id: input.productId, p_daily_consumption: input.dailyConsumption, p_workdays_per_week: input.workdaysPerWeek, p_safety_stock: input.safetyStock, p_valid_from: input.validFrom, p_valid_to: input.validTo || null, p_source: input.source.trim(), p_note: input.note?.trim() || null }) });
-  const rule = { ...input, id: `consumption-${crypto.randomUUID()}`, clientName: memoryClients.find((client) => client.id === input.clientId)?.name ?? input.clientId };
-  memoryConsumptionRules.push(rule);
-  return rule.id;
-}

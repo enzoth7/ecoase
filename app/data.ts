@@ -19,6 +19,8 @@ export interface ProductionAllocation {
   plannedDate: string;
   plannedQuantity: number;
   actualQuantity?: number;
+  actualDate?: string;
+  resultDestination?: "client" | "stock";
   status: ProductionAllocationStatus;
   note?: string;
   completedAt?: string;
@@ -34,6 +36,7 @@ export interface ShipmentLine {
   product: string;
   treatment?: ProductTreatment;
   plannedQuantity: number;
+  loadedQuantity?: number;
   deliveredQuantity: number;
 }
 
@@ -84,7 +87,6 @@ export interface OrderLine {
   treatedQuantity?: number;
   treatmentPendingQuantity?: number;
   readyReservedQuantity?: number;
-  stockRisk?: import("./stock").StockRiskIndicator;
   productionAllocations?: ProductionAllocation[];
 }
 
@@ -114,6 +116,13 @@ export interface OperationOrder {
   productionDate?: string;
   importArrivalDate?: string;
   requiredOperations?: CapacityOperation[];
+  deliveryDateNote?: string;
+  productionDefined?: boolean;
+  productionEndDate?: string;
+  transportDefined?: boolean;
+  dryingStartDate?: string;
+  dryingEndDate?: string;
+  dryingNote?: string;
   supply: string;
   preparation: string;
   logistics: string;
@@ -227,6 +236,11 @@ export interface Provider {
   name: string;
   type: ProviderType;
   supplies: string;
+  internalTransport?: boolean;
+}
+
+export function isActiveProvider({ id }: Pick<Provider, "id">) {
+  return id !== "linares";
 }
 
 export interface Client {
@@ -246,6 +260,7 @@ export interface Product {
   id: string;
   kind: ProductKind;
   measure?: string;
+  heightCm?: number;
   treatment?: ProductTreatment;
   requiresTreatment: boolean;
   stockName?: string;
@@ -254,6 +269,8 @@ export interface Product {
   zetaCode?: string;
   stockActive?: boolean;
   clientNames?: string[];
+  /** Valor por nivel (entrada, taco, refuerzo, exportación, tratamiento…). Ver classification.ts. Los productos viejos no lo tienen. */
+  attributes?: Record<string, string>;
 }
 
 /** Ordena P01, P02, P10 por su valor numérico, no por el texto del código. */
@@ -284,7 +301,9 @@ type ProductSeed = Omit<Product, "requiresTreatment"> & {
 export const providers: Provider[] = [
   { id: "blanc", name: "Blanc", type: "Aserradero", supplies: "Pallets y mercadería de terceros" },
   { id: "mirasol", name: "Mirasol", type: "Aserradero", supplies: "Pallets y mercadería de terceros" },
-  { id: "linares", name: "Linares", type: "Transporte", supplies: "Traslado y entrega de pedidos" },
+  { id: "linares", name: "Linares", type: "Transporte", supplies: "Transporte interno", internalTransport: true },
+  { id: "susalla", name: "Susalla", type: "Transporte", supplies: "Transporte interno", internalTransport: true },
+  { id: "giossa", name: "Giossa", type: "Transporte", supplies: "Transporte interno", internalTransport: true },
   { id: "milton", name: "Milton", type: "Transporte", supplies: "Traslado y entrega de pedidos" },
   { id: "matias", name: "Matías", type: "Transporte", supplies: "Traslado y entrega de pedidos" },
 ];

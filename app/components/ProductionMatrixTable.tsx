@@ -364,9 +364,11 @@ export default function ProductionMatrixTable({
       }
 
       let rulesCount = 0;
+      let failedRules = 0;
       for (const row of normalRows) {
         if (!row.productId) continue;
-        const maxMatchingRow = maxRows.find((m) => m.id === row.id || m.productId === row.productId);
+        const maxMatchingRow = maxRows.find((candidate) => candidate.productId === row.productId)
+          ?? maxRows.find((candidate) => row.id.startsWith("norm-") && candidate.id === row.id.replace(/^norm-/, "max-"));
         for (const col of MATRIX_COLUMNS) {
           const normVal = (row.values[col.id] ?? "-").trim();
           const maxVal = maxMatchingRow ? (maxMatchingRow.values[col.id] ?? "-").trim() : "-";
@@ -400,7 +402,7 @@ export default function ProductionMatrixTable({
           );
 
           try {
-            await fetch("/api/capacity/rules", {
+            const response = await fetch("/api/capacity/rules", {
               method: existing ? "PATCH" : "POST",
               headers: { "content-type": "application/json" },
               body: JSON.stringify({
@@ -415,9 +417,10 @@ export default function ProductionMatrixTable({
                 note: `Configurado desde planilla (${col.name})`,
               }),
             });
-            rulesCount++;
+            if (response.ok) rulesCount++;
+            else failedRules++;
           } catch {
-            // Regla con error menor, continuar
+            failedRules++;
           }
         }
       }
@@ -426,11 +429,11 @@ export default function ProductionMatrixTable({
         await onSaved();
       }
 
-      setSavedFeedback(
-        rulesCount > 0
-          ? `Reglas guardadas: ${rulesCount} regla(s) sincronizada(s) con el sistema.`
-          : "Reglas guardadas en la planilla correctamente."
-      );
+      setSavedFeedback(failedRules
+        ? `${rulesCount} reglas aplicadas; ${failedRules} no se pudieron guardar. Revisá los productos y volvé a intentar.`
+        : rulesCount
+          ? `${rulesCount} reglas aplicadas a la planificación.`
+          : "Planilla guardada en este navegador. Para aplicarla a la planificación, seleccioná un producto en las filas con valores y guardá de nuevo.");
 
       setTimeout(() => {
         setSavedFeedback(null);
@@ -597,7 +600,7 @@ export default function ProductionMatrixTable({
               return (
                 <tr key={row.id} className="matrix-data-row">
                   {/* Columna A: Selector de producto */}
-                  <td className="matrix-col-product-td">
+                  <td className="matrix-col-product-td" data-column-label="Producto / Modelo">
                     <div className="matrix-product-selector-wrap">
                       <div className="matrix-product-select-row">
                         <select
@@ -642,7 +645,7 @@ export default function ProductionMatrixTable({
                     const cellVal = row.values[col.id] ?? "-";
                     const isDash = cellVal.trim() === "-" || cellVal.trim() === "0" || cellVal.trim() === "--";
                     return (
-                      <td key={col.id} className={`matrix-cell-td ${isDash ? "matrix-cell-never" : "matrix-cell-active"}`}>
+                      <td key={col.id} data-column-label={col.name} className={`matrix-cell-td ${isDash ? "matrix-cell-never" : "matrix-cell-active"}`}>
                         <input
                           type="text"
                           className={`matrix-cell-input ${isDash ? "matrix-cell-dash" : "matrix-cell-has-rule"}`}

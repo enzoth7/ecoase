@@ -53,14 +53,13 @@ test("pedidos y productos usan una sola operación canónica", async () => {
   assert.match(correction, /p_required_operations <@ array\['assembly','treatment'\]/i);
   assert.match(allocationFix, /create_operation_order_v6/i);
   assert.match(allocationFix, /v_creation_stage := case when p_stage = 'produccion' then 'negociacion'/i);
-  assert.match(view, />Marcado</);
-  assert.doesNotMatch(view, /Tratamiento HT/);
-  assert.doesNotMatch(view, />HT</);
+  assert.match(view, />Registro de HT</);
+  assert.doesNotMatch(view, />Registro de marcado</);
 });
 
 test("la pantalla incluye registro en diálogo, controles, evidencia e historial compacto", async () => {
   const view = await read("app/TreatmentView.tsx");
-  for (const copy of ["Registrar marcado", "Registros del día", "Puntos de control", "Stock general", "Responsable", "Revertir", "Ver tendencia"]) assert.match(view, new RegExp(copy));
+  for (const copy of ["Registrar HT", "Registros del día", "Puntos de control", "Stock general", "Responsable", "Revertir"]) assert.match(view, new RegExp(copy));
   assert.match(view, /primaryAsset/);
   assert.match(view, /Conforme/);
   assert.match(view, /No conforme/);

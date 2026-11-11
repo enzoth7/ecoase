@@ -1,34 +1,66 @@
 import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 import { test } from "node:test";
-import { classifyStockRisk } from "../app/stock.ts";
+import { orderStockReservations, scopeStockInventory, stockQuantityBreakdown } from "../app/stock.ts";
 
 const read = (path) => readFile(new URL(`../${path}`, import.meta.url), "utf8");
 
-test("clasifica los límites exactos de quiebre", () => {
-  assert.equal(classifyStockRisk(undefined), "gray");
-  assert.equal(classifyStockRisk(0), "red");
-  assert.equal(classifyStockRisk(2.99), "red");
-  assert.equal(classifyStockRisk(3), "orange");
-  assert.equal(classifyStockRisk(7), "yellow");
-  assert.equal(classifyStockRisk(14), "green");
+test("separa los artículos de Pamer aunque la ficha antigua haya perdido su asociación", () => {
+  const rows = [
+    { product: { id: "legacy-pamer", zetaCode: "Z7", stockActive: false, clientNames: [] }, physical: 100 },
+    { product: { id: "catalog-pamer", clientNames: ["Pamer"] }, physical: 20 },
+    { product: { id: "shared", clientNames: ["Pamer", "Otro cliente"] }, physical: 15 },
+    { product: { id: "other", clientNames: [] }, physical: 10 },
+  ];
+  const orders = [
+    { client: "Pamer", lines: [{ productId: "legacy-pamer" }] },
+    { client: "Granja Pocha", lines: [{ productId: "other" }] },
+  ];
+  assert.deepEqual(scopeStockInventory(rows, orders).map((row) => [row.inventoryScope, row.physical]), [
+    ["pamer", 100], ["pamer", 20], ["general", 15], ["general", 10],
+  ]);
 });
 
-test("la migración deriva balances, reservas, riesgo y proyección", async () => {
+test("desglosa los saldos por pedido sin atribuir unidades libres o ya despachadas", () => {
+  const product = { id: "pallet", requiresTreatment: true };
+  const order = {
+    id: "pedido-a", reference: "Pedido A", client: "Cliente A", requested: 20, delivered: 0,
+    lines: [{ id: "linea-a", productId: product.id, quantity: 20, treatedQuantity: 7, readyReservedQuantity: 2,
+      productionAllocations: [{ status: "completed", actualQuantity: 11 }, { status: "completed", actualQuantity: 6, resultDestination: "stock" }] }],
+    shipments: [{ status: "dispatched", lines: [{ orderLineId: "linea-a", plannedQuantity: 4, deliveredQuantity: 0 }] }],
+  };
+  const assigned = orderStockReservations([order], [product]).get(product.id);
+  assert.deepEqual(assigned, { pending: 4, ready: 3, orders: [{ orderId: "pedido-a", reference: "Pedido A", client: "Cliente A", pending: 4, ready: 3 }] });
+  const row = { pending: 9, ready: 12, reserved: 8, available: 8, orderCommitments: assigned.orders };
+  assert.equal(stockQuantityBreakdown(row, "pending").unassigned, 5);
+  assert.equal(stockQuantityBreakdown(row, "reserved").unidentified, 1);
+  assert.deepEqual(stockQuantityBreakdown(row, "available"), { entries: [], unassigned: 8, unidentified: 0, exceedsBalance: false });
+  assert.equal(stockQuantityBreakdown({ ...row, pending: 2, reserved: 6 }, "pending").exceedsBalance, true);
+});
+
+test("la migración deriva balances y reservas", async () => {
   const sql = await read("supabase/migrations/20260829214819_stock_break_risk_refactor.sql");
-  for (const table of ["stock_reservations", "client_product_consumption", "stock_import_runs", "stock_import_rows"]) assert.match(sql, new RegExp(`create table public\\.${table}`, "i"));
-  for (const view of ["stock_balances", "stock_risk", "stock_daily_projection"]) assert.match(sql, new RegExp(`view public\\.${view} with \\(security_invoker=true\\)`, "i"));
+  for (const table of ["stock_reservations", "stock_import_runs", "stock_import_rows"]) assert.match(sql, new RegExp(`create table public\\.${table}`, "i"));
+  assert.match(sql, /view public\.stock_balances with \(security_invoker=true\)/i);
   assert.match(sql, /transition_shipment_v2/i);
   assert.match(sql, /movement_type='dispatch'/i);
   assert.match(sql, /status='released'/i);
   assert.match(sql, /stock listo insuficiente/i);
-  assert.match(sql, /exclude using gist/i);
   assert.match(sql, /on conflict\(import_row_id,stock_state\)/i);
+});
+
+test("la migración retira las estructuras descartadas y conserva los balances", async () => {
+  const sql = await read("supabase/migrations/20261111021125_remove_stock_coverage_feature.sql");
+  assert.match(sql, /drop view if exists public\.stock_daily_projection/i);
+  assert.match(sql, /drop view if exists public\.stock_risk/i);
+  assert.match(sql, /drop table if exists public\.client_product_consumption/i);
+  assert.match(sql, /create or replace function public\.delete_catalog_product_v2/i);
+  assert.doesNotMatch(sql, /drop view if exists public\.stock_balances/i);
 });
 
 test("los comandos de stock quedan reservados al servidor", async () => {
   const sql = await read("supabase/migrations/20260829214819_stock_break_risk_refactor.sql");
-  for (const command of ["record_stock_receipt_v1", "record_stock_adjustment_v1", "reverse_stock_movement_v1", "upsert_client_product_consumption_v1", "transition_shipment_v2"]) {
+  for (const command of ["record_stock_receipt_v1", "record_stock_adjustment_v1", "reverse_stock_movement_v1", "transition_shipment_v2"]) {
     assert.match(sql, new RegExp(`grant execute on function public\\.${command}[\\s\\S]*?to service_role`, "i"));
     assert.doesNotMatch(sql, new RegExp(`grant execute on function public\\.${command}[^;]*to (anon|authenticated)`, "i"));
   }
@@ -48,13 +80,10 @@ test("la importación conserva detalle y documenta el total defectuoso de Palbin
   assert.match(reconciliation, /omiten? las filas 34:47/i);
 });
 
-test("la pantalla expone filtros, proyección y libro sin conciliación inicial", async () => {
+test("la pantalla expone saldos, filtros y movimientos", async () => {
   const view = await read("app/StockView.tsx");
-  for (const copy of ["Stock", "Registrar entrada", "Proyección", "Consumo", "Movimientos", "Ver tabla de la proyección", "Con alerta", "Días de stock"]) assert.match(view, new RegExp(copy));
+  for (const copy of ["Stock general", "Stock Pamer", "Registrar entrada", "Saldos del producto", "Movimientos"]) assert.match(view, new RegExp(copy));
   assert.doesNotMatch(view, /Conciliación inicial/);
-  assert.match(view, /ResponsiveContainer/);
-  assert.match(view, /value="alert"/);
-  assert.match(view, /Todos los catálogos/);
   assert.match(view, /stock-detail-section/);
 });
 
@@ -74,18 +103,6 @@ test("los datos opcionales del cliente no bloquean pedidos", async () => {
   assert.doesNotMatch(store, /La dirección de entrega es obligatoria para activar/);
   assert.doesNotMatch(store, /Para activar, cargue la dirección/);
   assert.match(master, /return Boolean\(\(item\.product\?\.zetaCode \?\? item\.zetaCode\)\.trim\(\)\)/);
-  assert.match(dashboard, /selectedClientProduct\?\.clientAddress \|\| "—"/);
+  assert.match(dashboard, /selectedClient\?\.address \|\| clientProducts\[0\]\?\.clientAddress \|\| "—"/);
 });
 
-test("el consumo se carga desde Stock o desde el producto del cliente", async () => {
-  const [stock, client, shared] = await Promise.all([
-    read("app/StockView.tsx"),
-    read("app/components/ClientMasterView.tsx"),
-    read("app/components/ConsumptionRuleModal.tsx"),
-  ]);
-  assert.match(stock, /ConsumptionRuleModal/);
-  assert.match(client, /Consumo del cliente/);
-  assert.match(client, /ConsumptionRuleModal/);
-  assert.match(shared, /\/api\/stock\/consumption/);
-  assert.match(shared, /se comparte entre Clientes y Stock/i);
-});

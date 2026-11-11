@@ -39,19 +39,20 @@ test("existen las rutas para distribuir producción y operar viajes", async () =
   assert.match(sources.join("\n"), /rescheduleShipment/);
 });
 
-test("pedidos unifica los viajes en Distribuir y audita la planificación productiva", async () => {
-  const [dashboard, styles, store, migration] = await Promise.all([
+test("pedidos planifica transporte desde Logística y audita la planificación productiva", async () => {
+  const [dashboard, logistics, styles, store, migration] = await Promise.all([
     read("app/Dashboard.tsx"),
+    read("app/components/LogisticsWorkspace.tsx"),
     read("app/globals.css"),
     read("app/api/store.ts"),
     read("supabase/migrations/20260902030524_audit_production_distribution_updates.sql"),
   ]);
-  assert.match(dashboard, /Distribuir viajes/);
-  assert.match(dashboard, /Viajes planificados/);
-  assert.match(dashboard, /shipment-table-panel[\s\S]*?<td className="production-table-action"><button[\s\S]*?>Distribuir<\/button>/);
-  assert.doesNotMatch(dashboard, /tracking-shipments-title[\s\S]{0,300}<Plus[^>]*\/>Distribuir/);
-  assert.match(styles, /\.shipment-distribution-content\s*\{[^}]*padding:\s*20px 22px 22px/i);
-  assert.match(styles, /\.shipment-distribution-list article\s*\{[^}]*grid-template-columns:\s*minmax\(180px, 1fr\) 130px 96px/i);
+  assert.match(dashboard, /onAssignTransport=\{\(order\) => navigate\(`\/viajes\?pedido=/);
+  assert.match(dashboard, /Planificar transporte/);
+  assert.doesNotMatch(dashboard, /Distribuir viajes/);
+  assert.match(logistics, /Transporte a planificar/);
+  assert.match(logistics, /readyToPlan\(order, line\.id, snapshot\)/);
+  assert.match(styles, /\.logistics-real-table table\s*\{[^}]*table-layout:\s*fixed/i);
   assert.match(store, /shipmentHistory/);
   assert.match(migration, /Distribución de producción/);
   assert.match(migration, /insert into public\.order_changes/i);
@@ -75,13 +76,6 @@ test("el diálogo de remito usa el sistema visual operativo", async () => {
   assert.match(calendar, /order-operation-form shipment-transition-form/);
   assert.match(styles, /\.shipment-transition-summary/);
   assert.match(styles, /\.shipment-transition-form \.modal-actions/);
-});
-
-test("el calendario resume el riesgo y delega el detalle a stock", async () => {
-  const calendar = await read("app/components/OperationsCalendar.tsx");
-  assert.match(calendar, /Alerta de stock/);
-  assert.match(calendar, /\/stock\?riesgo=alerta/);
-  assert.doesNotMatch(calendar, /stockRisk\.message/);
 });
 
 test("el calendario permite cambiar entre semana y mes y arrastrar entregas", async () => {
