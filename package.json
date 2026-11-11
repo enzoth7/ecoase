@@ -9,7 +9,7 @@
     "dev": "npm run routes:generate && vite",
     "dev:api": "tsx watch --clear-screen=false --include \"app/**/*.ts\" --env-file-if-exists=.env.local server/node.ts",
     "dev:web": "vite",
-    "build": "npm run routes:generate && tsc --noEmit && vite build",
+    "build": "npm run routes:generate && node scripts/bundle-api.mjs && tsc --noEmit && vite build",
     "start": "node --env-file-if-exists=.env.local --import tsx server/node.ts --serve-dist",
     "routes:generate": "node server/generate-routes.mjs",
     "test": "npm run test:data && npm run test:mcp && npm run build && node --test tests/app-server.test.mjs",

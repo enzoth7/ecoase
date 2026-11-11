@@ -1,4 +1,4 @@
-import { dispatch } from "../server/router";
+import { dispatch } from "../server/bundle.mjs";
 
 export default {
   fetch(request: Request) {
