@@ -150,7 +150,7 @@ test("rechaza direcciones de retorno no registradas, inseguras o sin PKCE", asyn
     const stranger = await authorize(body.client_id, challenge, "clave-corta-1234", "https://atacante.example/cb");
     assert.equal(stranger.status, 400);
     assert.equal(stranger.headers.get("location"), null);
-    const unknownClient = await send(`/oauth/authorize?response_type=code&client_id=inventado&redirect_uri=${encodeURIComponent(REDIRECT)}&code_challenge=${challenge}&code_challenge_method=S256`);
+    const unknownClient = await send(`/oauth/authorize?response_type=code&client_id=inventado&redirect_uri=${encodeURIComponent("https://atacante.example/cb")}&code_challenge=${challenge}&code_challenge_method=S256`);
     assert.equal(unknownClient.status, 400);
     const noPkce = await send(`/oauth/authorize?response_type=code&client_id=${encodeURIComponent(body.client_id)}&redirect_uri=${encodeURIComponent(REDIRECT)}`);
     assert.equal(noPkce.status, 400);
@@ -166,5 +166,34 @@ test("rotar el token cierra las sesiones abiertas", async () => {
     assert.equal((await tools(tokens.access_token)).response.status, 200);
     process.env.ECOASE_MCP_TOKEN = "token-rotado";
     assert.equal((await tools(tokens.access_token)).response.status, 401);
+  } finally { reset(); }
+});
+
+test("acepta un Client ID cargado a mano si vuelve a ChatGPT o Claude (como en la pantalla de ChatGPT)", async () => {
+  configure();
+  try {
+    const chatgpt = "https://chatgpt.com/connector/oauth/abc123";
+    const { verifier, challenge } = pkce();
+    const clientId = "lo-que-la-persona-escribio-en-client-id";
+    const page = await send(`/oauth/authorize?response_type=code&client_id=${clientId}&redirect_uri=${encodeURIComponent(chatgpt)}&code_challenge=${challenge}&code_challenge_method=S256&state=x`);
+    assert.equal(page.status, 200);
+    assert.match(await page.text(), /ChatGPT/);
+
+    const granted = await send("/oauth/authorize", form({ response_type: "code", client_id: clientId, redirect_uri: chatgpt, code_challenge: challenge, code_challenge_method: "S256", state: "x", code: "clave-corta-1234" }));
+    assert.equal(granted.status, 302);
+    const code = new URL(granted.headers.get("location")).searchParams.get("code");
+
+    // El cliente puede mandar el client_id en un encabezado Basic.
+    const basic = Buffer.from(`${clientId}:secreto-que-se-ignora`).toString("base64");
+    const exchanged = await send("/oauth/token", { ...form({ grant_type: "authorization_code", code, redirect_uri: chatgpt, code_verifier: verifier }), headers: { "content-type": "application/x-www-form-urlencoded", authorization: `Basic ${basic}` } });
+    assert.equal(exchanged.status, 200);
+    const tokens = await exchanged.json();
+    assert.ok((await tools(tokens.access_token)).names.includes("crear_pedido"));
+
+    // Un Client ID a mano no sirve para volver a una dirección ajena.
+    const stranger = await send(`/oauth/authorize?response_type=code&client_id=${clientId}&redirect_uri=${encodeURIComponent("https://atacante.example/cb")}&code_challenge=${challenge}&code_challenge_method=S256`);
+    assert.equal(stranger.status, 400);
+    const lookalike = await send(`/oauth/authorize?response_type=code&client_id=${clientId}&redirect_uri=${encodeURIComponent("https://chatgpt.com.atacante.example/cb")}&code_challenge=${challenge}&code_challenge_method=S256`);
+    assert.equal(lookalike.status, 400);
   } finally { reset(); }
 });

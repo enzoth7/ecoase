@@ -5804,6 +5804,27 @@ function accessForBearer(sent) {
   const access = verify(sent, "access");
   return access?.scope === "write" ? "write" : access?.scope === "read" ? "read" : null;
 }
+function trustedHost(uri) {
+  try {
+    const url = new URL(uri);
+    if (url.protocol !== "https:" || url.hash) return void 0;
+    return TRUSTED_HOSTS.find(({ host }) => url.hostname === host || url.hostname.endsWith(`.${host}`));
+  } catch {
+    return void 0;
+  }
+}
+function resolveClient(clientId, redirect) {
+  if (!clientId || clientId.length > 300) return null;
+  const registered = verify(clientId, "client");
+  if (registered) return { name: String(registered.name ?? "Claude"), uris: registered.uris };
+  const trusted = trustedHost(redirect);
+  return trusted ? { name: trusted.name, uris: [redirect] } : null;
+}
+function clientIdFrom(request, params) {
+  if (params.client_id) return params.client_id;
+  const basic = /^Basic\s+(.+)$/i.exec(request.headers.get("authorization") ?? "")?.[1];
+  return basic ? Buffer.from(basic, "base64").toString("utf8").split(":")[0] : "";
+}
 function pkceMatches(verifier, challenge) {
   return same(createHash("sha256").update(verifier).digest("base64url"), challenge);
 }
@@ -5836,7 +5857,7 @@ async function readParams(request) {
   const raw = type.includes("application/json") ? await request.json().catch(() => ({})) : Object.fromEntries(new URLSearchParams(await request.text()));
   return Object.fromEntries(Object.entries(raw).filter(([, value]) => typeof value === "string"));
 }
-var ACCESS_SECONDS, REFRESH_SECONDS, CODE_SECONDS, b64, now, oauthCors;
+var ACCESS_SECONDS, REFRESH_SECONDS, CODE_SECONDS, b64, now, TRUSTED_HOSTS, oauthCors;
 var init_core = __esm({
   "app/oauth/core.ts"() {
     "use strict";
@@ -5845,6 +5866,13 @@ var init_core = __esm({
     CODE_SECONDS = 300;
     b64 = (value) => Buffer.from(value).toString("base64url");
     now = () => Math.floor(Date.now() / 1e3);
+    TRUSTED_HOSTS = [
+      { host: "chatgpt.com", name: "ChatGPT" },
+      { host: "chat.openai.com", name: "ChatGPT" },
+      { host: "openai.com", name: "ChatGPT" },
+      { host: "claude.ai", name: "Claude" },
+      { host: "claude.com", name: "Claude" }
+    ];
     oauthCors = {
       "Access-Control-Allow-Origin": "*",
       "Access-Control-Allow-Methods": "GET, POST, OPTIONS",
@@ -7552,15 +7580,15 @@ __export(route_exports57, {
   POST: () => POST29
 });
 function check(params) {
-  const client = verify(params.client_id ?? "", "client");
-  if (!client) return { error: "Esta conexi\xF3n no est\xE1 registrada. Volv\xE9 a agregarla desde Claude." };
   const redirect = params.redirect_uri ?? "";
+  const client = resolveClient(params.client_id ?? "", redirect);
+  if (!client) return { error: "Esta conexi\xF3n no est\xE1 registrada. Volv\xE9 a agregarla desde Claude o ChatGPT, dejando vac\xEDos los campos de Client ID y Client secret." };
   if (!allowedRedirect(redirect) || !client.uris.includes(redirect)) return { error: "La direcci\xF3n de retorno no coincide con la registrada." };
   if (params.response_type !== "code" || params.code_challenge_method !== "S256" || !params.code_challenge) return { error: "Falta la verificaci\xF3n de seguridad (PKCE). Volv\xE9 a agregar la conexi\xF3n desde Claude." };
   return { client, redirect };
 }
 function form(params, clientName, error = "") {
-  return page(`<h1>Conectar Claude a Ecoase</h1>
+  return page(`<h1>Conectar a Ecoase</h1>
 <p><b>${escape(clientName)}</b> quiere leer y modificar el control operativo (pedidos, producci\xF3n, log\xEDstica y stock).</p>
 <form method="post" action="/oauth/authorize" autocomplete="off">
 ${hidden.filter((name) => params[name] !== void 0).map((name) => `<input type="hidden" name="${name}" value="${escape(params[name])}">`).join("")}
@@ -7575,7 +7603,7 @@ async function GET26(request) {
   const params = Object.fromEntries(new URL(request.url).searchParams);
   const result = check(params);
   if ("error" in result) return page(`<h1>No se pudo conectar</h1><p>${escape(result.error ?? "")}</p>`, 400);
-  return form(params, String(result.client.name ?? "Claude"));
+  return form(params, result.client.name);
 }
 async function POST29(request) {
   if (!oauthEnabled()) return page("<h1>No disponible</h1><p>El acceso con OAuth no est\xE1 habilitado en este servidor.</p>", 404);
@@ -7585,7 +7613,7 @@ async function POST29(request) {
   const scope = accessForCode(params.code ?? "");
   if (!scope) {
     await new Promise((resolve) => setTimeout(resolve, 1500));
-    return form(params, String(result.client.name ?? "Claude"), "C\xF3digo incorrecto. Prob\xE1 de nuevo.");
+    return form(params, result.client.name, "C\xF3digo incorrecto. Prob\xE1 de nuevo.");
   }
   const code = sign({ t: "code", cid: params.client_id, ru: result.redirect, cc: params.code_challenge, scope }, CODE_SECONDS);
   const target = new URL(result.redirect);
@@ -7603,7 +7631,7 @@ var init_route57 = __esm({
     init_core();
     page = (body, status = 200) => new Response(`<!doctype html>
 <html lang="es"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="robots" content="noindex">
-<title>Conectar Claude a Ecoase</title>
+<title>Conectar a Ecoase</title>
 <style>
 :root{color-scheme:light dark;--ink:#26343e;--bg:#f4f6f8;--card:#fff;--line:#d5dce2;--yellow:#ffca08;--muted:#5b6a76}
 @media (prefers-color-scheme:dark){:root{--ink:#eef2f5;--bg:#161e24;--card:#1f2a32;--line:#34434e;--muted:#9fb0bc}}
@@ -7631,19 +7659,19 @@ __export(route_exports58, {
 async function POST30(request) {
   if (!oauthEnabled()) return oauthError("temporarily_unavailable", "El acceso con OAuth no est\xE1 habilitado en este servidor.", 404);
   const params = await readParams(request);
-  const client = verify(params.client_id ?? "", "client");
-  if (!client) return oauthError("invalid_client", "Cliente no registrado.", 401);
+  const clientId = clientIdFrom(request, params);
   if (params.grant_type === "authorization_code") {
+    if (!resolveClient(clientId, params.redirect_uri ?? "")) return oauthError("invalid_client", "Cliente no registrado.", 401);
     const code = verify(params.code ?? "", "code");
-    if (!code || code.cid !== params.client_id) return oauthError("invalid_grant", "El c\xF3digo venci\xF3 o no es v\xE1lido. Volv\xE9 a conectar.");
+    if (!code || code.cid !== clientId) return oauthError("invalid_grant", "El c\xF3digo venci\xF3 o no es v\xE1lido. Volv\xE9 a conectar.");
     if (code.ru !== params.redirect_uri) return oauthError("invalid_grant", "La direcci\xF3n de retorno no coincide.");
     if (!params.code_verifier || !pkceMatches(params.code_verifier, String(code.cc))) return oauthError("invalid_grant", "La verificaci\xF3n PKCE fall\xF3.");
-    return json(issueTokens(code.scope, params.client_id));
+    return json(issueTokens(code.scope, clientId));
   }
   if (params.grant_type === "refresh_token") {
     const refresh = verify(params.refresh_token ?? "", "refresh");
-    if (!refresh || refresh.cid !== params.client_id) return oauthError("invalid_grant", "La sesi\xF3n venci\xF3. Volv\xE9 a conectar.");
-    return json(issueTokens(refresh.scope, params.client_id));
+    if (!refresh || refresh.cid !== clientId) return oauthError("invalid_grant", "La sesi\xF3n venci\xF3. Volv\xE9 a conectar.");
+    return json(issueTokens(refresh.scope, clientId));
   }
   return oauthError("unsupported_grant_type", "Solo se admite authorization_code y refresh_token.");
 }
@@ -7706,7 +7734,7 @@ async function GET27(request) {
     response_types_supported: ["code"],
     grant_types_supported: ["authorization_code", "refresh_token"],
     code_challenge_methods_supported: ["S256"],
-    token_endpoint_auth_methods_supported: ["none"],
+    token_endpoint_auth_methods_supported: ["none", "client_secret_post", "client_secret_basic"],
     scopes_supported: ["mcp"]
   });
 }

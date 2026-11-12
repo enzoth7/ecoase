@@ -1,8 +1,8 @@
-import { CODE_SECONDS, accessForCode, allowedRedirect, oauthCors, oauthEnabled, readParams, sign, verify } from "../core";
+import { CODE_SECONDS, accessForCode, allowedRedirect, oauthCors, oauthEnabled, readParams, resolveClient, sign } from "../core";
 
 const page = (body: string, status = 200) => new Response(`<!doctype html>
 <html lang="es"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="robots" content="noindex">
-<title>Conectar Claude a Ecoase</title>
+<title>Conectar a Ecoase</title>
 <style>
 :root{color-scheme:light dark;--ink:#26343e;--bg:#f4f6f8;--card:#fff;--line:#d5dce2;--yellow:#ffca08;--muted:#5b6a76}
 @media (prefers-color-scheme:dark){:root{--ink:#eef2f5;--bg:#161e24;--card:#1f2a32;--line:#34434e;--muted:#9fb0bc}}
@@ -21,16 +21,16 @@ const escape = (value: string) => value.replace(/[&<>"']/g, (char) => `&#${char.
 const hidden = ["response_type", "client_id", "redirect_uri", "code_challenge", "code_challenge_method", "state", "scope", "resource"];
 
 function check(params: Record<string, string>) {
-  const client = verify(params.client_id ?? "", "client");
-  if (!client) return { error: "Esta conexión no está registrada. Volvé a agregarla desde Claude." };
   const redirect = params.redirect_uri ?? "";
-  if (!allowedRedirect(redirect) || !(client.uris as string[]).includes(redirect)) return { error: "La dirección de retorno no coincide con la registrada." };
+  const client = resolveClient(params.client_id ?? "", redirect);
+  if (!client) return { error: "Esta conexión no está registrada. Volvé a agregarla desde Claude o ChatGPT, dejando vacíos los campos de Client ID y Client secret." };
+  if (!allowedRedirect(redirect) || !client.uris.includes(redirect)) return { error: "La dirección de retorno no coincide con la registrada." };
   if (params.response_type !== "code" || params.code_challenge_method !== "S256" || !params.code_challenge) return { error: "Falta la verificación de seguridad (PKCE). Volvé a agregar la conexión desde Claude." };
   return { client, redirect };
 }
 
 function form(params: Record<string, string>, clientName: string, error = "") {
-  return page(`<h1>Conectar Claude a Ecoase</h1>
+  return page(`<h1>Conectar a Ecoase</h1>
 <p><b>${escape(clientName)}</b> quiere leer y modificar el control operativo (pedidos, producción, logística y stock).</p>
 <form method="post" action="/oauth/authorize" autocomplete="off">
 ${hidden.filter((name) => params[name] !== undefined).map((name) => `<input type="hidden" name="${name}" value="${escape(params[name])}">`).join("")}
@@ -46,7 +46,7 @@ export async function GET(request: Request) {
   const params = Object.fromEntries(new URL(request.url).searchParams);
   const result = check(params);
   if ("error" in result) return page(`<h1>No se pudo conectar</h1><p>${escape(result.error ?? "")}</p>`, 400);
-  return form(params, String(result.client.name ?? "Claude"));
+  return form(params, result.client.name);
 }
 
 export async function POST(request: Request) {
@@ -57,7 +57,7 @@ export async function POST(request: Request) {
   const scope = accessForCode(params.code ?? "");
   if (!scope) {
     await new Promise((resolve) => setTimeout(resolve, 1500));
-    return form(params, String(result.client.name ?? "Claude"), "Código incorrecto. Probá de nuevo.");
+    return form(params, result.client.name, "Código incorrecto. Probá de nuevo.");
   }
   const code = sign({ t: "code", cid: params.client_id, ru: result.redirect, cc: params.code_challenge, scope }, CODE_SECONDS);
   const target = new URL(result.redirect!);

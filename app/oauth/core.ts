@@ -83,6 +83,39 @@ export function accessForBearer(sent: string): Scope | null {
   return access?.scope === "write" ? "write" : access?.scope === "read" ? "read" : null;
 }
 
+const TRUSTED_HOSTS: Array<{ host: string; name: string }> = [
+  { host: "chatgpt.com", name: "ChatGPT" }, { host: "chat.openai.com", name: "ChatGPT" }, { host: "openai.com", name: "ChatGPT" },
+  { host: "claude.ai", name: "Claude" }, { host: "claude.com", name: "Claude" },
+];
+
+function trustedHost(uri: string) {
+  try {
+    const url = new URL(uri);
+    if (url.protocol !== "https:" || url.hash) return undefined;
+    return TRUSTED_HOSTS.find(({ host }) => url.hostname === host || url.hostname.endsWith(`.${host}`));
+  } catch { return undefined; }
+}
+
+/**
+ * Cliente que se conecta. Lo normal es que se registre solo (registro dinámico) y traiga un client_id firmado.
+ * Si la persona cargó a mano un Client ID en ChatGPT o Claude, se acepta igual siempre que vuelva a una dirección
+ * de ChatGPT o Claude: el client_id de un cliente público no es un secreto; la seguridad la dan PKCE y el código de acceso.
+ */
+export function resolveClient(clientId: string, redirect: string): { name: string; uris: string[] } | null {
+  if (!clientId || clientId.length > 300) return null;
+  const registered = verify(clientId, "client");
+  if (registered) return { name: String(registered.name ?? "Claude"), uris: registered.uris as string[] };
+  const trusted = trustedHost(redirect);
+  return trusted ? { name: trusted.name, uris: [redirect] } : null;
+}
+
+/** El client_id puede llegar en el cuerpo o en un encabezado Basic (cuando el cliente cree tener un secreto). */
+export function clientIdFrom(request: Request, params: Record<string, string>) {
+  if (params.client_id) return params.client_id;
+  const basic = /^Basic\s+(.+)$/i.exec(request.headers.get("authorization") ?? "")?.[1];
+  return basic ? Buffer.from(basic, "base64").toString("utf8").split(":")[0] : "";
+}
+
 export function pkceMatches(verifier: string, challenge: string) {
   return same(createHash("sha256").update(verifier).digest("base64url"), challenge);
 }
