@@ -38,3 +38,39 @@ export function dryingQuantityOnDay(order: OperationOrder, quantity: number, day
   const offset = (parseDryingDay(day).valueOf() - parseDryingDay(start).valueOf()) / dryingDayMs;
   return Math.floor(quantity / duration) + Number(offset < quantity % duration);
 }
+
+export type DryingLineSplit = { done: Record<string, number>; pending: Record<string, number>; unscheduled: number; legacy: boolean };
+
+/**
+ * Reparte las unidades de una línea entre "ya tratado" (por día), "programado y pendiente" (por día) y "sin programar".
+ * Lo tratado ocupa primero los días programados más tempranos. Un pedido sin cantidades por día (programación vieja)
+ * se considera programado en todo su rango y no tiene unidades sin programar.
+ */
+export function dryingLineSplit(order: OperationOrder, line: OrderLine, planned: number): DryingLineSplit {
+  const allocations = [...(line.dryingAllocations ?? [])].sort((a, b) => a.date.localeCompare(b.date));
+  const orderHasAllocations = order.lines.some((item) => (item.dryingAllocations ?? []).length > 0);
+  const done: Record<string, number> = {}, pending: Record<string, number> = {};
+  const treated = Math.max(line.treatedQuantity ?? 0, 0);
+  if (allocations.length) {
+    let treatedLeft = treated;
+    for (const item of allocations) {
+      const doneHere = Math.min(item.quantity, treatedLeft);
+      treatedLeft -= doneHere;
+      if (doneHere > 0) done[item.date] = doneHere;
+      if (item.quantity - doneHere > 0) pending[item.date] = item.quantity - doneHere;
+    }
+    const allocated = allocations.reduce((sum, item) => sum + item.quantity, 0);
+    return { done, pending, unscheduled: Math.max(planned - Math.max(allocated, treated), 0), legacy: false };
+  }
+  // Sin cantidades por día: lo ya tratado se ubica en el primer día programado del pedido.
+  const start = order.dryingStartDate;
+  if (treated > 0 && start) done[start] = Math.min(treated, planned || treated);
+  return { done, pending, unscheduled: orderHasAllocations ? Math.max(planned - treated, 0) : 0, legacy: !orderHasAllocations };
+}
+
+/** Unidades programadas de una línea en un día. Es la misma cuenta para el calendario y para el registro de HT. */
+export function dryingPlannedOnDay(order: OperationOrder, line: OrderLine, planned: number, day: string) {
+  const split = dryingLineSplit(order, line, planned);
+  if (split.legacy) return dryingQuantityOnDay(order, planned, day);
+  return (split.done[day] ?? 0) + (split.pending[day] ?? 0);
+}

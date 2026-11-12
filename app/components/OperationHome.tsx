@@ -11,11 +11,11 @@ const StockBarsChart = lazy(() => import("./HomeCharts").then((module) => ({ def
 const OrderStatusDonutChart = lazy(() => import("./HomeCharts").then((module) => ({ default: module.OrderStatusDonutChart })));
 
 const orderStatusColors: Record<Exclude<OrderOperationalStatus, "delivered" | "cancelled">, string> = {
-  planned: "#87939C",
-  preparation: "#B58900",
-  ready_for_delivery: "#277448",
-  in_transit: "#41515E",
-  partial_delivery: "#3E6E9A",
+  planned: "#D9A000",
+  produced: "#1D6FD1",
+  ht_planning: "#5B9BE0",
+  ht_confirmed: "#1D6FD1",
+  shipped: "#2A9D5C",
 };
 
 type StockState = { status: "loading" | "ready" | "error"; rows: StockSummaryRow[] };
@@ -92,8 +92,13 @@ export default function OperationHome({ orders, treatmentProductIds, onOpenOrder
     { label: "Reservado", count: stock.rows.reduce((total, row) => total + (row.reserved || 0), 0), color: "#3E6E9A" },
     { label: "Disponible", count: stock.rows.reduce((total, row) => total + (row.available || 0), 0), color: "#277448" },
   ];
-  const orderStatusChart: OrderStatusChartPoint[] = (Object.keys(orderStatusColors) as Array<keyof typeof orderStatusColors>)
-    .map((status) => ({ label: orderOperationalStatusLabels[status], count: active.filter((order) => getOrderOperationalStatus(order) === status).length, color: orderStatusColors[status] }))
+  const stageGroups: Array<{ statuses: OrderOperationalStatus[]; color: string }> = [
+    { statuses: ["planned"], color: orderStatusColors.planned },
+    { statuses: ["produced", "ht_planning", "ht_confirmed"], color: orderStatusColors.produced },
+    { statuses: ["shipped"], color: orderStatusColors.shipped },
+  ];
+  const orderStatusChart: OrderStatusChartPoint[] = stageGroups
+    .map(({ statuses, color }) => ({ label: orderOperationalStatusLabels[statuses[0]], count: active.filter((order) => statuses.includes(getOrderOperationalStatus(order))).length, color }))
     .filter(({ count }) => count > 0);
 
   return <div className="home-page">

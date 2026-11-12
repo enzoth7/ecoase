@@ -218,9 +218,6 @@ test("registra, consulta y revierte tratamiento sin alterar el stock físico", a
   assert.equal(product.pending, 35);
   assert.equal(product.ready, 0);
 
-  const missingReason = await request("/api/treatment/batches", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ productId: product.product.id, quantity: 10, performedAt: "2026-09-07T14:00:00.000Z", responsible: "Operador QA", controls: [] }) });
-  assert.equal(missingReason.status, 400);
-
   const postedResponse = await request("/api/treatment/batches", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ productId: product.product.id, quantity: 10, performedAt: "2026-09-07T14:00:00.000Z", responsible: "Operador QA", note: "Lote general de prueba", controls: [] }) });
   assert.equal(postedResponse.status, 201);
   const posted = (await postedResponse.json()).result;

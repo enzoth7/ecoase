@@ -20,6 +20,15 @@ Estas reglas se aplican a todas las pantallas del dashboard y deben verificarse 
 - Mantener foco visible, contraste de texto de al menos 4.5:1, estados vacíos útiles y diseños sin desplazamiento horizontal.
 - Conservar las reglas existentes sobre filtros de columna, ausencia de franjas laterales de color, nomenclatura y comportamiento operativo.
 
+## Reglas de color
+
+- Un solo amarillo de acción: `--brand-yellow` (`#FFCA08`), con texto `--brand-black`. Todo botón de acción principal o de alta («Agregar…», «Registrar…», «Programar…») usa la clase `.primary-button`; no definir amarillos nuevos ni copiar el valor a mano en una pantalla.
+- Los botones secundarios usan `.secondary-button` y los de solo icono `.od-icon-button`. Ningún botón nuevo recibe un color propio.
+- Etapas y tipos de actividad usan las variables `--kind-*` de `app/globals.css`: producción amarillo (`--kind-production`), transporte azul (`--kind-transport`) y entrega/envío verde (`--kind-delivery`), con sus variantes `-soft` y `-line` para fondos y contornos. Ese mismo color identifica la etapa en calendarios, tablas, KPI, leyendas y etiquetas de estado (Planificando amarillo, Produciendo azul, Enviando verde).
+- Rojo solo para lo que no se hizo, está atrasado o es un error; nunca como decoración.
+- Encabezados de columnas y barras de contenedor en `--brand-black` (`#26343E`) con texto blanco; navegación lateral en grafito.
+- Los colores se toman siempre de variables CSS definidas en `app/globals.css`. Si hace falta un color nuevo, se agrega allí como variable y se documenta en esta sección antes de usarlo.
+
 ## Contenido y movimiento
 
 - No agregar párrafos ni elementos `<span>` para rellenar tarjetas, repetir títulos o crear texto ornamental. Conservarlos cuando aportan datos, instrucciones, estados o estructura semántica útil.

@@ -1,9 +1,9 @@
 "use client";
 
-import { AlertTriangle, CalendarRange, Check, CheckCircle2, ChevronDown, Factory, Users } from "lucide-react";
+import { AlertTriangle, CalendarClock, CalendarRange, Check, CheckCircle2, Factory, Plus, Users } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties, type DragEvent } from "react";
 import type { CapacitySnapshot } from "../capacity";
-import { getOrderPlannedDate, type OperationOrder, type OrderLine, type Product } from "../data";
+import { getOrderPlannedDate, getOrderRequestedDate, type OperationOrder, type OrderLine, type Product } from "../data";
 import type { ProductLevel } from "../classification";
 import { productLabel } from "../master-data";
 import type { ProductionAssignmentSummary, ProductionCapacityRule, ProductionResource } from "../production-capacity";
@@ -144,7 +144,7 @@ export function ProductionBoard({ capacity, days, products, highlightOrderId, on
     const used = resourceDays.reduce((sum, entry) => sum + (entry.normalLoad ?? 0), 0);
     return { day, missing, used, available: resources.length, percent: missing || !resources.length ? undefined : Math.round(used / resources.length * 100) };
   });
-  return <div className="production-board-wrap"><table className="production-board">
+  return <div className="production-board-wrap"><table className="production-board" data-column-filters="off">
     <thead><tr><th scope="col" className="production-board-corner">Quién produce</th>{days.map((day) => <th scope="col" key={day} className={`${day === today ? "today" : ""} ${target?.day === day ? "board-day-target" : ""}`}><span>{weekdayLabel(day)}</span><strong>{parseDate(day).getDate()}</strong></th>)}</tr></thead>
     <tbody>{resources.map((resource) => <tr key={resource.id}>
       <th scope="row"><strong>{resource.name}</strong><small>{resourceKind(resource)}</small></th>
@@ -184,8 +184,8 @@ export function ProductionBoard({ capacity, days, products, highlightOrderId, on
       })}
     </tr>)}</tbody>
     <tfoot>
-      <tr className="board-total-row"><th scope="row">Total planificado a producir</th>{dayTotals.map(({ day, total }) => <td key={day} data-day={day} data-total={total} data-column-label={`${weekdayLabel(day)} ${parseDate(day).getDate()}`} aria-label={`${weekdayLabel(day)} ${parseDate(day).getDate()}: ${number.format(total)} ${total === 1 ? "palet" : "palets"} planificados`}><strong>{number.format(total)}</strong><small>{total === 1 ? "palet" : "palets"}</small></td>)}</tr>
-      <tr className="board-produced-row"><th scope="row">Total producido</th>{producedDayTotals.map(({ day, total }) => <td key={day} data-day={day} data-produced-total={total} data-column-label={`${weekdayLabel(day)} ${parseDate(day).getDate()}`} aria-label={`${weekdayLabel(day)} ${parseDate(day).getDate()}: ${number.format(total)} ${total === 1 ? "palet" : "palets"} producidos`}><strong>{number.format(total)}</strong><small>{total === 1 ? "palet" : "palets"}</small></td>)}</tr>
+      <tr className="board-total-row"><th scope="row">Total planificado a producir</th>{dayTotals.map(({ day, total }) => <td key={day} data-day={day} data-total={total} data-column-label={`${weekdayLabel(day)} ${parseDate(day).getDate()}`} aria-label={`${weekdayLabel(day)} ${parseDate(day).getDate()}: ${number.format(total)} ${total === 1 ? "unidad" : "unidades"} planificadas`}><strong>{number.format(total)}</strong><small>u.</small></td>)}</tr>
+      <tr className="board-produced-row"><th scope="row">Total producido</th>{producedDayTotals.map(({ day, total }) => <td key={day} data-day={day} data-produced-total={total} data-column-label={`${weekdayLabel(day)} ${parseDate(day).getDate()}`} aria-label={`${weekdayLabel(day)} ${parseDate(day).getDate()}: ${number.format(total)} ${total === 1 ? "unidad" : "unidades"} producidas`}><strong>{number.format(total)}</strong><small>u.</small></td>)}</tr>
       <tr className="board-capacity-row"><th scope="row">Uso de capacidad normal</th>{normalDayTotals.map(({ day, missing, percent }) => <td key={day} data-day={day} data-capacity-percent={percent} data-column-label={`${weekdayLabel(day)} ${parseDate(day).getDate()}`} style={percent === undefined ? undefined : { "--load-hue": String(Math.round(140 * (1 - Math.min(percent, 100) / 100))) } as CSSProperties} aria-label={missing ? `${weekdayLabel(day)} ${parseDate(day).getDate()}: capacidad sin calcular` : `${weekdayLabel(day)} ${parseDate(day).getDate()}: ${percent ?? 0}% de la capacidad normal utilizada`}><strong>{missing ? "Sin calcular" : `${percent ?? 0}%`}</strong></td>)}</tr>
     </tfoot>
   </table></div>;
@@ -285,7 +285,7 @@ export function PlanProductionWizard({ order, products, pendingOnly = false, onC
   };
 
   const progress = plannedOrderProgress(order);
-  const quantityLabel = pendingOnly ? `${number.format(progress.toSchedule)} palets por planificar` : `${number.format(progress.pending)} palets por producir`;
+  const quantityLabel = pendingOnly ? `${number.format(progress.toSchedule)} unidades por planificar` : `${number.format(progress.pending)} unidades por producir`;
   return <ModalShell title={pendingOnly ? "Planificar pendientes" : "Planificar producción"} description={`${order.client} · ${quantityLabel} · Entrega ${shortDate(getOrderPlannedDate(order))}`} className="plan-wizard-modal" onClose={onClose} dirty={totalAssigned > 0 && !saving}>
     <ol className="wizard-steps" aria-label="Pasos de la planificación">{steps.map((label, index) => <li key={label} className={index === step ? "current" : index < step ? "done" : ""}><button type="button" onClick={() => index <= step && setStep(index as Step)} disabled={index > step}><span>{index < step ? <Check size={13} aria-hidden="true" /> : index + 1}</span>{label}</button></li>)}</ol>
     <div className="wizard-layout">
@@ -303,12 +303,12 @@ export function PlanProductionWizard({ order, products, pendingOnly = false, onC
         </section>}
         {capacity && step === 2 && currentLine && <section className="wizard-section" aria-labelledby="wizard-quantities-title">
           <header><div><h3 id="wizard-quantities-title">¿Cuánto por día?</h3></div><button type="button" className="secondary-button" onClick={autoDistribute}>Repartir automáticamente</button></header>
-          {pendingOnly && <p className="wizard-note">Faltan {number.format(order.lines.reduce((sum, line) => sum + Math.max(remainingFor(line), 0), 0))} palets por planificar.</p>}
+          {pendingOnly && <p className="wizard-note">Faltan {number.format(order.lines.reduce((sum, line) => sum + Math.max(remainingFor(line), 0), 0))} unidades por planificar.</p>}
           {order.lines.length > 1 && <div className="segmented" role="tablist" aria-label="Producto">{order.lines.map((line) => <button type="button" role="tab" key={line.id} aria-selected={line.id === currentLine.id} className={line.id === currentLine.id ? "active" : ""} onClick={() => setLineId(line.id)}>{line.product}<small>{number.format(Math.max(remainingFor(line), 0))} por asignar</small></button>)}</div>}
-          <div className="quantity-grid-wrap"><table className="quantity-grid"><thead><tr><th scope="col">Recurso</th>{sortedDays.map((day) => <th scope="col" key={day}>{weekdayLabel(day)} {parseDate(day).getDate()}</th>)}</tr></thead><tbody>{selectedResources.map((resourceId) => { const resource = resources.find((item) => String(item.id) === resourceId); if (!resource || !resourceFitsLine(resource, currentLine)) return null; return <tr key={resourceId}><th scope="row">{resource.name}</th>{sortedDays.map((day) => { const rule = ruleFor(capacity.production.rules, resource.id, currentLine.clientProductId, day); const load = cellLoad(capacity, resource, day, order.id, plannedAt(resourceId, day)); return <td key={day} className={`load-${load.status}`}><input type="number" min="0" step="1" inputMode="numeric" aria-label={`${resource.name}, ${weekdayLabel(day)} ${parseDate(day).getDate()}`} value={quantities[key(currentLine.id, resourceId, day)] || ""} placeholder="0" onChange={(event) => setQuantities((current) => ({ ...current, [key(currentLine.id, resourceId, day)]: Math.max(Number(event.target.value) || 0, 0) }))} /><small>{rule ? `normal ${number.format(rule.normalUnitsPerDay)} · máx ${number.format(rule.maximumUnitsPerDay)}` : "Sin regla"}</small></td>; })}</tr>; })}</tbody></table></div>
+          <div className="quantity-grid-wrap"><table className="quantity-grid" data-column-filters="off"><thead><tr><th scope="col">Recurso</th>{sortedDays.map((day) => <th scope="col" key={day}>{weekdayLabel(day)} {parseDate(day).getDate()}</th>)}</tr></thead><tbody>{selectedResources.map((resourceId) => { const resource = resources.find((item) => String(item.id) === resourceId); if (!resource || !resourceFitsLine(resource, currentLine)) return null; return <tr key={resourceId}><th scope="row">{resource.name}</th>{sortedDays.map((day) => { const rule = ruleFor(capacity.production.rules, resource.id, currentLine.clientProductId, day); const load = cellLoad(capacity, resource, day, order.id, plannedAt(resourceId, day)); return <td key={day} className={`load-${load.status}`}><input type="number" min="0" step="1" inputMode="numeric" aria-label={`${resource.name}, ${weekdayLabel(day)} ${parseDate(day).getDate()}`} value={quantities[key(currentLine.id, resourceId, day)] || ""} placeholder="0" onChange={(event) => setQuantities((current) => ({ ...current, [key(currentLine.id, resourceId, day)]: Math.max(Number(event.target.value) || 0, 0) }))} /><small>{rule ? `normal ${number.format(rule.normalUnitsPerDay)} · máx ${number.format(rule.maximumUnitsPerDay)}` : "Sin regla"}</small></td>; })}</tr>; })}</tbody></table></div>
           <div className="line-progress">{order.lines.map((line) => { const done = line.quantity - remainingFor(line); return <div key={line.id} className={remainingFor(line) < 0 ? "danger" : remainingFor(line) === 0 ? "complete" : ""}><span>{line.product}</span><div role="progressbar" aria-valuemin={0} aria-valuemax={line.quantity} aria-valuenow={done} aria-label={`Asignado de ${line.product}`}><i style={{ width: `${Math.min(done / line.quantity * 100, 100)}%` }} /></div><strong>{number.format(done)} / {number.format(line.quantity)}</strong></div>; })}</div>
-          {fixed.length > 0 && <p className="wizard-note">Ya se fabricaron {number.format(fixed.filter((entry) => entry.item.status === "completed").reduce((sum, entry) => sum + (entry.item.actualQuantity ?? 0), 0))} palets. Cuentan tanto los asignados a {order.client} como los que quedaron en stock general. Las asignaciones confirmadas no se modifican.</p>}
-          {overAssigned && <FieldError id="wizard-over">Asignaste más palets que los del pedido.</FieldError>}
+          {fixed.length > 0 && <p className="wizard-note">Ya se fabricaron {number.format(fixed.filter((entry) => entry.item.status === "completed").reduce((sum, entry) => sum + (entry.item.actualQuantity ?? 0), 0))} unidades. Cuentan tanto los asignados a {order.client} como los que quedaron en stock general. Las asignaciones confirmadas no se modifican.</p>}
+          {overAssigned && <FieldError id="wizard-over">Asignaste más unidades que los del pedido.</FieldError>}
         </section>}
         {capacity && step === 3 && <section className="wizard-section" aria-labelledby="wizard-confirm-title">
           <header><div><h3 id="wizard-confirm-title">Revisá y confirmá</h3></div></header>
@@ -366,14 +366,10 @@ export default function ProductionPlanningView({ orders, products, levels, refre
   const pending = orders.filter((order) => order.productionDefined === false).sort((left, right) => getOrderPlannedDate(left).localeCompare(getOrderPlannedDate(right)));
   const planned = orders.filter((order) => order.productionDefined !== false && order.productionDate).sort((left, right) => (left.productionDate ?? "").localeCompare(right.productionDate ?? "")).slice(0, 12);
   const plannedWithProgress = planned.map((order) => ({ order, progress: plannedOrderProgress(order) }));
-  const inProgressCount = plannedWithProgress.filter(({ progress }) => progress.produced > 0 && progress.pending > 0).length;
-  const pendingCount = plannedWithProgress.filter(({ progress }) => progress.pending > 0).length;
-  const completedCount = plannedWithProgress.filter(({ progress }) => progress.produced > 0 && progress.pending === 0).length;
   return <div className="phase-page">
     <section className="module-surface phase-queue" aria-labelledby="production-queue-title">
       <header className="phase-header"><div><h2 id="production-queue-title">Pedidos sin producción definida</h2></div>{pending.length > 0 && <span className="count-pill warning">{pending.length} por planificar</span>}</header>
-      {pending.length ? <div className="queue-list">{pending.map((order) => <article key={order.id} className="queue-card"><div className="queue-card-main"><strong>{order.client}</strong><span>{order.lines.map((line) => `${line.product} × ${number.format(line.quantity)}`).join(" · ")}</span></div><div className="queue-card-meta"><small>Entrega</small><strong>{shortDate(getOrderPlannedDate(order))}</strong></div><div className="queue-card-meta"><small>Palets</small><strong>{number.format(order.requested)}</strong></div><button type="button" className="primary-button" onClick={() => onPlan(order)}>Planificar</button></article>)}</div> : <EmptyState icon={CheckCircle2} title="No hay pedidos sin planificación inicial" />}
-      {plannedWithProgress.length > 0 && <details className="queue-planned"><summary><span className="queue-planned-label">Planificados recientemente ({plannedWithProgress.length})</span><span className="queue-planned-summary-statuses">{inProgressCount > 0 && <span className="queue-progress-badge in-progress">{inProgressCount} en progreso</span>}{pendingCount > 0 && <span className="queue-progress-badge pending">{pendingCount} con pendientes</span>}{completedCount > 0 && <span className="queue-progress-badge completed">{completedCount} completados</span>}</span><ChevronDown size={17} aria-hidden="true" /></summary><div className="queue-list compact">{plannedWithProgress.map(({ order, progress }) => <article key={order.id} className="queue-card"><div className="queue-card-main"><strong>{order.client}</strong><span>{productionRangeLabel(order)}</span><div className="queue-card-statuses">{progress.produced > 0 && progress.pending > 0 && <span className="queue-progress-badge in-progress">En progreso</span>}{progress.pending > 0 && <span className="queue-progress-badge pending">Aún quedan pendientes: {number.format(progress.pending)} palets</span>}{progress.produced > 0 && progress.pending === 0 && <span className="queue-progress-badge completed">Producción completada</span>}</div>{progress.toSchedule > 0 && <small>{number.format(progress.toSchedule)} palets por planificar</small>}</div><div className="queue-card-meta"><small>Entrega</small><strong>{shortDate(getOrderPlannedDate(order))}</strong></div><div className="queue-card-actions">{progress.toSchedule > 0 && <button type="button" className="primary-button" onClick={() => onPlanPending(order)}>Planificar pendientes</button>}<button type="button" className="secondary-button" onClick={() => onPlan(order)}>Replanificar</button></div></article>)}</div></details>}
+      {pending.length ? <div className="queue-list">{pending.map((order) => <article key={order.id} className="queue-card"><div className="queue-card-main"><strong>{order.client}</strong><span>{order.lines.map((line) => `${line.product} × ${number.format(line.quantity)}`).join(" · ")}</span></div><div className="queue-card-meta"><small>Entrega</small><strong>{shortDate(getOrderPlannedDate(order))}</strong></div><div className="queue-card-meta"><small>Unidades</small><strong>{number.format(order.requested)}</strong></div><button type="button" className="primary-button" onClick={() => onPlan(order)}>Planificar</button></article>)}</div> : <EmptyState icon={CheckCircle2} title="No hay pedidos sin planificación inicial" />}
     </section>
     <section className="module-surface" aria-labelledby="production-board-title">
       <header className="phase-header"><div><h2 id="production-board-title">Calendario interno</h2></div><WeekNavigator label={formatRange(days)} onPrevious={() => setWeekStart((current) => { const next = new Date(current); next.setDate(next.getDate() - 7); return next; })} onNext={() => setWeekStart((current) => { const next = new Date(current); next.setDate(next.getDate() + 7); return next; })} /></header>
@@ -383,6 +379,32 @@ export default function ProductionPlanningView({ orders, products, levels, refre
       {moving && <p className="board-saving" role="status">Moviendo asignación…</p>}
       {loading && !capacity ? <LoadingState label="Cargando calendario" rows={5} /> : capacity && <ProductionBoard capacity={capacity} days={days} products={products} onSelectAssignment={(assignment, resource, day) => setSelectedAssignment({ assignment, resource, day })} onMoveAssignment={moveAssignment} />}
     </section>
+    {plannedWithProgress.length > 0 && <section className="module-surface production-planned-section" aria-labelledby="production-planned-title">
+      <header className="phase-header"><div><h2 id="production-planned-title">Producción planificada</h2></div><span className="count-pill">{plannedWithProgress.length} {plannedWithProgress.length === 1 ? "pedido" : "pedidos"}</span></header>
+      <div className="production-table-wrap"><table className="production-planned-table" data-column-filters="off">
+        <thead><tr><th scope="col">Cliente</th><th scope="col">Producción</th><th scope="col">Entrega</th><th scope="col" className="num">Pedido</th><th scope="col" className="num">Producido</th><th scope="col" className="num">Pendiente</th><th scope="col">Avance</th><th scope="col">Estado</th><th scope="col"><span className="sr-only">Acciones</span></th></tr></thead>
+        <tbody>{plannedWithProgress.map(({ order, progress }) => {
+          const total = Math.max(order.requested, 1);
+          const percent = Math.min(Math.round(progress.produced / total * 100), 100);
+          const done = progress.produced > 0 && progress.pending === 0;
+          const started = progress.produced > 0;
+          return <tr key={order.id}>
+            <th scope="row">{order.client}</th>
+            <td>{productionRangeLabel(order)}</td>
+            <td>{shortDate(getOrderRequestedDate(order))}</td>
+            <td className="num">{number.format(order.requested)}</td>
+            <td className="num">{number.format(progress.produced)}</td>
+            <td className="num">{number.format(progress.pending)}</td>
+            <td><div className="planned-progress" role="img" aria-label={`${percent}% producido`}><i style={{ width: `${percent}%` }} /><span>{percent}%</span></div></td>
+            <td><span className={`status-badge ${done ? "shipped" : started ? "produced" : "planned"}`}>{done ? "Completada" : started ? "Produciendo" : "Planificada"}</span></td>
+            <td className="planned-actions">
+              {progress.toSchedule > 0 && <button type="button" className="od-icon-button" onClick={() => onPlanPending(order)} aria-label={`Planificar los ${number.format(progress.toSchedule)} unidades pendientes de ${order.client}`} title={`Planificar ${number.format(progress.toSchedule)} unidades pendientes`}><Plus size={18} aria-hidden="true" /></button>}
+              <button type="button" className="od-icon-button" onClick={() => onPlan(order)} aria-label={`Replanificar producción de ${order.client}`} title="Replanificar"><CalendarClock size={18} aria-hidden="true" /></button>
+            </td>
+          </tr>;
+        })}</tbody>
+      </table></div>
+    </section>}
     {selectedAssignment && <ModalShell title="Detalle de producción" description={selectedAssignment.assignment.orderReference} onClose={() => setSelectedAssignment(null)} className="production-detail-modal">
       <dl className="production-detail-list">
         <div><dt>Producto</dt><dd>{selectedProduct ? productLabel(selectedProduct) : selectedAssignment.assignment.productName}</dd></div>

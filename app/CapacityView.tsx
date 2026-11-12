@@ -1,16 +1,18 @@
 "use client";
 
-import { AlertTriangle, Factory, Plus, Settings2, Truck } from "lucide-react";
+import { AlertTriangle, Factory, Pencil, Plus, Truck } from "lucide-react";
 import { useCallback, useEffect, useMemo, useState, type FormEvent } from "react";
 import type { CapacityDay, CapacitySnapshot } from "./capacity";
 import type { CapacityStatus, Product, Provider, TransportSource } from "./data";
 import type { ProductionAssignmentSummary, ProductionResource, ProductionResourceDay } from "./production-capacity";
 import { AsyncButton, FieldError, LoadingState, ModalShell, WeekNavigator } from "./components/ui";
 import ClientProductionRules from "./components/ClientProductionRules";
+import { canProduceProductKind } from "./production-resource-applicability";
 import ProductionResultModal, { type RecordedProductionResult } from "./components/ProductionResultModal";
 import { canonicalProductName } from "./classification";
 
 const number = new Intl.NumberFormat("es-UY");
+const kindOptions: Array<{ value: "Pallet" | "Bin" | "Piso"; label: string }> = [{ value: "Pallet", label: "Pallets" }, { value: "Bin", label: "Bins" }, { value: "Piso", label: "Pisos" }];
 const resourceTypeLabels: Record<ProductionResource["resourceType"], string> = {
   external_supplier: "Proveedor externo",
   internal_crew: "Cuadrilla interna",
@@ -29,11 +31,47 @@ function formatRange(start: Date) { const end = new Date(start); end.setDate(sta
 function formatDate(date: string, long = false) { return new Intl.DateTimeFormat("es-UY", long ? { weekday: "long", day: "numeric", month: "long" } : { day: "numeric", month: "short" }).format(new Date(`${date}T12:00:00`)); }
 function displayProductName(value: string) { return canonicalProductName(value); }
 
-function ResourceModal({ capacity, providers, onClose, onSaved }: { capacity: CapacitySnapshot; providers: Provider[]; onClose: () => void; onSaved: () => Promise<void> }) {
-  const [saving, setSaving] = useState(false); const [error, setError] = useState(""); const [type, setType] = useState<ProductionResource["resourceType"]>("internal_crew");
-  const mutate = async (body: unknown) => { setSaving(true); setError(""); const response = await fetch("/api/capacity/resources", { method: "PATCH", headers: { "content-type": "application/json" }, body: JSON.stringify(body) }); const payload = await response.json() as { error?: string }; setSaving(false); if (!response.ok) return setError(payload.error ?? "No se pudo actualizar."); await onSaved(); };
-  const submit = async (event: FormEvent<HTMLFormElement>) => { event.preventDefault(); setSaving(true); setError(""); const form = new FormData(event.currentTarget); const providerId = String(form.get("providerId") ?? ""); const response = await fetch("/api/capacity/resources", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ name: form.get("name"), resourceType: type, providerId: type === "external_supplier" ? providerId : undefined, displayOrder: form.get("displayOrder") }) }); const payload = await response.json() as { error?: string }; setSaving(false); if (!response.ok) return setError(payload.error ?? "No se pudo crear el recurso."); await onSaved(); };
-  return <ModalShell title="Gestionar recursos" onClose={onClose}><div className="production-resource-manager"><div className="production-resource-manager-list">{capacity.production.resources.map((resource) => <div key={resource.id}><div><strong>{resource.name}</strong><small>{resource.resourceType === "internal_factory" ? "Fábrica" : resource.resourceType === "internal_crew" ? "Cuadrilla" : "Proveedor externo"}</small></div><button type="button" className={resource.active ? "resource-active" : ""} disabled={saving} onClick={() => void mutate({ id: resource.id, active: !resource.active })}>{resource.active ? "Activo" : "Inactivo"}</button></div>)}</div><form onSubmit={submit} className="production-modal-form"><h3>Agregar recurso</h3><label>Nombre<input name="name" required /></label><label>Tipo<select value={type} onChange={(event) => setType(event.target.value as ProductionResource["resourceType"])}><option value="internal_crew">Cuadrilla interna</option><option value="internal_factory">Fábrica interna</option><option value="external_supplier">Proveedor externo</option></select></label>{type === "external_supplier" && <label>Proveedor<select name="providerId" required defaultValue=""><option value="" disabled>Seleccionar</option>{providers.filter((provider) => provider.type === "Aserradero").map((provider) => <option key={provider.id} value={provider.id}>{provider.name}</option>)}</select></label>}<label>Orden<input name="displayOrder" type="number" min="0" defaultValue="100" required /></label><FieldError id="resource-error">{error}</FieldError><div className="modal-actions"><AsyncButton type="submit" className="primary-button" loading={saving}><Plus size={15} />Agregar</AsyncButton></div></form></div></ModalShell>;
+function ResourceModal({ resource, providers, onClose, onSaved }: { resource?: ProductionResource; providers: Provider[]; onClose: () => void; onSaved: () => Promise<void> }) {
+  const [saving, setSaving] = useState(false); const [error, setError] = useState("");
+  const [type, setType] = useState<ProductionResource["resourceType"]>(resource?.resourceType ?? "internal_crew");
+  const [name, setName] = useState(resource?.name ?? "");
+  const [active, setActive] = useState(resource?.active ?? true);
+  const [order, setOrder] = useState(String(resource?.displayOrder ?? 100));
+  const [providerId, setProviderId] = useState(resource?.providerId ?? "");
+  const [kinds, setKinds] = useState<Array<"Pallet" | "Bin" | "Piso">>(() => kindOptions.filter((item) => resource ? canProduceProductKind(resource, item.value) : true).map((item) => item.value));
+  const toggleKind = (value: "Pallet" | "Bin" | "Piso") => setKinds((current) => current.includes(value) ? current.filter((item) => item !== value) : [...current, value]);
+  const call = async (method: "POST" | "PATCH", body: unknown) => {
+    const response = await fetch("/api/capacity/resources", { method, headers: { "content-type": "application/json" }, body: JSON.stringify(body) });
+    const payload = await response.json() as { error?: string; resource?: ProductionResource };
+    if (!response.ok) throw new Error(payload.error ?? "No se pudo guardar.");
+    return payload.resource;
+  };
+  const submit = async (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    if (!kinds.length) { setError("Elegí al menos un tipo de producto."); return; }
+    setSaving(true); setError("");
+    try {
+      if (resource) await call("PATCH", { id: resource.id, name, active, displayOrder: Number(order), productKinds: kinds });
+      else {
+        const created = await call("POST", { name, resourceType: type, providerId: type === "external_supplier" ? providerId : undefined, displayOrder: Number(order) });
+        if (created && kinds.length < kindOptions.length) await call("PATCH", { id: created.id, productKinds: kinds });
+      }
+      await onSaved(); onClose();
+    } catch (caught) { setError(caught instanceof Error ? caught.message : "No se pudo guardar."); }
+    finally { setSaving(false); }
+  };
+  return <ModalShell title={resource ? "Editar recurso" : "Agregar recurso"} onClose={onClose}>
+    <form className="production-result-form" onSubmit={submit}>
+      <label>Nombre<input required value={name} onChange={(event) => setName(event.target.value)} /></label>
+      {!resource && <label>Tipo<select value={type} onChange={(event) => setType(event.target.value as ProductionResource["resourceType"])}><option value="internal_crew">Cuadrilla interna</option><option value="internal_factory">Fábrica interna</option><option value="external_supplier">Proveedor externo</option></select></label>}
+      {!resource && type === "external_supplier" && <label>Proveedor<select required value={providerId} onChange={(event) => setProviderId(event.target.value)}><option value="" disabled>Seleccionar</option>{providers.filter((provider) => provider.type === "Aserradero").map((provider) => <option key={provider.id} value={provider.id}>{provider.name}</option>)}</select></label>}
+      <fieldset className="resource-kind-picker resource-kind-fieldset"><legend>Producen</legend>{kindOptions.map((item) => <label key={item.value}><input type="checkbox" checked={kinds.includes(item.value)} onChange={() => toggleKind(item.value)} />{item.label}</label>)}</fieldset>
+      <label>Orden<input type="number" min="0" required value={order} onChange={(event) => setOrder(event.target.value)} /></label>
+      {resource && <label className="resource-kind-picker"><input type="checkbox" checked={active} onChange={(event) => setActive(event.target.checked)} />Activo</label>}
+      <FieldError id="resource-error">{error}</FieldError>
+      <div className="modal-actions"><button type="button" className="secondary-button" onClick={onClose}>Cancelar</button><AsyncButton type="submit" className="primary-button" loading={saving}>Guardar</AsyncButton></div>
+    </form>
+  </ModalShell>;
 }
 
 export function GeneralTransport({ capacity, providers, onSave }: { capacity: CapacitySnapshot; providers: Provider[]; onSave: (url: string, body: unknown) => Promise<void> }) {
@@ -58,7 +96,7 @@ export function DayLogisticsAdjustmentModal({ day, transporters, onClose, onSave
 export default function CapacityView({ providers, products, clients, selectedClientId, focusProductIds = [], validFrom, view = "production", initialDate, onPlan, onResultSaved }: { providers: Provider[]; products: Product[]; clients: Array<{ id?: string; name: string }>; selectedClientId?: string; focusProductIds?: string[]; validFrom?: string; view?: "production" | "resources" | "rules"; initialDate?: string; onPlan?: (orderId: string) => void; onResultSaved?: (assignment: ProductionAssignmentSummary, result: RecordedProductionResult) => void }) {
   const validInitialDate = initialDate && /^\d{4}-\d{2}-\d{2}$/.test(initialDate) ? initialDate : undefined;
   const [weekStart, setWeekStart] = useState(() => startOfWeek(validInitialDate ? new Date(`${validInitialDate}T12:00:00`) : new Date())); const [capacity, setCapacity] = useState<CapacitySnapshot | null>(null); const [loading, setLoading] = useState(true); const [error, setError] = useState("");
-  const [resourceModal, setResourceModal] = useState(false); const [recording, setRecording] = useState<ProductionAssignmentSummary | null>(null);
+  const [resourceModal, setResourceModal] = useState<ProductionResource | "new" | null>(null); const [recording, setRecording] = useState<ProductionAssignmentSummary | null>(null);
   const from = dateKey(weekStart); const weekEnd = useMemo(() => { const value = new Date(weekStart); value.setDate(value.getDate() + 6); return value; }, [weekStart]); const to = dateKey(weekEnd);
   const load = useCallback(async () => { setLoading(true); setError(""); try { const response = await fetch(`/api/capacity?from=${from}&to=${to}`); const body = await response.json() as { capacity?: CapacitySnapshot; error?: string }; if (!response.ok || !body.capacity) throw new Error(body.error ?? "No se pudo cargar la capacidad."); setCapacity(body.capacity); } catch (caught) { setError(caught instanceof Error ? caught.message : "No se pudo cargar la capacidad."); } finally { setLoading(false); } }, [from, to]);
   useEffect(() => {
@@ -79,27 +117,28 @@ export default function CapacityView({ providers, products, clients, selectedCli
   const moveWeek = (amount: number) => setWeekStart((current) => { const value = new Date(current); value.setDate(value.getDate() + amount * 7); return value; });
   return <section className="production-capacity-page" aria-labelledby="capacity-title">
     {error && <p className="capacity-error" role="alert">{error}</p>}{loading && !capacity && <div className="module-surface capacity-loading"><LoadingState label="Cargando producción" rows={5} /></div>}
-    {capacity && view === "production" && <section className="module-surface production-weekly-panel" aria-labelledby="capacity-title">
-      <div className="module-toolbar production-weekly-toolbar"><div><h2 id="capacity-title">Producción real</h2><p className="production-week-summary"><span><strong>{pendingResults}</strong> pendientes de registrar</span></p></div><WeekNavigator label={formatRange(weekStart)} onPrevious={() => moveWeek(-1)} onNext={() => moveWeek(1)} /></div>
-      <div className="production-real-days">{capacity.production.days.map((day) => {
-        const dayRows = rows.filter((row) => row.date === day.date);
-        return <section className="production-real-day" key={day.date} aria-label={formatDate(day.date, true)}>
-          <h3>{formatDate(day.date, true)}</h3>
-          {dayRows.length ? <div className="production-real-list">{dayRows.map((row) => {
-            const assignment = row.assignment;
-            const completed = assignment.status === "completed";
-            return <article className="production-real-item" key={assignment.id}>
-              <div className="production-real-main"><strong>{displayProductName(assignment.productName)}</strong><span>{assignment.client}</span><small>{row.entry?.resource.name ?? "Sin productor asignado"}</small></div>
-              <div className="production-real-quantities"><span>Planificado<strong>{number.format(assignment.plannedQuantity)}</strong></span><span>Real<strong>{completed ? number.format(assignment.actualQuantity ?? 0) : "Pendiente"}</strong></span></div>
-              {completed ? <div className="production-real-outcome"><strong>{assignment.actualQuantity === 0 ? "No se produjo" : assignment.resultDestination === "stock" ? "Stock general" : `Para ${assignment.client}`}</strong>{assignment.actualDate && <small>{formatDate(assignment.actualDate)}</small>}{assignment.pendingQuantity > 0 && <small>Faltaron {number.format(assignment.pendingQuantity)} u. de esta asignación</small>}</div> : <button type="button" className="primary-button" onClick={() => assignment.resourceId ? setRecording(assignment) : onPlan?.(assignment.orderId)}>{assignment.resourceId ? "Registrar resultado" : "Asignar productor"}</button>}
-            </article>;
-          })}</div> : <p className="production-real-empty">Nada planificado para este día.</p>}
-        </section>;
-      })}</div>
+    {capacity && view === "production" && <section className="module-surface production-weekly-panel logistics-panel" aria-labelledby="capacity-title">
+      <header><div><h2 id="capacity-title">Producción real</h2><p className="production-week-summary"><span><strong>{pendingResults}</strong> pendientes de registrar</span></p></div><WeekNavigator label={formatRange(weekStart)} onPrevious={() => moveWeek(-1)} onNext={() => moveWeek(1)} /></header>
+      {rows.length > 0 && <div className="logistics-real-table production-real-board"><table aria-label="Resultados de producción" data-column-filters="off"><thead><tr><th scope="col">Fecha prevista</th><th scope="col">Producto</th><th scope="col">Cliente</th><th scope="col">Quién produce</th><th scope="col">Planificado</th><th scope="col">Real</th><th scope="col">Estado</th><th scope="col">Resultado</th></tr></thead><tbody>
+        {rows.map((row) => {
+          const assignment = row.assignment;
+          const completed = assignment.status === "completed";
+          return <tr key={assignment.id}>
+            <td><time dateTime={row.date}>{formatDate(row.date)}</time></td>
+            <td><strong>{displayProductName(assignment.productName)}</strong></td>
+            <td>{assignment.client}</td>
+            <td>{row.entry?.resource.name ?? "Sin productor asignado"}</td>
+            <td>{number.format(assignment.plannedQuantity)}</td>
+            <td>{completed ? number.format(assignment.actualQuantity ?? 0) : "Pendiente"}</td>
+            <td><span className={`logistics-status ${!completed ? "yellow" : assignment.actualQuantity === 0 ? "red" : assignment.resultDestination === "stock" ? "yellow" : "green"}`}>{completed ? (assignment.actualQuantity === 0 ? "No se produjo" : assignment.resultDestination === "stock" ? "Stock" : "Producido") : "Planificado"}</span></td>
+            <td>{completed ? <span>Registrado{assignment.actualDate && <small>{formatDate(assignment.actualDate)}</small>}{assignment.pendingQuantity > 0 && <small>Faltaron {number.format(assignment.pendingQuantity)} u. de esta asignación</small>}</span> : <button type="button" className="secondary-button" onClick={() => assignment.resourceId ? setRecording(assignment) : onPlan?.(assignment.orderId)}>{assignment.resourceId ? "Registrar resultado" : "Asignar productor"}</button>}</td>
+          </tr>;
+        })}
+      </tbody></table></div>}
       {!rows.length && <div className="production-table-empty"><Factory size={24} /><strong>No hay producción asignada esta semana</strong></div>}
     </section>}
     {capacity && view !== "production" && <div className="production-configuration" aria-labelledby="capacity-title">
-      {view === "resources" && <section className="module-surface production-config-section"><header><div><h2 id="capacity-title">Recursos</h2><small>Fábrica, cuadrillas y proveedores externos.</small></div><button type="button" className="secondary-button" onClick={() => setResourceModal(true)}><Settings2 size={16} />Gestionar recursos</button></header><div className="production-config-table-wrap"><table><thead><tr><th>Recurso</th><th>Tipo</th><th>Estado</th></tr></thead><tbody>{capacity.production.resources.map((resource) => <tr key={resource.id}><td><strong>{resource.name}</strong></td><td><span className={`production-resource-type ${resource.resourceType}`}>{resourceTypeLabels[resource.resourceType]}</span></td><td><span className={`production-resource-state ${resource.active ? "active" : ""}`}>{resource.active ? "Activo" : "Inactivo"}</span></td></tr>)}</tbody></table></div></section>}
+      {view === "resources" && <section className="module-surface production-config-section"><header><div><h2 id="capacity-title">Recursos</h2><small>Fábrica, cuadrillas y proveedores externos.</small></div><button type="button" className="primary-button resource-add-button" onClick={() => setResourceModal("new")}><Plus size={16} aria-hidden="true" />Agregar recurso</button></header><div className="production-config-table-wrap"><table data-column-filters="off"><thead><tr><th>Recurso</th><th>Tipo</th><th>Producen</th><th>Estado</th><th><span className="sr-only">Acciones</span></th></tr></thead><tbody>{capacity.production.resources.map((resource) => { const produces = kindOptions.filter((item) => canProduceProductKind(resource, item.value)); return <tr key={resource.id}><td><strong>{resource.name}</strong></td><td><span className={`production-resource-type ${resource.resourceType}`}>{resourceTypeLabels[resource.resourceType]}</span></td><td><span className="production-resource-kinds">{produces.length === kindOptions.length ? "Todos" : produces.map((item) => item.label).join(" · ")}</span></td><td><span className={`production-resource-state ${resource.active ? "active" : ""}`}>{resource.active ? "Activo" : "Inactivo"}</span></td><td className="planned-actions"><button type="button" className="od-icon-button" onClick={() => setResourceModal(resource)} aria-label={`Editar ${resource.name}`} title="Editar"><Pencil size={17} aria-hidden="true" /></button></td></tr>; })}</tbody></table></div></section>}
       {view === "rules" && <section className="module-surface production-config-section">
         <header>
           <div>
@@ -111,7 +150,7 @@ export default function CapacityView({ providers, products, clients, selectedCli
        </section>}
 
     </div>}
-    {resourceModal && capacity && <ResourceModal capacity={capacity} providers={providers} onClose={() => setResourceModal(false)} onSaved={load} />}
+    {resourceModal && capacity && <ResourceModal resource={resourceModal === "new" ? undefined : resourceModal} providers={providers} onClose={() => setResourceModal(null)} onSaved={load} />}
     {recording && <ProductionResultModal assignment={recording} onClose={() => setRecording(null)} onSaved={(result) => { onResultSaved?.(recording, result); return load(); }} />}
   </section>;
 }

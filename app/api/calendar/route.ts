@@ -1,5 +1,6 @@
 import { getCapacity, getOrders, getProviders } from "../store";
-import { isOrderClosed } from "../../data";
+import { getTransportRuns } from "../logistics-store";
+import { getOrderOperationalStatus, getOrderRequestedDate, isOrderClosed } from "../../data";
 import { canonicalProductName, productHeatTreatmentLabel } from "../../classification";
 
 function iso(date: Date) { return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}-${String(date.getDate()).padStart(2, "0")}`; }
@@ -30,5 +31,30 @@ export async function GET(request: Request) {
     productSummary: shipment.lines.map((line) => `${productLabel(line.product)} (${line.plannedQuantity})`).join(" · "),
     treatmentSummary: treatmentSummary(shipment.lines),
   })));
-  return Response.json({ from, to, calendar, capacity, transporters: providers.filter((provider) => provider.type === "Transporte").map((provider) => ({ id: provider.id, name: provider.name })) });
+  const inRange = (date?: string) => Boolean(date && date >= from && date <= to);
+  const production = orders.filter((order) => getOrderOperationalStatus(order) !== "cancelled").flatMap((order) => {
+    const byDay = new Map<string, number>();
+    for (const line of order.lines) for (const allocation of line.productionAllocations ?? []) {
+      if (allocation.status === "cancelled" || !inRange(allocation.plannedDate)) continue;
+      byDay.set(allocation.plannedDate, (byDay.get(allocation.plannedDate) ?? 0) + allocation.plannedQuantity);
+    }
+    return Array.from(byDay, ([date, quantity]) => ({ id: `${order.id}-${date}`, orderId: order.id, client: order.client, date, quantity }));
+  });
+  const deliveries = orders.filter((order) => getOrderOperationalStatus(order) !== "cancelled").flatMap((order) => {
+    const date = getOrderRequestedDate(order);
+    return inRange(date) ? [{ id: `${order.id}-entrega`, orderId: order.id, client: order.client, date, quantity: order.requested }] : [];
+  });
+  const runs = await getTransportRuns(from, to);
+  const time = (value?: string) => value ? new Intl.DateTimeFormat("en-GB", { timeZone: "America/Montevideo", hour: "2-digit", minute: "2-digit" }).format(new Date(value)) : "";
+  const transport = runs.flatMap((run) => {
+    const order = orders.find((item) => item.id === run.orderId);
+    const shipment = order?.shipments?.find((item) => String(item.id) === String(run.shipmentId));
+    if (run.mode !== "supplier_pickup" && !order) return [];
+    const quantity = shipment?.lines.reduce((sum, line) => sum + (line.loadedQuantity ?? line.plannedQuantity), 0);
+    const start = time(run.plannedStartAt), end = time(run.plannedEndAt);
+    const detail = run.mode === "customer_pickup" ? "Retira el cliente" : run.vehicleName ?? shipment?.transportLabel ?? "Transporte tercero";
+    return [{ id: `run-${run.id}`, orderId: order?.id, client: run.mode === "supplier_pickup" ? "Retiro de proveedor" : order!.client, date: run.plannedDate, quantity,
+      detail, time: [start, end].filter(Boolean).join(" a ") || undefined, done: run.status === "completed" || shipment?.status === "delivered" }];
+  });
+  return Response.json({ from, to, calendar, transport, production, deliveries, capacity, transporters: providers.filter((provider) => provider.type === "Transporte").map((provider) => ({ id: provider.id, name: provider.name })) });
 }

@@ -18,22 +18,42 @@ function getOrderStage(order) {
   if (order.stage) return order.stage;
   return "negociacion";
 }
+function getOrderPalletStages(order) {
+  let produced = 0, heatProduced = 0, heatTreated = 0;
+  for (const line of order.lines) {
+    const fromProduction = (line.productionAllocations ?? []).filter((allocation) => allocation.status === "completed" && allocation.resultDestination !== "stock").reduce((sum, allocation) => sum + Math.max(allocation.actualQuantity ?? allocation.plannedQuantity, 0), 0);
+    const lineProduced = Math.min(Math.max(fromProduction, line.readyReservedQuantity ?? 0), line.quantity);
+    produced += lineProduced;
+    if (lineRequiresHeat(line)) {
+      heatProduced += lineProduced;
+      heatTreated += Math.min(line.treatedQuantity ?? 0, lineProduced);
+    }
+  }
+  const shipments = (order.shipments ?? []).filter((shipment) => shipment.status !== "cancelled");
+  const sentByShipments = shipments.filter((shipment) => ["dispatched", "delivered"].includes(shipment.status)).flatMap((shipment) => shipment.lines).reduce((sum, line) => sum + Math.max(line.deliveredQuantity, line.loadedQuantity ?? line.plannedQuantity), 0);
+  const legacySent = (order.dispatchedAt || order.deliveryStatus === "en_transito") && sentByShipments === 0 ? order.requested : 0;
+  let shipped = Math.min(Math.max(order.delivered, sentByShipments, legacySent), order.requested);
+  const buckets = { planned: Math.max(order.requested - produced, 0), htPlanning: heatProduced - heatTreated, htConfirmed: heatTreated, produced: produced - heatProduced, shipped: 0 };
+  for (const key of ["produced", "htConfirmed", "htPlanning", "planned"]) {
+    const taken = Math.min(buckets[key], shipped);
+    buckets[key] -= taken;
+    shipped -= taken;
+  }
+  buckets.shipped = Math.min(Math.max(order.delivered, sentByShipments, legacySent), order.requested);
+  return buckets;
+}
 function getOrderOperationalStatus(order) {
   if (getOrderStage(order) === "cancelado") return "cancelled";
   const shipments = (order.shipments ?? []).filter((shipment) => shipment.status !== "cancelled");
   const deliveredByShipments = shipments.flatMap((shipment) => shipment.lines).reduce((sum, line) => sum + line.deliveredQuantity, 0);
   const delivered = Math.max(order.delivered, deliveredByShipments);
-  const pending = Math.max(order.requested - delivered, 0);
-  if (pending === 0) return "delivered";
-  if (delivered > 0) return "partial_delivery";
-  if (order.dispatchedAt || order.deliveryStatus === "en_transito") return "in_transit";
-  if (shipments.some((shipment) => shipment.status === "dispatched")) return "in_transit";
-  if (shipments.some((shipment) => shipment.status === "ready" || shipment.status === "loaded")) return "ready_for_delivery";
-  const preparationStarted = order.lines.some((line) => {
-    const allocations = (line.productionAllocations ?? []).filter((allocation) => allocation.status !== "cancelled");
-    return allocations.some((allocation) => allocation.status === "confirmed" || allocation.status === "completed" || (allocation.actualQuantity ?? 0) > 0) || (line.treatedQuantity ?? 0) > 0 || (line.readyReservedQuantity ?? 0) > 0;
-  });
-  return preparationStarted ? "preparation" : "planned";
+  if (Math.max(order.requested - delivered, 0) === 0) return "delivered";
+  const stages = getOrderPalletStages(order);
+  if (stages.shipped > 0 || shipments.some((shipment) => ["dispatched", "delivered"].includes(shipment.status))) return "shipped";
+  if (stages.htConfirmed > 0) return "ht_confirmed";
+  if (stages.htPlanning > 0 || order.dryingStartDate && order.lines.some(lineRequiresHeat)) return "ht_planning";
+  if (stages.produced > 0) return "produced";
+  return "planned";
 }
 function isOrderClosed(order) {
   return ["delivered", "cancelled"].includes(getOrderOperationalStatus(order));
@@ -42,6 +62,9 @@ function dateFromLabel(label) {
   const day = Number(label.match(/\d+/)?.[0]);
   if (!Number.isFinite(day)) return "2026-08-10";
   return label.toLocaleLowerCase("es").includes("julio") ? `2026-07-${String(day).padStart(2, "0")}` : `2026-08-${String(day).padStart(2, "0")}`;
+}
+function getOrderRequestedDate(order) {
+  return order.requestedDeliveryDate ?? order.originalPlannedDate ?? getOrderPlannedDate(order);
 }
 function getOrderPlannedDate(order) {
   return order.plannedDate ?? dateFromLabel(order.dateLabel);
@@ -68,7 +91,7 @@ function compareProductsByInternalCode(left, right) {
 function combineTreatment(current, next) {
   return current || next ? "Marcado" : void 0;
 }
-var stageLabels, orderOperationalStatusLabels, providers, productSeeds, products, orders;
+var stageLabels, orderOperationalStatusLabels, lineRequiresHeat, providers, productSeeds, products, orders;
 var init_data = __esm({
   "app/data.ts"() {
     "use strict";
@@ -83,14 +106,15 @@ var init_data = __esm({
       completado: "Completado"
     };
     orderOperationalStatusLabels = {
-      planned: "Planificado",
-      preparation: "En preparaci\xF3n",
-      ready_for_delivery: "Listo para entregar",
-      in_transit: "En viaje",
-      partial_delivery: "Entrega parcial",
+      planned: "Planificando",
+      produced: "Produciendo",
+      ht_planning: "Produciendo",
+      ht_confirmed: "Produciendo",
+      shipped: "Enviando",
       delivered: "Entregado",
       cancelled: "Cancelado"
     };
+    lineRequiresHeat = (line) => /HT/.test(line.treatment ?? "") || /\bCon HT\b/i.test(line.product);
     providers = [
       { id: "blanc", name: "Blanc", type: "Aserradero", supplies: "Pallets y mercader\xEDa de terceros" },
       { id: "mirasol", name: "Mirasol", type: "Aserradero", supplies: "Pallets y mercader\xEDa de terceros" },
@@ -1091,12 +1115,13 @@ async function attachDatabaseOperations(orders2) {
   const orderIds = orders2.map((order) => order.id);
   const lineIds = orders2.flatMap((order) => order.lines.map((line) => line.id));
   if (!orderIds.length) return orders2;
-  const [allocations, shipments, providers2, treatmentProgress, reservations] = await Promise.all([
+  const [allocations, shipments, providers2, treatmentProgress, reservations, dryingRows] = await Promise.all([
     lineIds.length ? supabaseRequest(`/rest/v1/production_allocations?select=*&order_line_id=in.(${lineIds.map(encodeURIComponent).join(",")})&order=planned_date.asc,id.asc`) : Promise.resolve([]),
     supabaseRequest(`/rest/v1/shipments?select=*,shipment_lines(*),shipment_events(*)&order_id=in.(${orderIds.map(encodeURIComponent).join(",")})&order=planned_date.asc,id.asc&shipment_events.order=created_at.asc,id.asc`),
     getProviders({ includeRetired: true }),
     lineIds.length ? supabaseRequest(`/rest/v1/treatment_batches?select=id,order_line_id,quantity,status,reversal_of_batch_id&order_line_id=in.(${lineIds.map(encodeURIComponent).join(",")})`) : Promise.resolve([]),
-    lineIds.length ? supabaseRequest(`/rest/v1/stock_reservations?select=shipment_line_id,quantity,status,shipment_lines(order_line_id)&status=eq.active`) : Promise.resolve([])
+    lineIds.length ? supabaseRequest(`/rest/v1/stock_reservations?select=shipment_line_id,quantity,status,shipment_lines(order_line_id)&status=eq.active`) : Promise.resolve([]),
+    lineIds.length ? supabaseRequest(`/rest/v1/drying_allocations?select=order_line_id,planned_date,planned_quantity&order_line_id=in.(${lineIds.map(encodeURIComponent).join(",")})&order=planned_date.asc`).catch(() => []) : Promise.resolve([])
   ]);
   const providerNames = new Map(providers2.map((provider) => [provider.id, provider.name]));
   const lineMap = new Map(orders2.flatMap((order) => order.lines.map((line) => [line.id, line])));
@@ -1105,6 +1130,7 @@ async function attachDatabaseOperations(orders2) {
       line.productionAllocations = allocations.filter((item) => item.order_line_id === line.id).map((item) => ({ id: item.id, orderLineId: item.order_line_id, resourceId: item.resource_id ?? void 0, productionResourceId: item.production_resource_id ?? void 0, capacityRuleId: item.capacity_rule_id ?? void 0, plannedDate: item.planned_date, plannedQuantity: item.planned_quantity, actualQuantity: item.actual_quantity ?? void 0, actualDate: item.actual_date ?? void 0, resultDestination: item.result_destination ?? void 0, status: item.status, note: item.note ?? void 0, completedAt: item.completed_at ?? void 0, completionNote: item.completion_note ?? void 0, createdAt: item.created_at, updatedAt: item.updated_at }));
       const lineBatches = treatmentProgress.filter((batch) => batch.order_line_id === line.id);
       const treated = lineBatches.reduce((sum, batch) => sum + (batch.status === "posted" ? batch.quantity : batch.status === "reversal" ? -batch.quantity : 0), 0);
+      line.dryingAllocations = dryingRows.filter((item) => item.order_line_id === line.id).map((item) => ({ date: item.planned_date, quantity: item.planned_quantity }));
       line.treatedQuantity = Math.max(treated, 0);
       line.treatmentPendingQuantity = Math.max(line.quantity - line.treatedQuantity, 0);
       line.readyReservedQuantity = 0;
@@ -1975,14 +2001,35 @@ async function assignOrderTransport(orderId, input) {
   return order;
 }
 async function planOrderDrying(orderId, input) {
+  const allocations = input.allocations?.filter((item) => item.quantity > 0);
+  if (allocations?.length) {
+    const dates = allocations.map((item) => item.date).sort();
+    input = { ...input, startDate: dates[0], endDate: dates.at(-1) };
+  }
   if (!useMemoryStore) {
+    if (allocations) {
+      const current = await getDatabaseOrder(orderId);
+      const lineIds = new Set((current?.lines ?? []).map((line) => line.id));
+      if (!current || allocations.some((item) => !lineIds.has(item.orderLineId) || !Number.isInteger(item.quantity))) throw new Error("Las cantidades no corresponden a este pedido.");
+    }
     await supabaseServerRequest("/rest/v1/rpc/plan_order_drying_v1", { method: "POST", body: JSON.stringify({ p_order_id: orderId, p_start: input.startDate, p_end: input.endDate || null, p_note: input.note?.trim() || null }) });
+    if (allocations) {
+      const lineIds = (await getDatabaseOrder(orderId))?.lines.map((line) => encodeURIComponent(line.id)) ?? [];
+      try {
+        if (lineIds.length) await supabaseServerRequest(`/rest/v1/drying_allocations?order_line_id=in.(${lineIds.join(",")})`, { method: "DELETE" });
+        await supabaseServerRequest("/rest/v1/drying_allocations", { method: "POST", body: JSON.stringify(allocations.map((item) => ({ order_line_id: item.orderLineId, planned_date: item.date, planned_quantity: item.quantity }))) });
+      } catch (error) {
+        if (error.code === "PGRST205") throw new Error("Falta crear la tabla de programaci\xF3n del secadero en la base de datos.");
+        throw error;
+      }
+    }
     return getDatabaseOrder(orderId);
   }
   const order = memoryOrders.find((item) => item.id === orderId);
   if (!order) return null;
   if (input.endDate && input.endDate < input.startDate) throw new Error("La fecha de fin no puede ser anterior al inicio.");
   Object.assign(order, { dryingStartDate: input.startDate, dryingEndDate: input.endDate || input.startDate, dryingNote: input.note?.trim() || void 0 });
+  if (allocations) for (const line of order.lines) line.dryingAllocations = allocations.filter((item) => item.orderLineId === line.id).map((item) => ({ date: item.date, quantity: item.quantity }));
   return order;
 }
 async function getOrderDetail(id) {
@@ -2098,8 +2145,6 @@ async function transitionShipment(shipmentId, input) {
   if (input.nextStatus !== expected[shipment.status] && !(input.nextStatus === "cancelled" && !["dispatched", "delivered", "cancelled"].includes(shipment.status))) throw new Error("La transici\xF3n del viaje no es v\xE1lida.");
   const remittance = input.remittance?.trim() || shipment.remittance;
   const actor = input.responsible?.trim() || "Operaci\xF3n";
-  if (["ready", "loaded", "dispatched"].includes(input.nextStatus)) {
-  }
   if (input.nextStatus === "ready") {
     shipment.deliveryAddressSnapshot = order.deliveryAddress;
     for (const shipmentLine of shipment.lines) {
@@ -2298,11 +2343,6 @@ async function recordOrderUpdate(id, input) {
     order.deliveryAddress = address;
   }
   if (input.kind === "despacho") {
-    if (!input.remittance?.trim()) throw new Error("El n\xFAmero de remito es obligatorio para despachar.");
-    if (input.remittance?.trim() && input.remittance.trim() !== order.remittance) {
-      changes.push({ field: "Remito", from: order.remittance ?? "\u2014", to: input.remittance.trim() });
-      order.remittance = input.remittance.trim();
-    }
     const dispatchedAt = input.dispatchedAt ?? (/* @__PURE__ */ new Date()).toISOString();
     changes.push({ field: "Despacho", from: order.dispatchedAt ?? "\u2014", to: dispatchedAt });
     order.dispatchedAt = dispatchedAt;
@@ -2435,7 +2475,7 @@ async function getCapacity(from, to) {
     supabaseRequest(`/rest/v1/capacity_daily_adjustments?select=adjustment_date,resource_type,operation,source,provider_id,pallet_adjustment,trip_adjustment,people_count,responsible,status&${range}`),
     getOrders(),
     getProviders({ includeRetired: true }),
-    supabaseRequest("/rest/v1/production_resources?select=id,name,resource_type,provider_id,active,display_order&order=display_order.asc,id.asc"),
+    supabaseRequest("/rest/v1/production_resources?select=*&order=display_order.asc,id.asc"),
     supabaseRequest("/rest/v1/production_capacity_rules?select=*&order=valid_from.desc,id.desc"),
     getProducts()
   ]);
@@ -2452,7 +2492,7 @@ async function getCapacity(from, to) {
     externalDefaults: external.map((item) => ({ id: item.id, providerId: item.provider_id, operation: item.operation, palletCapacity: item.pallet_capacity, status: item.status })),
     transportDefaults: transport.map((item) => ({ id: item.id, source: item.source, providerId: item.provider_id ?? void 0, palletCapacity: item.pallet_capacity, tripCapacity: item.trip_capacity ?? void 0, status: item.status })),
     adjustments: adjustments.map((item) => ({ date: item.adjustment_date, resourceType: item.resource_type, operation: item.operation ?? void 0, source: item.source ?? void 0, providerId: item.provider_id ?? void 0, palletAdjustment: item.pallet_adjustment, tripAdjustment: item.trip_adjustment, peopleCount: item.people_count ?? void 0, responsible: item.responsible ?? void 0, status: item.status ?? void 0 })),
-    productionResources: resources.map((item) => ({ id: item.id, name: item.name, resourceType: item.resource_type, providerId: item.provider_id ?? void 0, active: item.active, displayOrder: item.display_order })),
+    productionResources: resources.map(mapProductionResource),
     productionRules: productionRules.map((item) => ({ id: item.id, resourceId: item.resource_id, productId: item.product_id, clientProductId: item.client_product_id ?? void 0, productName: productNames.get(item.product_id) ?? item.product_id, peopleCount: item.people_count ?? void 0, configurationLabel: item.configuration_label, normalUnitsPerDay: item.normal_units_per_day, maximumUnitsPerDay: item.maximum_units_per_day, validFrom: item.valid_from, validTo: item.valid_to ?? void 0, source: item.source, note: item.note ?? void 0, createdAt: item.created_at })),
     productionProducts: productOptions
   });
@@ -2529,9 +2569,9 @@ async function createProductionResource(input) {
     memoryProductionResources.push(resource);
     return resource;
   }
-  const rows = await supabaseServerRequest("/rest/v1/production_resources?select=id,name,resource_type,provider_id,active,display_order", { method: "POST", prefer: "return=representation", body: JSON.stringify({ name: value.name, resource_type: value.resourceType, provider_id: value.providerId ?? null, active: value.active, display_order: value.displayOrder }) });
+  const rows = await supabaseServerRequest("/rest/v1/production_resources?select=*", { method: "POST", prefer: "return=representation", body: JSON.stringify({ name: value.name, resource_type: value.resourceType, provider_id: value.providerId ?? null, active: value.active, display_order: value.displayOrder }) });
   const row = rows[0];
-  return { id: row.id, name: row.name, resourceType: row.resource_type, providerId: row.provider_id ?? void 0, active: row.active, displayOrder: row.display_order };
+  return mapProductionResource(row);
 }
 async function updateProductionResource(id, changes) {
   if (useMemoryStore) {
@@ -2540,15 +2580,17 @@ async function updateProductionResource(id, changes) {
     if (changes.name !== void 0) resource.name = changes.name.trim();
     if (changes.active !== void 0) resource.active = changes.active;
     if (changes.displayOrder !== void 0) resource.displayOrder = changes.displayOrder;
+    if (changes.productKinds !== void 0) resource.productKinds = changes.productKinds?.length ? changes.productKinds : void 0;
     return resource;
   }
   const body = {};
   if (changes.name !== void 0) body.name = changes.name.trim();
   if (changes.active !== void 0) body.active = changes.active;
   if (changes.displayOrder !== void 0) body.display_order = changes.displayOrder;
-  const rows = await supabaseServerRequest(`/rest/v1/production_resources?id=eq.${encodeURIComponent(String(id))}&select=id,name,resource_type,provider_id,active,display_order`, { method: "PATCH", prefer: "return=representation", body: JSON.stringify(body) });
+  if (changes.productKinds !== void 0) body.product_kinds = changes.productKinds?.length ? changes.productKinds : null;
+  const rows = await supabaseServerRequest(`/rest/v1/production_resources?id=eq.${encodeURIComponent(String(id))}&select=*`, { method: "PATCH", prefer: "return=representation", body: JSON.stringify(body) });
   const row = rows[0];
-  return row ? { id: row.id, name: row.name, resourceType: row.resource_type, providerId: row.provider_id ?? void 0, active: row.active, displayOrder: row.display_order } : null;
+  return row ? mapProductionResource(row) : null;
 }
 async function createProductionRule(input) {
   const value = { ...input, configurationLabel: input.configurationLabel.trim(), source: input.source.trim(), note: input.note?.trim() || void 0 };
@@ -2900,7 +2942,7 @@ async function recordTreatmentNotPerformed(input) {
 }
 async function getTreatmentOptions() {
   const [products2, movements, clients, orders2] = await Promise.all([getProducts(), getStockMovements(), getClients(), getOrders()]);
-  const relations = useMemoryStore ? memoryClientProducts.filter((item) => item.active) : (await supabaseRequest(`/rest/v1/client_products?select=${masterSelect}&active=eq.true&order=display_order.asc,id.asc`)).map(mapClientProduct);
+  const relations = useMemoryStore ? memoryClientProducts : (await supabaseRequest(`/rest/v1/client_products?select=${masterSelect}&order=display_order.asc,id.asc`)).map(mapClientProduct);
   const balances = calculateStockBalances(movements);
   const clientMap = new Map(clients.map((client) => [client.id, client.name]));
   const relationDestinations = await Promise.all(relations.map(async (relation) => {
@@ -2912,7 +2954,7 @@ async function getTreatmentOptions() {
       controls: relation.controls.filter((control) => control.active).map((control) => ({ id: control.id, title: control.title, detail: control.detail })),
       primaryAsset: primary && url ? { id: primary.id, url, mimeType: primary.mimeType, altText: primary.altText } : void 0
     };
-    const destinations = [{ key: `client:${relation.id}`, label: base.clientName, ...base }];
+    const destinations = relation.active ? [{ key: `client:${relation.id}`, label: base.clientName, ...base }] : [];
     for (const order of orders2.filter((item) => !isOrderClosed(item))) for (const line of order.lines.filter((item) => String(item.clientProductId) === String(relation.id))) {
       destinations.push({ key: `order:${line.id}`, label: `${base.clientName} \xB7 ${order.reference}`, ...base, orderLineId: line.id, orderReference: order.reference });
     }
@@ -2965,11 +3007,10 @@ async function recordTreatmentBatch(input) {
     relation = lineRelation;
   }
   if (relation) {
-    if (!relation.active || relation.productId !== product.id) throw new Error("El cliente/producto no est\xE1 activo o no coincide con el producto.");
+    if (relation.productId !== product.id) throw new Error("El cliente/producto no coincide con el producto.");
     const activeControls = relation.controls.filter((control) => control.active);
-    if (!activeControls.length || input.controls.length !== activeControls.length) throw new Error("Complete todos los puntos de control activos.");
     if (input.controls.some((check) => !activeControls.some((control) => String(control.id) === String(check.controlId)))) throw new Error("Uno de los controles no pertenece a la ficha seleccionada.");
-  } else if (input.controls.length || !input.note?.trim()) throw new Error("Justifique el registro como stock general.");
+  } else if (input.controls.length) throw new Error("Stock general no admite controles espec\xEDficos de cliente.");
   const failed = input.controls.filter((control) => control.result === "fail");
   if (failed.some((control) => !control.note?.trim())) throw new Error("Explique cada control no conforme.");
   if (failed.length && !input.note?.trim()) throw new Error("Explique el rechazo del lote.");
@@ -3148,7 +3189,7 @@ async function reverseStockMovement(id, input) {
     return newId;
   });
 }
-var useMemoryStore, memoryOrders, memoryHistory, memoryProducts, memoryProductLevels, memoryProviders, memoryClients, memoryClientProducts, memoryAssetFiles, memoryMasterId, memoryCapacityRules, memoryInternalDefaults, memoryAvailablePeople, memoryExternalDefaults, memoryTransportDefaults, memoryCapacityAdjustments, memoryProductionResources, memoryProductionRules, memoryProductionId, memoryStockMovements, memoryStockReservations, memoryTreatmentBatches, memoryTreatmentId, masterSelect, shipmentHistoryStatus, shipmentHistoryReasons, treatmentNotPerformedPrefix;
+var useMemoryStore, memoryOrders, memoryHistory, memoryProducts, memoryProductLevels, memoryProviders, memoryClients, memoryClientProducts, memoryAssetFiles, memoryMasterId, memoryCapacityRules, memoryInternalDefaults, memoryAvailablePeople, memoryExternalDefaults, memoryTransportDefaults, memoryCapacityAdjustments, memoryProductionResources, memoryProductionRules, memoryProductionId, memoryStockMovements, memoryStockReservations, memoryTreatmentBatches, memoryTreatmentId, masterSelect, shipmentHistoryStatus, shipmentHistoryReasons, mapProductionResource, treatmentNotPerformedPrefix;
 var init_store = __esm({
   "app/api/store.ts"() {
     "use strict";
@@ -3228,417 +3269,8 @@ var init_store = __esm({
     masterSelect = "id,client_id,product_id,zeta_code,operational_name,active,display_order,created_at,updated_at,products(*),client_product_controls(id,client_product_id,title,detail,display_order,active),client_product_assets(id,client_product_id,storage_path,file_name,asset_type,mime_type,size_bytes,alt_text,is_primary,active,created_at)";
     shipmentHistoryStatus = { planned: "Planificado", ready: "Pronto", loaded: "Cargado", dispatched: "En viaje", delivered: "Entregado", cancelled: "Cancelado" };
     shipmentHistoryReasons = { production: "Producci\xF3n", logistics: "Log\xEDstica", client: "Cliente", weather: "Clima / lluvia", other: "Otro" };
+    mapProductionResource = (row) => ({ id: row.id, name: row.name, resourceType: row.resource_type, providerId: row.provider_id ?? void 0, active: row.active, displayOrder: row.display_order, productKinds: row.product_kinds?.length ? row.product_kinds : void 0 });
     treatmentNotPerformedPrefix = "HT no realizado \xB7 ";
-  }
-});
-
-// app/api/calendar/route.ts
-var route_exports = {};
-__export(route_exports, {
-  GET: () => GET
-});
-function iso(date) {
-  return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}-${String(date.getDate()).padStart(2, "0")}`;
-}
-function productLabel2(value) {
-  return canonicalProductName(value).trim();
-}
-function treatmentSummary(lines) {
-  const labels = new Set(lines.map((line) => productHeatTreatmentLabel(line.product)).filter(Boolean));
-  return ["Con HT", "Sin HT"].filter((label) => labels.has(label)).join(" y ");
-}
-async function GET(request) {
-  const url = new URL(request.url);
-  const hasRange = url.searchParams.has("from") || url.searchParams.has("to");
-  const now = /* @__PURE__ */ new Date();
-  const monday = new Date(now);
-  monday.setDate(now.getDate() - (now.getDay() + 6) % 7);
-  const sunday = new Date(monday);
-  sunday.setDate(monday.getDate() + 6);
-  const from = /^\d{4}-\d{2}-\d{2}$/.test(url.searchParams.get("from") ?? "") ? url.searchParams.get("from") : iso(monday);
-  const to = /^\d{4}-\d{2}-\d{2}$/.test(url.searchParams.get("to") ?? "") ? url.searchParams.get("to") : iso(sunday);
-  if (from > to) return Response.json({ error: "El rango de fechas no es v\xE1lido." }, { status: 400 });
-  const [orders2, capacity, providers2] = await Promise.all([getOrders(), getCapacity(from, to), getProviders()]);
-  const calendar = orders2.filter((order) => hasRange || !isOrderClosed(order)).flatMap((order) => (order.shipments ?? []).filter((shipment) => shipment.status !== "cancelled" && (!hasRange || shipment.plannedDate >= from && shipment.plannedDate <= to)).map((shipment) => ({
-    ...shipment,
-    orderId: order.id,
-    client: order.client,
-    reference: order.reference,
-    requestedDeliveryDate: order.requestedDeliveryDate,
-    totalQuantity: shipment.lines.reduce((sum, line) => sum + line.plannedQuantity, 0),
-    productLines: shipment.lines.map((line) => `${productLabel2(line.product)} (${line.plannedQuantity})`),
-    productSummary: shipment.lines.map((line) => `${productLabel2(line.product)} (${line.plannedQuantity})`).join(" \xB7 "),
-    treatmentSummary: treatmentSummary(shipment.lines)
-  })));
-  return Response.json({ from, to, calendar, capacity, transporters: providers2.filter((provider) => provider.type === "Transporte").map((provider) => ({ id: provider.id, name: provider.name })) });
-}
-var init_route = __esm({
-  "app/api/calendar/route.ts"() {
-    "use strict";
-    init_store();
-    init_data();
-    init_classification();
-  }
-});
-
-// app/api/capacity/adjustments/route.ts
-var route_exports2 = {};
-__export(route_exports2, {
-  PUT: () => PUT
-});
-async function PUT(request) {
-  const payload = await request.json();
-  const adjustment = Number(payload.palletAdjustment);
-  const peopleCount = payload.peopleCount === void 0 ? void 0 : Number(payload.peopleCount);
-  const responsible = payload.responsible?.trim() ?? "";
-  const validDate = Boolean(payload.date && isoDate.test(payload.date));
-  const validAmount = Number.isInteger(adjustment);
-  const validPeople = payload.resourceType === "internal_production" ? peopleCount !== void 0 && Number.isInteger(peopleCount) && peopleCount >= 0 : peopleCount === void 0;
-  const providers2 = await getProviders();
-  const validResource = payload.resourceType === "internal_production" && Boolean(payload.operation && operations.includes(payload.operation)) && !payload.providerId && !payload.source || payload.resourceType === "external_production" && Boolean(payload.operation && operations.includes(payload.operation)) && providers2.some((provider) => provider.id === payload.providerId && provider.type === "Aserradero") && !payload.source || payload.resourceType === "transport" && Boolean(payload.source && ["internal", "external"].includes(payload.source)) && !payload.operation && (payload.source === "internal" ? !payload.providerId : providers2.some((provider) => provider.id === payload.providerId && provider.type === "Transporte"));
-  if (payload.resourceType === "internal_production" && validDate && validPeople) {
-    const day = (await getCapacity(payload.date, payload.date)).days[0];
-    const operation = day?.internalProduction.find((entry) => entry.operation === payload.operation);
-    const maximum = day?.internalTeam.availablePeople === void 0 || !operation ? void 0 : Math.max(day.internalTeam.availablePeople - day.internalTeam.basePeople - (day.internalTeam.additionalPeople - operation.peopleAdditional), 0);
-    if (maximum !== void 0 && peopleCount > maximum) {
-      return Response.json({ error: `Solo hay ${maximum} personas disponibles para refuerzo en esa fecha.` }, { status: 400 });
-    }
-  }
-  const requiresResponsible = payload.resourceType !== "internal_production" && adjustment !== 0;
-  if (!validDate || !validAmount || !validPeople || !validResource || requiresResponsible && !responsible) {
-    return Response.json({ error: "Indique las personas asignadas o el recurso que aporta la capacidad para ese d\xEDa." }, { status: 400 });
-  }
-  return Response.json({ adjustment: await saveCapacityAdjustment({
-    date: payload.date,
-    resourceType: payload.resourceType,
-    operation: payload.operation,
-    source: payload.source,
-    providerId: payload.providerId,
-    palletAdjustment: adjustment,
-    peopleCount,
-    responsible: responsible || void 0,
-    status: payload.status
-  }) });
-}
-var isoDate, operations;
-var init_route2 = __esm({
-  "app/api/capacity/adjustments/route.ts"() {
-    "use strict";
-    init_store();
-    isoDate = /^\d{4}-\d{2}-\d{2}$/;
-    operations = ["assembly", "marking", "ht"];
-  }
-});
-
-// app/api/capacity/external-production/route.ts
-var route_exports3 = {};
-__export(route_exports3, {
-  PUT: () => PUT2
-});
-async function PUT2(request) {
-  const payload = await request.json();
-  const palletCapacity = Number(payload.palletCapacity);
-  const provider = (await getProviders()).find((item) => item.id === payload.providerId && item.type === "Aserradero");
-  if (!provider || !payload.operation || !operations2.includes(payload.operation) || !Number.isInteger(palletCapacity) || palletCapacity < 0 || !payload.status || !["estimated", "confirmed"].includes(payload.status)) {
-    return Response.json({ error: "Revise el aserradero, la operaci\xF3n y la capacidad." }, { status: 400 });
-  }
-  return Response.json({ entry: await saveExternalProduction({ providerId: provider.id, operation: payload.operation, palletCapacity, status: payload.status }) });
-}
-var operations2;
-var init_route3 = __esm({
-  "app/api/capacity/external-production/route.ts"() {
-    "use strict";
-    init_store();
-    operations2 = ["assembly", "marking", "ht"];
-  }
-});
-
-// app/api/capacity/internal-production/route.ts
-var route_exports4 = {};
-__export(route_exports4, {
-  PUT: () => PUT3
-});
-async function PUT3(request) {
-  const payload = await request.json();
-  const peopleCount = Number(payload.peopleCount);
-  const manualCapacity = payload.manualCapacity === null || payload.manualCapacity === void 0 || payload.manualCapacity === "" ? void 0 : Number(payload.manualCapacity);
-  if (!payload.operation || !operations3.includes(payload.operation) || !Number.isInteger(peopleCount) || peopleCount < 0 || manualCapacity !== void 0 && (!Number.isInteger(manualCapacity) || manualCapacity < 0)) {
-    return Response.json({ error: "Revise la operaci\xF3n, la dotaci\xF3n y la capacidad." }, { status: 400 });
-  }
-  return Response.json({ entry: await saveInternalProduction({ operation: payload.operation, peopleCount, manualCapacity }) });
-}
-var operations3;
-var init_route4 = __esm({
-  "app/api/capacity/internal-production/route.ts"() {
-    "use strict";
-    init_store();
-    operations3 = ["assembly", "marking", "ht"];
-  }
-});
-
-// app/api/capacity/resources/route.ts
-var route_exports5 = {};
-__export(route_exports5, {
-  GET: () => GET2,
-  PATCH: () => PATCH,
-  POST: () => POST
-});
-async function GET2() {
-  const today = iso2(/* @__PURE__ */ new Date());
-  return Response.json({ resources: (await getCapacity(today, today)).production.resources });
-}
-async function POST(request) {
-  try {
-    const payload = await request.json();
-    const resourceType = payload.resourceType;
-    const name = typeof payload.name === "string" ? payload.name.trim() : "";
-    const providerId = typeof payload.providerId === "string" ? payload.providerId.trim() : void 0;
-    const displayOrder = payload.displayOrder === void 0 ? 100 : Number(payload.displayOrder);
-    const providers2 = await getProviders();
-    if (!name || !types.includes(resourceType) || !Number.isInteger(displayOrder) || displayOrder < 0 || resourceType === "external_supplier" !== Boolean(providerId) || providerId && !providers2.some((provider) => provider.id === providerId && provider.type === "Aserradero")) {
-      return Response.json({ error: "Revise nombre, tipo, proveedor y orden del recurso." }, { status: 400 });
-    }
-    return Response.json({ resource: await createProductionResource({ name, resourceType, providerId, displayOrder }) }, { status: 201 });
-  } catch (error) {
-    return Response.json({ error: error instanceof Error ? error.message : "No se pudo crear el recurso." }, { status: 400 });
-  }
-}
-async function PATCH(request) {
-  try {
-    const payload = await request.json();
-    const id = typeof payload.id === "string" || typeof payload.id === "number" ? payload.id : "";
-    const name = typeof payload.name === "string" ? payload.name.trim() : void 0;
-    const active = typeof payload.active === "boolean" ? payload.active : void 0;
-    const displayOrder = payload.displayOrder === void 0 ? void 0 : Number(payload.displayOrder);
-    if (!id || name === "" || displayOrder !== void 0 && (!Number.isInteger(displayOrder) || displayOrder < 0) || name === void 0 && active === void 0 && displayOrder === void 0) return Response.json({ error: "Indique el recurso y al menos un cambio v\xE1lido." }, { status: 400 });
-    const resource = await updateProductionResource(id, { name, active, displayOrder });
-    return resource ? Response.json({ resource }) : Response.json({ error: "Recurso no encontrado." }, { status: 404 });
-  } catch (error) {
-    return Response.json({ error: error instanceof Error ? error.message : "No se pudo actualizar el recurso." }, { status: 400 });
-  }
-}
-var types, iso2;
-var init_route5 = __esm({
-  "app/api/capacity/resources/route.ts"() {
-    "use strict";
-    init_store();
-    types = ["internal_factory", "internal_crew", "external_supplier"];
-    iso2 = (date) => `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}-${String(date.getDate()).padStart(2, "0")}`;
-  }
-});
-
-// app/api/capacity/route.ts
-var route_exports6 = {};
-__export(route_exports6, {
-  GET: () => GET3
-});
-async function GET3(request) {
-  const url = new URL(request.url);
-  const from = url.searchParams.get("from") ?? "";
-  const to = url.searchParams.get("to") ?? "";
-  if (!isoDate2.test(from) || !isoDate2.test(to) || from > to) {
-    return Response.json({ error: "Indique un rango de fechas v\xE1lido." }, { status: 400 });
-  }
-  return Response.json({ capacity: await getCapacity(from, to) });
-}
-var isoDate2;
-var init_route6 = __esm({
-  "app/api/capacity/route.ts"() {
-    "use strict";
-    init_store();
-    isoDate2 = /^\d{4}-\d{2}-\d{2}$/;
-  }
-});
-
-// app/api/capacity/rules/route.ts
-var route_exports7 = {};
-__export(route_exports7, {
-  DELETE: () => DELETE,
-  PATCH: () => PATCH2,
-  POST: () => POST2
-});
-function parseRule(payload) {
-  const resourceId = typeof payload.resourceId === "string" || typeof payload.resourceId === "number" ? payload.resourceId : "";
-  const productId = typeof payload.productId === "string" ? payload.productId.trim() : "";
-  const clientProductId = typeof payload.clientProductId === "string" || typeof payload.clientProductId === "number" ? payload.clientProductId : void 0;
-  const peopleCount = payload.peopleCount === "" || payload.peopleCount === null || payload.peopleCount === void 0 ? void 0 : Number(payload.peopleCount);
-  const configurationLabel = typeof payload.configurationLabel === "string" ? payload.configurationLabel.trim() : "";
-  const normalUnitsPerDay = Number(payload.normalUnitsPerDay);
-  const maximumUnitsPerDay = Number(payload.maximumUnitsPerDay);
-  const validFrom = typeof payload.validFrom === "string" ? payload.validFrom : "";
-  const validTo = typeof payload.validTo === "string" && payload.validTo ? payload.validTo : void 0;
-  const source = typeof payload.source === "string" ? payload.source.trim() : "manual";
-  const note = typeof payload.note === "string" ? payload.note.trim() || void 0 : void 0;
-  if (!resourceId || !productId || !clientProductId || !configurationLabel || !source || !Number.isInteger(normalUnitsPerDay) || normalUnitsPerDay <= 0 || !Number.isInteger(maximumUnitsPerDay) || maximumUnitsPerDay < normalUnitsPerDay || peopleCount !== void 0 && (!Number.isInteger(peopleCount) || peopleCount <= 0) || !isoDate3.test(validFrom) || validTo !== void 0 && (!isoDate3.test(validTo) || validTo < validFrom)) return null;
-  return { resourceId, productId, clientProductId, peopleCount, configurationLabel, normalUnitsPerDay, maximumUnitsPerDay, validFrom, validTo, source, note };
-}
-async function POST2(request) {
-  try {
-    const input = parseRule(await request.json());
-    if (!input) return Response.json({ error: "Revise recurso, producto, configuraci\xF3n, capacidades y vigencia." }, { status: 400 });
-    return Response.json({ rule: await createProductionRule(input) }, { status: 201 });
-  } catch (error) {
-    return Response.json({ error: error instanceof Error ? error.message : "No se pudo guardar la regla." }, { status: 400 });
-  }
-}
-async function PATCH2(request) {
-  try {
-    const payload = await request.json();
-    const id = typeof payload.id === "string" || typeof payload.id === "number" ? payload.id : "";
-    const input = parseRule(payload);
-    if (!id || !input) return Response.json({ error: "Revise la regla y todos sus valores." }, { status: 400 });
-    const rule = await updateProductionRule(id, input);
-    return rule ? Response.json({ rule }) : Response.json({ error: "Regla no encontrada." }, { status: 404 });
-  } catch (error) {
-    return Response.json({ error: error instanceof Error ? error.message : "No se pudo editar la regla." }, { status: 400 });
-  }
-}
-async function DELETE(request) {
-  try {
-    const id = new URL(request.url).searchParams.get("id")?.trim() ?? "";
-    if (!id) return Response.json({ error: "Indique la regla que desea eliminar." }, { status: 400 });
-    const deleted = await deleteProductionRule(id);
-    return deleted ? Response.json({ deleted: true }) : Response.json({ error: "Regla no encontrada." }, { status: 404 });
-  } catch (error) {
-    const message = error instanceof Error ? error.message : "No se pudo eliminar la regla.";
-    return Response.json({ error: message }, { status: message.includes("est\xE1 siendo utilizada") ? 409 : 400 });
-  }
-}
-var isoDate3;
-var init_route7 = __esm({
-  "app/api/capacity/rules/route.ts"() {
-    "use strict";
-    init_store();
-    isoDate3 = /^\d{4}-\d{2}-\d{2}$/;
-  }
-});
-
-// app/api/capacity/team/route.ts
-var route_exports8 = {};
-__export(route_exports8, {
-  PUT: () => PUT4
-});
-async function PUT4(request) {
-  const payload = await request.json();
-  const availablePeople = Number(payload.availablePeople);
-  if (!Number.isInteger(availablePeople) || availablePeople < 0) {
-    return Response.json({ error: "Indique una cantidad entera de personas disponibles." }, { status: 400 });
-  }
-  return Response.json({ team: await saveInternalTeamCapacity(availablePeople) });
-}
-var init_route8 = __esm({
-  "app/api/capacity/team/route.ts"() {
-    "use strict";
-    init_store();
-  }
-});
-
-// app/api/capacity/transport/route.ts
-var route_exports9 = {};
-__export(route_exports9, {
-  PUT: () => PUT5
-});
-async function PUT5(request) {
-  const payload = await request.json();
-  const usesTripCapacity = payload.tripCapacity !== void 0;
-  const capacity = Number(usesTripCapacity ? payload.tripCapacity : payload.palletCapacity);
-  const provider = payload.source === "external" ? (await getProviders()).find((item) => item.id === payload.providerId && item.type === "Transporte") : void 0;
-  if (!payload.source || !["internal", "external"].includes(payload.source) || payload.source === "external" && !provider || !Number.isInteger(capacity) || capacity < 0 || !payload.status || !["estimated", "confirmed"].includes(payload.status)) {
-    return Response.json({ error: "Revise el origen, el transportista y la capacidad." }, { status: 400 });
-  }
-  const status = payload.source === "internal" ? "confirmed" : payload.status;
-  const entry = usesTripCapacity ? await saveTransportTripCapacity({ source: payload.source, providerId: provider?.id, tripCapacity: capacity, status }) : await saveTransportCapacity({ source: payload.source, providerId: provider?.id, palletCapacity: capacity, status });
-  return Response.json({ entry });
-}
-var init_route9 = __esm({
-  "app/api/capacity/transport/route.ts"() {
-    "use strict";
-    init_store();
-  }
-});
-
-// app/api/capacity/trip-adjustments/route.ts
-var route_exports10 = {};
-__export(route_exports10, {
-  PUT: () => PUT6
-});
-async function PUT6(request) {
-  const payload = await request.json();
-  const tripCapacity = Number(payload.tripCapacity);
-  const responsible = payload.responsible?.trim() ?? "";
-  const status = payload.source === "internal" ? "confirmed" : payload.status;
-  const provider = payload.source === "external" ? (await getProviders()).find((item) => item.id === payload.providerId && item.type === "Transporte") : void 0;
-  if (!payload.date || !isoDate4.test(payload.date) || !payload.source || !["internal", "external"].includes(payload.source) || payload.source === "external" && !provider || !Number.isInteger(tripCapacity) || tripCapacity < 0 || !status || !["estimated", "confirmed"].includes(status) || !responsible) {
-    return Response.json({ error: "Revise la fecha, el origen, los cupos y el responsable." }, { status: 400 });
-  }
-  const day = (await getCapacity(payload.date, payload.date)).days[0];
-  const current = day?.transport.find((entry) => entry.source === payload.source && (entry.providerId ?? "") === (provider?.id ?? ""));
-  const tripAdjustment = tripCapacity - (current?.baseTripCapacity ?? 0);
-  const adjustment = await saveTransportTripAdjustment({ date: payload.date, source: payload.source, providerId: provider?.id, tripAdjustment, responsible, status });
-  return Response.json({ adjustment });
-}
-var isoDate4;
-var init_route10 = __esm({
-  "app/api/capacity/trip-adjustments/route.ts"() {
-    "use strict";
-    init_store();
-    isoDate4 = /^\d{4}-\d{2}-\d{2}$/;
-  }
-});
-
-// app/api/clients/route.ts
-var route_exports11 = {};
-__export(route_exports11, {
-  GET: () => GET4,
-  POST: () => POST3
-});
-async function GET4() {
-  const clients = /* @__PURE__ */ new Map();
-  (await getClients()).forEach((client) => clients.set(client.name, { id: client.id, name: client.name, address: client.address, department: client.department, active: client.active, updatedAt: client.updatedAt, orders: 0, requested: 0, delivered: 0, pending: 0, activeOrders: 0, activePallets: 0 }));
-  (await getOrders()).forEach((order) => {
-    const client = clients.get(order.client) ?? { name: order.client, orders: 0, requested: 0, delivered: 0, pending: 0, activeOrders: 0, activePallets: 0 };
-    client.orders += 1;
-    client.requested += order.requested;
-    client.delivered += order.delivered;
-    client.pending += order.pending;
-    if (!isOrderClosed(order)) {
-      client.activeOrders += 1;
-      client.activePallets += order.requested;
-    }
-    clients.set(order.client, client);
-  });
-  return Response.json({ clients: [...clients.values()] });
-}
-async function POST3(request) {
-  try {
-    const body = await request.json();
-    const client = await createClient({ name: typeof body.name === "string" ? body.name : "", address: typeof body.address === "string" ? body.address : void 0, department: typeof body.department === "string" ? body.department : void 0 });
-    return Response.json({ client }, { status: 201 });
-  } catch (error) {
-    return Response.json({ error: error instanceof Error ? error.message : "No se pudo crear el cliente." }, { status: 400 });
-  }
-}
-var init_route11 = __esm({
-  "app/api/clients/route.ts"() {
-    "use strict";
-    init_store();
-    init_data();
-  }
-});
-
-// app/api/history/route.ts
-var route_exports12 = {};
-__export(route_exports12, {
-  GET: () => GET5
-});
-async function GET5() {
-  return Response.json({ history: (await getOrders()).filter(isOrderClosed) });
-}
-var init_route12 = __esm({
-  "app/api/history/route.ts"() {
-    "use strict";
-    init_store();
-    init_data();
   }
 });
 
@@ -3895,6 +3527,10 @@ async function listConfiguration() {
 async function getLogisticsRuns(orderId) {
   const { runs } = await listConfiguration();
   return orderId ? runs.filter((run) => run.orderId === orderId) : runs;
+}
+async function getTransportRuns(from, to) {
+  const { runs, vehicles } = await listConfiguration();
+  return runs.filter((run) => run.status !== "cancelled" && run.plannedDate >= from && run.plannedDate <= to).map((run) => ({ ...run, vehicleName: vehicles.find((vehicle) => vehicle.id === run.vehicleId)?.name }));
 }
 async function getLogisticsSnapshot() {
   const [config, orders2, products2, clients, providers2, stock, movements, batches] = await Promise.all([
@@ -4392,6 +4028,452 @@ var init_logistics_store = __esm({
   }
 });
 
+// app/api/calendar/route.ts
+var route_exports = {};
+__export(route_exports, {
+  GET: () => GET
+});
+function iso(date) {
+  return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}-${String(date.getDate()).padStart(2, "0")}`;
+}
+function productLabel2(value) {
+  return canonicalProductName(value).trim();
+}
+function treatmentSummary(lines) {
+  const labels = new Set(lines.map((line) => productHeatTreatmentLabel(line.product)).filter(Boolean));
+  return ["Con HT", "Sin HT"].filter((label) => labels.has(label)).join(" y ");
+}
+async function GET(request) {
+  const url = new URL(request.url);
+  const hasRange = url.searchParams.has("from") || url.searchParams.has("to");
+  const now = /* @__PURE__ */ new Date();
+  const monday = new Date(now);
+  monday.setDate(now.getDate() - (now.getDay() + 6) % 7);
+  const sunday = new Date(monday);
+  sunday.setDate(monday.getDate() + 6);
+  const from = /^\d{4}-\d{2}-\d{2}$/.test(url.searchParams.get("from") ?? "") ? url.searchParams.get("from") : iso(monday);
+  const to = /^\d{4}-\d{2}-\d{2}$/.test(url.searchParams.get("to") ?? "") ? url.searchParams.get("to") : iso(sunday);
+  if (from > to) return Response.json({ error: "El rango de fechas no es v\xE1lido." }, { status: 400 });
+  const [orders2, capacity, providers2] = await Promise.all([getOrders(), getCapacity(from, to), getProviders()]);
+  const calendar = orders2.filter((order) => hasRange || !isOrderClosed(order)).flatMap((order) => (order.shipments ?? []).filter((shipment) => shipment.status !== "cancelled" && (!hasRange || shipment.plannedDate >= from && shipment.plannedDate <= to)).map((shipment) => ({
+    ...shipment,
+    orderId: order.id,
+    client: order.client,
+    reference: order.reference,
+    requestedDeliveryDate: order.requestedDeliveryDate,
+    totalQuantity: shipment.lines.reduce((sum, line) => sum + line.plannedQuantity, 0),
+    productLines: shipment.lines.map((line) => `${productLabel2(line.product)} (${line.plannedQuantity})`),
+    productSummary: shipment.lines.map((line) => `${productLabel2(line.product)} (${line.plannedQuantity})`).join(" \xB7 "),
+    treatmentSummary: treatmentSummary(shipment.lines)
+  })));
+  const inRange = (date) => Boolean(date && date >= from && date <= to);
+  const production = orders2.filter((order) => getOrderOperationalStatus(order) !== "cancelled").flatMap((order) => {
+    const byDay = /* @__PURE__ */ new Map();
+    for (const line of order.lines) for (const allocation of line.productionAllocations ?? []) {
+      if (allocation.status === "cancelled" || !inRange(allocation.plannedDate)) continue;
+      byDay.set(allocation.plannedDate, (byDay.get(allocation.plannedDate) ?? 0) + allocation.plannedQuantity);
+    }
+    return Array.from(byDay, ([date, quantity]) => ({ id: `${order.id}-${date}`, orderId: order.id, client: order.client, date, quantity }));
+  });
+  const deliveries = orders2.filter((order) => getOrderOperationalStatus(order) !== "cancelled").flatMap((order) => {
+    const date = getOrderRequestedDate(order);
+    return inRange(date) ? [{ id: `${order.id}-entrega`, orderId: order.id, client: order.client, date, quantity: order.requested }] : [];
+  });
+  const runs = await getTransportRuns(from, to);
+  const time = (value) => value ? new Intl.DateTimeFormat("en-GB", { timeZone: "America/Montevideo", hour: "2-digit", minute: "2-digit" }).format(new Date(value)) : "";
+  const transport = runs.flatMap((run) => {
+    const order = orders2.find((item) => item.id === run.orderId);
+    const shipment = order?.shipments?.find((item) => String(item.id) === String(run.shipmentId));
+    if (run.mode !== "supplier_pickup" && !order) return [];
+    const quantity = shipment?.lines.reduce((sum, line) => sum + (line.loadedQuantity ?? line.plannedQuantity), 0);
+    const start = time(run.plannedStartAt), end = time(run.plannedEndAt);
+    const detail = run.mode === "customer_pickup" ? "Retira el cliente" : run.vehicleName ?? shipment?.transportLabel ?? "Transporte tercero";
+    return [{
+      id: `run-${run.id}`,
+      orderId: order?.id,
+      client: run.mode === "supplier_pickup" ? "Retiro de proveedor" : order.client,
+      date: run.plannedDate,
+      quantity,
+      detail,
+      time: [start, end].filter(Boolean).join(" a ") || void 0,
+      done: run.status === "completed" || shipment?.status === "delivered"
+    }];
+  });
+  return Response.json({ from, to, calendar, transport, production, deliveries, capacity, transporters: providers2.filter((provider) => provider.type === "Transporte").map((provider) => ({ id: provider.id, name: provider.name })) });
+}
+var init_route = __esm({
+  "app/api/calendar/route.ts"() {
+    "use strict";
+    init_store();
+    init_logistics_store();
+    init_data();
+    init_classification();
+  }
+});
+
+// app/api/capacity/adjustments/route.ts
+var route_exports2 = {};
+__export(route_exports2, {
+  PUT: () => PUT
+});
+async function PUT(request) {
+  const payload = await request.json();
+  const adjustment = Number(payload.palletAdjustment);
+  const peopleCount = payload.peopleCount === void 0 ? void 0 : Number(payload.peopleCount);
+  const responsible = payload.responsible?.trim() ?? "";
+  const validDate = Boolean(payload.date && isoDate.test(payload.date));
+  const validAmount = Number.isInteger(adjustment);
+  const validPeople = payload.resourceType === "internal_production" ? peopleCount !== void 0 && Number.isInteger(peopleCount) && peopleCount >= 0 : peopleCount === void 0;
+  const providers2 = await getProviders();
+  const validResource = payload.resourceType === "internal_production" && Boolean(payload.operation && operations.includes(payload.operation)) && !payload.providerId && !payload.source || payload.resourceType === "external_production" && Boolean(payload.operation && operations.includes(payload.operation)) && providers2.some((provider) => provider.id === payload.providerId && provider.type === "Aserradero") && !payload.source || payload.resourceType === "transport" && Boolean(payload.source && ["internal", "external"].includes(payload.source)) && !payload.operation && (payload.source === "internal" ? !payload.providerId : providers2.some((provider) => provider.id === payload.providerId && provider.type === "Transporte"));
+  if (payload.resourceType === "internal_production" && validDate && validPeople) {
+    const day = (await getCapacity(payload.date, payload.date)).days[0];
+    const operation = day?.internalProduction.find((entry) => entry.operation === payload.operation);
+    const maximum = day?.internalTeam.availablePeople === void 0 || !operation ? void 0 : Math.max(day.internalTeam.availablePeople - day.internalTeam.basePeople - (day.internalTeam.additionalPeople - operation.peopleAdditional), 0);
+    if (maximum !== void 0 && peopleCount > maximum) {
+      return Response.json({ error: `Solo hay ${maximum} personas disponibles para refuerzo en esa fecha.` }, { status: 400 });
+    }
+  }
+  const requiresResponsible = payload.resourceType !== "internal_production" && adjustment !== 0;
+  if (!validDate || !validAmount || !validPeople || !validResource || requiresResponsible && !responsible) {
+    return Response.json({ error: "Indique las personas asignadas o el recurso que aporta la capacidad para ese d\xEDa." }, { status: 400 });
+  }
+  return Response.json({ adjustment: await saveCapacityAdjustment({
+    date: payload.date,
+    resourceType: payload.resourceType,
+    operation: payload.operation,
+    source: payload.source,
+    providerId: payload.providerId,
+    palletAdjustment: adjustment,
+    peopleCount,
+    responsible: responsible || void 0,
+    status: payload.status
+  }) });
+}
+var isoDate, operations;
+var init_route2 = __esm({
+  "app/api/capacity/adjustments/route.ts"() {
+    "use strict";
+    init_store();
+    isoDate = /^\d{4}-\d{2}-\d{2}$/;
+    operations = ["assembly", "marking", "ht"];
+  }
+});
+
+// app/api/capacity/external-production/route.ts
+var route_exports3 = {};
+__export(route_exports3, {
+  PUT: () => PUT2
+});
+async function PUT2(request) {
+  const payload = await request.json();
+  const palletCapacity = Number(payload.palletCapacity);
+  const provider = (await getProviders()).find((item) => item.id === payload.providerId && item.type === "Aserradero");
+  if (!provider || !payload.operation || !operations2.includes(payload.operation) || !Number.isInteger(palletCapacity) || palletCapacity < 0 || !payload.status || !["estimated", "confirmed"].includes(payload.status)) {
+    return Response.json({ error: "Revise el aserradero, la operaci\xF3n y la capacidad." }, { status: 400 });
+  }
+  return Response.json({ entry: await saveExternalProduction({ providerId: provider.id, operation: payload.operation, palletCapacity, status: payload.status }) });
+}
+var operations2;
+var init_route3 = __esm({
+  "app/api/capacity/external-production/route.ts"() {
+    "use strict";
+    init_store();
+    operations2 = ["assembly", "marking", "ht"];
+  }
+});
+
+// app/api/capacity/internal-production/route.ts
+var route_exports4 = {};
+__export(route_exports4, {
+  PUT: () => PUT3
+});
+async function PUT3(request) {
+  const payload = await request.json();
+  const peopleCount = Number(payload.peopleCount);
+  const manualCapacity = payload.manualCapacity === null || payload.manualCapacity === void 0 || payload.manualCapacity === "" ? void 0 : Number(payload.manualCapacity);
+  if (!payload.operation || !operations3.includes(payload.operation) || !Number.isInteger(peopleCount) || peopleCount < 0 || manualCapacity !== void 0 && (!Number.isInteger(manualCapacity) || manualCapacity < 0)) {
+    return Response.json({ error: "Revise la operaci\xF3n, la dotaci\xF3n y la capacidad." }, { status: 400 });
+  }
+  return Response.json({ entry: await saveInternalProduction({ operation: payload.operation, peopleCount, manualCapacity }) });
+}
+var operations3;
+var init_route4 = __esm({
+  "app/api/capacity/internal-production/route.ts"() {
+    "use strict";
+    init_store();
+    operations3 = ["assembly", "marking", "ht"];
+  }
+});
+
+// app/api/capacity/resources/route.ts
+var route_exports5 = {};
+__export(route_exports5, {
+  GET: () => GET2,
+  PATCH: () => PATCH,
+  POST: () => POST
+});
+async function GET2() {
+  const today = iso2(/* @__PURE__ */ new Date());
+  return Response.json({ resources: (await getCapacity(today, today)).production.resources });
+}
+async function POST(request) {
+  try {
+    const payload = await request.json();
+    const resourceType = payload.resourceType;
+    const name = typeof payload.name === "string" ? payload.name.trim() : "";
+    const providerId = typeof payload.providerId === "string" ? payload.providerId.trim() : void 0;
+    const displayOrder = payload.displayOrder === void 0 ? 100 : Number(payload.displayOrder);
+    const providers2 = await getProviders();
+    if (!name || !types.includes(resourceType) || !Number.isInteger(displayOrder) || displayOrder < 0 || resourceType === "external_supplier" !== Boolean(providerId) || providerId && !providers2.some((provider) => provider.id === providerId && provider.type === "Aserradero")) {
+      return Response.json({ error: "Revise nombre, tipo, proveedor y orden del recurso." }, { status: 400 });
+    }
+    return Response.json({ resource: await createProductionResource({ name, resourceType, providerId, displayOrder }) }, { status: 201 });
+  } catch (error) {
+    return Response.json({ error: error instanceof Error ? error.message : "No se pudo crear el recurso." }, { status: 400 });
+  }
+}
+async function PATCH(request) {
+  try {
+    const payload = await request.json();
+    const id = typeof payload.id === "string" || typeof payload.id === "number" ? payload.id : "";
+    const name = typeof payload.name === "string" ? payload.name.trim() : void 0;
+    const active = typeof payload.active === "boolean" ? payload.active : void 0;
+    const displayOrder = payload.displayOrder === void 0 ? void 0 : Number(payload.displayOrder);
+    const kinds2 = ["Pallet", "Bin", "Piso"];
+    const productKinds2 = payload.productKinds === void 0 ? void 0 : Array.isArray(payload.productKinds) ? payload.productKinds.filter((item) => kinds2.includes(item)) : null;
+    if (!id || name === "" || displayOrder !== void 0 && (!Number.isInteger(displayOrder) || displayOrder < 0) || name === void 0 && active === void 0 && displayOrder === void 0 && productKinds2 === void 0) return Response.json({ error: "Indique el recurso y al menos un cambio v\xE1lido." }, { status: 400 });
+    const resource = await updateProductionResource(id, { name, active, displayOrder, productKinds: productKinds2 && productKinds2.length === kinds2.length ? null : productKinds2 });
+    return resource ? Response.json({ resource }) : Response.json({ error: "Recurso no encontrado." }, { status: 404 });
+  } catch (error) {
+    return Response.json({ error: error instanceof Error ? error.message : "No se pudo actualizar el recurso." }, { status: 400 });
+  }
+}
+var types, iso2;
+var init_route5 = __esm({
+  "app/api/capacity/resources/route.ts"() {
+    "use strict";
+    init_store();
+    types = ["internal_factory", "internal_crew", "external_supplier"];
+    iso2 = (date) => `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}-${String(date.getDate()).padStart(2, "0")}`;
+  }
+});
+
+// app/api/capacity/route.ts
+var route_exports6 = {};
+__export(route_exports6, {
+  GET: () => GET3
+});
+async function GET3(request) {
+  const url = new URL(request.url);
+  const from = url.searchParams.get("from") ?? "";
+  const to = url.searchParams.get("to") ?? "";
+  if (!isoDate2.test(from) || !isoDate2.test(to) || from > to) {
+    return Response.json({ error: "Indique un rango de fechas v\xE1lido." }, { status: 400 });
+  }
+  return Response.json({ capacity: await getCapacity(from, to) });
+}
+var isoDate2;
+var init_route6 = __esm({
+  "app/api/capacity/route.ts"() {
+    "use strict";
+    init_store();
+    isoDate2 = /^\d{4}-\d{2}-\d{2}$/;
+  }
+});
+
+// app/api/capacity/rules/route.ts
+var route_exports7 = {};
+__export(route_exports7, {
+  DELETE: () => DELETE,
+  PATCH: () => PATCH2,
+  POST: () => POST2
+});
+function parseRule(payload) {
+  const resourceId = typeof payload.resourceId === "string" || typeof payload.resourceId === "number" ? payload.resourceId : "";
+  const productId = typeof payload.productId === "string" ? payload.productId.trim() : "";
+  const clientProductId = typeof payload.clientProductId === "string" || typeof payload.clientProductId === "number" ? payload.clientProductId : void 0;
+  const peopleCount = payload.peopleCount === "" || payload.peopleCount === null || payload.peopleCount === void 0 ? void 0 : Number(payload.peopleCount);
+  const configurationLabel = typeof payload.configurationLabel === "string" ? payload.configurationLabel.trim() : "";
+  const normalUnitsPerDay = Number(payload.normalUnitsPerDay);
+  const maximumUnitsPerDay = Number(payload.maximumUnitsPerDay);
+  const validFrom = typeof payload.validFrom === "string" ? payload.validFrom : "";
+  const validTo = typeof payload.validTo === "string" && payload.validTo ? payload.validTo : void 0;
+  const source = typeof payload.source === "string" ? payload.source.trim() : "manual";
+  const note = typeof payload.note === "string" ? payload.note.trim() || void 0 : void 0;
+  if (!resourceId || !productId || !clientProductId || !configurationLabel || !source || !Number.isInteger(normalUnitsPerDay) || normalUnitsPerDay <= 0 || !Number.isInteger(maximumUnitsPerDay) || maximumUnitsPerDay < normalUnitsPerDay || peopleCount !== void 0 && (!Number.isInteger(peopleCount) || peopleCount <= 0) || !isoDate3.test(validFrom) || validTo !== void 0 && (!isoDate3.test(validTo) || validTo < validFrom)) return null;
+  return { resourceId, productId, clientProductId, peopleCount, configurationLabel, normalUnitsPerDay, maximumUnitsPerDay, validFrom, validTo, source, note };
+}
+async function POST2(request) {
+  try {
+    const input = parseRule(await request.json());
+    if (!input) return Response.json({ error: "Revise recurso, producto, configuraci\xF3n, capacidades y vigencia." }, { status: 400 });
+    return Response.json({ rule: await createProductionRule(input) }, { status: 201 });
+  } catch (error) {
+    return Response.json({ error: error instanceof Error ? error.message : "No se pudo guardar la regla." }, { status: 400 });
+  }
+}
+async function PATCH2(request) {
+  try {
+    const payload = await request.json();
+    const id = typeof payload.id === "string" || typeof payload.id === "number" ? payload.id : "";
+    const input = parseRule(payload);
+    if (!id || !input) return Response.json({ error: "Revise la regla y todos sus valores." }, { status: 400 });
+    const rule = await updateProductionRule(id, input);
+    return rule ? Response.json({ rule }) : Response.json({ error: "Regla no encontrada." }, { status: 404 });
+  } catch (error) {
+    return Response.json({ error: error instanceof Error ? error.message : "No se pudo editar la regla." }, { status: 400 });
+  }
+}
+async function DELETE(request) {
+  try {
+    const id = new URL(request.url).searchParams.get("id")?.trim() ?? "";
+    if (!id) return Response.json({ error: "Indique la regla que desea eliminar." }, { status: 400 });
+    const deleted = await deleteProductionRule(id);
+    return deleted ? Response.json({ deleted: true }) : Response.json({ error: "Regla no encontrada." }, { status: 404 });
+  } catch (error) {
+    const message = error instanceof Error ? error.message : "No se pudo eliminar la regla.";
+    return Response.json({ error: message }, { status: message.includes("est\xE1 siendo utilizada") ? 409 : 400 });
+  }
+}
+var isoDate3;
+var init_route7 = __esm({
+  "app/api/capacity/rules/route.ts"() {
+    "use strict";
+    init_store();
+    isoDate3 = /^\d{4}-\d{2}-\d{2}$/;
+  }
+});
+
+// app/api/capacity/team/route.ts
+var route_exports8 = {};
+__export(route_exports8, {
+  PUT: () => PUT4
+});
+async function PUT4(request) {
+  const payload = await request.json();
+  const availablePeople = Number(payload.availablePeople);
+  if (!Number.isInteger(availablePeople) || availablePeople < 0) {
+    return Response.json({ error: "Indique una cantidad entera de personas disponibles." }, { status: 400 });
+  }
+  return Response.json({ team: await saveInternalTeamCapacity(availablePeople) });
+}
+var init_route8 = __esm({
+  "app/api/capacity/team/route.ts"() {
+    "use strict";
+    init_store();
+  }
+});
+
+// app/api/capacity/transport/route.ts
+var route_exports9 = {};
+__export(route_exports9, {
+  PUT: () => PUT5
+});
+async function PUT5(request) {
+  const payload = await request.json();
+  const usesTripCapacity = payload.tripCapacity !== void 0;
+  const capacity = Number(usesTripCapacity ? payload.tripCapacity : payload.palletCapacity);
+  const provider = payload.source === "external" ? (await getProviders()).find((item) => item.id === payload.providerId && item.type === "Transporte") : void 0;
+  if (!payload.source || !["internal", "external"].includes(payload.source) || payload.source === "external" && !provider || !Number.isInteger(capacity) || capacity < 0 || !payload.status || !["estimated", "confirmed"].includes(payload.status)) {
+    return Response.json({ error: "Revise el origen, el transportista y la capacidad." }, { status: 400 });
+  }
+  const status = payload.source === "internal" ? "confirmed" : payload.status;
+  const entry = usesTripCapacity ? await saveTransportTripCapacity({ source: payload.source, providerId: provider?.id, tripCapacity: capacity, status }) : await saveTransportCapacity({ source: payload.source, providerId: provider?.id, palletCapacity: capacity, status });
+  return Response.json({ entry });
+}
+var init_route9 = __esm({
+  "app/api/capacity/transport/route.ts"() {
+    "use strict";
+    init_store();
+  }
+});
+
+// app/api/capacity/trip-adjustments/route.ts
+var route_exports10 = {};
+__export(route_exports10, {
+  PUT: () => PUT6
+});
+async function PUT6(request) {
+  const payload = await request.json();
+  const tripCapacity = Number(payload.tripCapacity);
+  const responsible = payload.responsible?.trim() ?? "";
+  const status = payload.source === "internal" ? "confirmed" : payload.status;
+  const provider = payload.source === "external" ? (await getProviders()).find((item) => item.id === payload.providerId && item.type === "Transporte") : void 0;
+  if (!payload.date || !isoDate4.test(payload.date) || !payload.source || !["internal", "external"].includes(payload.source) || payload.source === "external" && !provider || !Number.isInteger(tripCapacity) || tripCapacity < 0 || !status || !["estimated", "confirmed"].includes(status) || !responsible) {
+    return Response.json({ error: "Revise la fecha, el origen, los cupos y el responsable." }, { status: 400 });
+  }
+  const day = (await getCapacity(payload.date, payload.date)).days[0];
+  const current = day?.transport.find((entry) => entry.source === payload.source && (entry.providerId ?? "") === (provider?.id ?? ""));
+  const tripAdjustment = tripCapacity - (current?.baseTripCapacity ?? 0);
+  const adjustment = await saveTransportTripAdjustment({ date: payload.date, source: payload.source, providerId: provider?.id, tripAdjustment, responsible, status });
+  return Response.json({ adjustment });
+}
+var isoDate4;
+var init_route10 = __esm({
+  "app/api/capacity/trip-adjustments/route.ts"() {
+    "use strict";
+    init_store();
+    isoDate4 = /^\d{4}-\d{2}-\d{2}$/;
+  }
+});
+
+// app/api/clients/route.ts
+var route_exports11 = {};
+__export(route_exports11, {
+  GET: () => GET4,
+  POST: () => POST3
+});
+async function GET4() {
+  const clients = /* @__PURE__ */ new Map();
+  (await getClients()).forEach((client) => clients.set(client.name, { id: client.id, name: client.name, address: client.address, department: client.department, active: client.active, updatedAt: client.updatedAt, orders: 0, requested: 0, delivered: 0, pending: 0, activeOrders: 0, activePallets: 0 }));
+  (await getOrders()).forEach((order) => {
+    const client = clients.get(order.client) ?? { name: order.client, orders: 0, requested: 0, delivered: 0, pending: 0, activeOrders: 0, activePallets: 0 };
+    client.orders += 1;
+    client.requested += order.requested;
+    client.delivered += order.delivered;
+    client.pending += order.pending;
+    if (!isOrderClosed(order)) {
+      client.activeOrders += 1;
+      client.activePallets += order.requested;
+    }
+    clients.set(order.client, client);
+  });
+  return Response.json({ clients: [...clients.values()] });
+}
+async function POST3(request) {
+  try {
+    const body = await request.json();
+    const client = await createClient({ name: typeof body.name === "string" ? body.name : "", address: typeof body.address === "string" ? body.address : void 0, department: typeof body.department === "string" ? body.department : void 0 });
+    return Response.json({ client }, { status: 201 });
+  } catch (error) {
+    return Response.json({ error: error instanceof Error ? error.message : "No se pudo crear el cliente." }, { status: 400 });
+  }
+}
+var init_route11 = __esm({
+  "app/api/clients/route.ts"() {
+    "use strict";
+    init_store();
+    init_data();
+  }
+});
+
+// app/api/history/route.ts
+var route_exports12 = {};
+__export(route_exports12, {
+  GET: () => GET5
+});
+async function GET5() {
+  return Response.json({ history: (await getOrders()).filter(isOrderClosed) });
+}
+var init_route12 = __esm({
+  "app/api/history/route.ts"() {
+    "use strict";
+    init_store();
+    init_data();
+  }
+});
+
 // app/api/logistics/availability/route.ts
 var route_exports13 = {};
 __export(route_exports13, {
@@ -4583,7 +4665,7 @@ var init_route19 = __esm({
     "use strict";
     init_store();
     init_data();
-    statusPriority2 = { planned: 0, preparation: 1, ready_for_delivery: 2, in_transit: 3, partial_delivery: 4, delivered: 5, cancelled: 6 };
+    statusPriority2 = { planned: 0, produced: 1, ht_planning: 2, ht_confirmed: 3, shipped: 4, delivered: 5, cancelled: 6 };
   }
 });
 
@@ -5184,9 +5266,13 @@ async function POST16(request, { params }) {
   const payload = await request.json();
   const startDate = typeof payload.startDate === "string" && isoDate7.test(payload.startDate) ? payload.startDate : "";
   const endDate = typeof payload.endDate === "string" && isoDate7.test(payload.endDate) ? payload.endDate : void 0;
-  if (!startDate) return Response.json({ error: "Indic\xE1 la fecha de inicio del secado." }, { status: 400 });
+  const allocations = Array.isArray(payload.allocations) ? payload.allocations.flatMap((item) => {
+    const row = item;
+    return typeof row.orderLineId === "string" && typeof row.date === "string" && isoDate7.test(row.date) && typeof row.quantity === "number" && Number.isInteger(row.quantity) && row.quantity > 0 ? [{ orderLineId: row.orderLineId, date: row.date, quantity: row.quantity }] : [];
+  }) : void 0;
+  if (!startDate && !allocations?.length) return Response.json({ error: "Indic\xE1 la fecha de inicio del secado." }, { status: 400 });
   try {
-    const order = await planOrderDrying((await params).id, { startDate, endDate, note: typeof payload.note === "string" ? payload.note : void 0 });
+    const order = await planOrderDrying((await params).id, { startDate, endDate, note: typeof payload.note === "string" ? payload.note : void 0, allocations });
     return order ? Response.json({ order }) : Response.json({ error: "Pedido no encontrado." }, { status: 404 });
   } catch (error) {
     return Response.json({ error: error instanceof Error ? error.message : "No se pudo programar el secado." }, { status: 400 });
@@ -5369,9 +5455,6 @@ async function POST20(request, { params }) {
   if (kind === "direccion" && !payload.deliveryAddress?.trim()) {
     return Response.json({ error: "Indique la direcci\xF3n de entrega." }, { status: 400 });
   }
-  if (kind === "despacho" && !payload.remittance?.trim()) {
-    return Response.json({ error: "El n\xFAmero de remito es obligatorio para despachar." }, { status: 400 });
-  }
   if (kind === "incidencia" && !payload.note?.trim()) {
     return Response.json({ error: "Describa la incidencia." }, { status: 400 });
   }
@@ -5380,7 +5463,6 @@ async function POST20(request, { params }) {
       kind,
       deliveredQuantity,
       deliveryAddress: payload.deliveryAddress,
-      remittance: payload.remittance,
       dispatchedAt,
       deliveredAt,
       note: payload.note

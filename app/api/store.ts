@@ -90,7 +90,7 @@ export type CreateOrderInput = {
 
 export type ProductionPlanInput = Array<{ orderLineId: string; resourceId: string; plannedDate: string; plannedQuantity: number }>;
 export type TransportAssignmentInput = { source: TransportSource; providerId?: string; newProviderName?: string };
-export type DryingPlanInput = { startDate: string; endDate?: string; note?: string };
+export type DryingPlanInput = { startDate: string; endDate?: string; note?: string; allocations?: Array<{ orderLineId: string; date: string; quantity: number }> };
 
 export type UpdateOrderInput = Partial<Pick<OperationOrder, "transport" | "requested" | "stage" | "productionSource" | "producerProviderId" | "productionDate" | "importArrivalDate" | "requiredOperations" | "transportSource" | "transportProviderId">> & {
   plannedDate?: string;
@@ -326,12 +326,13 @@ async function attachDatabaseOperations(orders: OperationOrder[]) {
   const orderIds = orders.map((order) => order.id);
   const lineIds = orders.flatMap((order) => order.lines.map((line) => line.id));
   if (!orderIds.length) return orders;
-  const [allocations, shipments, providers, treatmentProgress, reservations] = await Promise.all([
+  const [allocations, shipments, providers, treatmentProgress, reservations, dryingRows] = await Promise.all([
     lineIds.length ? supabaseRequest<DbAllocation[]>(`/rest/v1/production_allocations?select=*&order_line_id=in.(${lineIds.map(encodeURIComponent).join(",")})&order=planned_date.asc,id.asc`) : Promise.resolve([]),
     supabaseRequest<DbShipment[]>(`/rest/v1/shipments?select=*,shipment_lines(*),shipment_events(*)&order_id=in.(${orderIds.map(encodeURIComponent).join(",")})&order=planned_date.asc,id.asc&shipment_events.order=created_at.asc,id.asc`),
     getProviders({ includeRetired: true }),
     lineIds.length ? supabaseRequest<DbLineTreatmentProgress[]>(`/rest/v1/treatment_batches?select=id,order_line_id,quantity,status,reversal_of_batch_id&order_line_id=in.(${lineIds.map(encodeURIComponent).join(",")})`) : Promise.resolve([]),
     lineIds.length ? supabaseRequest<Array<{ shipment_line_id: number; quantity: number; status: string; shipment_lines: { order_line_id: string } | null }>>(`/rest/v1/stock_reservations?select=shipment_line_id,quantity,status,shipment_lines(order_line_id)&status=eq.active`) : Promise.resolve([]),
+    lineIds.length ? supabaseRequest<Array<{ order_line_id: string; planned_date: string; planned_quantity: number }>>(`/rest/v1/drying_allocations?select=order_line_id,planned_date,planned_quantity&order_line_id=in.(${lineIds.map(encodeURIComponent).join(",")})&order=planned_date.asc`).catch(() => []) : Promise.resolve([]),
   ]);
   const providerNames = new Map(providers.map((provider) => [provider.id, provider.name]));
   const lineMap = new Map(orders.flatMap((order) => order.lines.map((line) => [line.id, line] as const)));
@@ -340,6 +341,7 @@ async function attachDatabaseOperations(orders: OperationOrder[]) {
       line.productionAllocations = allocations.filter((item) => item.order_line_id === line.id).map<ProductionAllocation>((item) => ({ id: item.id, orderLineId: item.order_line_id, resourceId: item.resource_id ?? undefined, productionResourceId: item.production_resource_id ?? undefined, capacityRuleId: item.capacity_rule_id ?? undefined, plannedDate: item.planned_date, plannedQuantity: item.planned_quantity, actualQuantity: item.actual_quantity ?? undefined, actualDate: item.actual_date ?? undefined, resultDestination: item.result_destination ?? undefined, status: item.status, note: item.note ?? undefined, completedAt: item.completed_at ?? undefined, completionNote: item.completion_note ?? undefined, createdAt: item.created_at, updatedAt: item.updated_at }));
       const lineBatches = treatmentProgress.filter((batch) => batch.order_line_id === line.id);
       const treated = lineBatches.reduce((sum, batch) => sum + (batch.status === "posted" ? batch.quantity : batch.status === "reversal" ? -batch.quantity : 0), 0);
+      line.dryingAllocations = dryingRows.filter((item) => item.order_line_id === line.id).map((item) => ({ date: item.planned_date, quantity: item.planned_quantity }));
       line.treatedQuantity = Math.max(treated, 0);
       line.treatmentPendingQuantity = Math.max(line.quantity - line.treatedQuantity, 0);
       line.readyReservedQuantity = 0;
@@ -1310,14 +1312,36 @@ export async function assignOrderTransport(orderId: string, input: TransportAssi
 }
 
 export async function planOrderDrying(orderId: string, input: DryingPlanInput) {
+  const allocations = input.allocations?.filter((item) => item.quantity > 0);
+  if (allocations?.length) {
+    // Con cantidades por día, el rango del pedido sale de la primera y la última fecha programadas.
+    const dates = allocations.map((item) => item.date).sort();
+    input = { ...input, startDate: dates[0], endDate: dates.at(-1) };
+  }
   if (!useMemoryStore) {
+    if (allocations) {
+      const current = await getDatabaseOrder(orderId);
+      const lineIds = new Set((current?.lines ?? []).map((line) => line.id));
+      if (!current || allocations.some((item) => !lineIds.has(item.orderLineId) || !Number.isInteger(item.quantity))) throw new Error("Las cantidades no corresponden a este pedido.");
+    }
     await supabaseServerRequest<boolean>("/rest/v1/rpc/plan_order_drying_v1", { method: "POST", body: JSON.stringify({ p_order_id: orderId, p_start: input.startDate, p_end: input.endDate || null, p_note: input.note?.trim() || null }) });
+    if (allocations) {
+      const lineIds = (await getDatabaseOrder(orderId))?.lines.map((line) => encodeURIComponent(line.id)) ?? [];
+      try {
+        if (lineIds.length) await supabaseServerRequest(`/rest/v1/drying_allocations?order_line_id=in.(${lineIds.join(",")})`, { method: "DELETE" });
+        await supabaseServerRequest("/rest/v1/drying_allocations", { method: "POST", body: JSON.stringify(allocations.map((item) => ({ order_line_id: item.orderLineId, planned_date: item.date, planned_quantity: item.quantity }))) });
+      } catch (error) {
+        if ((error as Error & { code?: string }).code === "PGRST205") throw new Error("Falta crear la tabla de programación del secadero en la base de datos.");
+        throw error;
+      }
+    }
     return getDatabaseOrder(orderId);
   }
   const order = memoryOrders.find((item) => item.id === orderId);
   if (!order) return null;
   if (input.endDate && input.endDate < input.startDate) throw new Error("La fecha de fin no puede ser anterior al inicio.");
   Object.assign(order, { dryingStartDate: input.startDate, dryingEndDate: input.endDate || input.startDate, dryingNote: input.note?.trim() || undefined });
+  if (allocations) for (const line of order.lines) line.dryingAllocations = allocations.filter((item) => item.orderLineId === line.id).map((item) => ({ date: item.date, quantity: item.quantity }));
   return order;
 }
 
@@ -1422,8 +1446,6 @@ export async function transitionShipment(shipmentId: number | string, input: { n
   if (input.nextStatus !== expected[shipment.status] && !(input.nextStatus === "cancelled" && !["dispatched", "delivered", "cancelled"].includes(shipment.status))) throw new Error("La transición del viaje no es válida.");
   const remittance = input.remittance?.trim() || shipment.remittance;
   const actor = input.responsible?.trim() || "Operación";
-  if (["ready", "loaded", "dispatched"].includes(input.nextStatus)) {
-  }
   if (input.nextStatus === "ready") {
     shipment.deliveryAddressSnapshot = order.deliveryAddress;
     for (const shipmentLine of shipment.lines) {
@@ -1601,11 +1623,6 @@ export async function recordOrderUpdate(id: string, input: RecordOrderUpdateInpu
   }
 
   if (input.kind === "despacho") {
-    if (!input.remittance?.trim()) throw new Error("El número de remito es obligatorio para despachar.");
-    if (input.remittance?.trim() && input.remittance.trim() !== order.remittance) {
-      changes.push({ field: "Remito", from: order.remittance ?? "—", to: input.remittance.trim() });
-      order.remittance = input.remittance.trim();
-    }
     const dispatchedAt = input.dispatchedAt ?? new Date().toISOString();
     changes.push({ field: "Despacho", from: order.dispatchedAt ?? "—", to: dispatchedAt });
     order.dispatchedAt = dispatchedAt;
@@ -1735,7 +1752,8 @@ type DbInternalTeam = { available_people: number };
 type DbExternalDefault = { id: string; provider_id: string; operation: CapacityOperation; pallet_capacity: number; status: ExternalProductionDefault["status"] };
 type DbTransportDefault = { id: string; source: TransportSource; provider_id: string | null; pallet_capacity: number; trip_capacity: number | null; status: TransportCapacityDefault["status"] };
 type DbCapacityAdjustment = { adjustment_date: string; resource_type: CapacityAdjustment["resourceType"]; operation: CapacityOperation | null; source: TransportSource | null; provider_id: string | null; pallet_adjustment: number; trip_adjustment: number; people_count: number | null; responsible: string | null; status: CapacityStatus | null };
-type DbProductionResource = { id: number; name: string; resource_type: ProductionResourceType; provider_id: string | null; active: boolean; display_order: number };
+type DbProductionResource = { id: number; name: string; resource_type: ProductionResourceType; provider_id: string | null; active: boolean; display_order: number; product_kinds?: Array<"Pallet" | "Bin" | "Piso"> | null };
+const mapProductionResource = (row: DbProductionResource): ProductionResource => ({ id: row.id, name: row.name, resourceType: row.resource_type, providerId: row.provider_id ?? undefined, active: row.active, displayOrder: row.display_order, productKinds: row.product_kinds?.length ? row.product_kinds : undefined });
 type DbProductionRule = { id: number; resource_id: number; product_id: string; client_product_id: number | null; people_count: number | null; configuration_label: string; normal_units_per_day: number; maximum_units_per_day: number; valid_from: string; valid_to: string | null; source: string; note: string | null; created_at: string };
 
 function productionProducts(products: Product[]): ProductionProduct[] {
@@ -1753,7 +1771,7 @@ export async function getCapacity(from: string, to: string) {
     supabaseRequest<DbTransportDefault[]>("/rest/v1/transport_capacity_defaults?select=id,source,provider_id,pallet_capacity,trip_capacity,status"),
     supabaseRequest<DbCapacityAdjustment[]>(`/rest/v1/capacity_daily_adjustments?select=adjustment_date,resource_type,operation,source,provider_id,pallet_adjustment,trip_adjustment,people_count,responsible,status&${range}`),
     getOrders(), getProviders({ includeRetired: true }),
-    supabaseRequest<DbProductionResource[]>("/rest/v1/production_resources?select=id,name,resource_type,provider_id,active,display_order&order=display_order.asc,id.asc"),
+    supabaseRequest<DbProductionResource[]>("/rest/v1/production_resources?select=*&order=display_order.asc,id.asc"),
     supabaseRequest<DbProductionRule[]>("/rest/v1/production_capacity_rules?select=*&order=valid_from.desc,id.desc"),
     getProducts(),
   ]);
@@ -1767,7 +1785,7 @@ export async function getCapacity(from: string, to: string) {
     externalDefaults: external.map((item) => ({ id: item.id, providerId: item.provider_id, operation: item.operation, palletCapacity: item.pallet_capacity, status: item.status })),
     transportDefaults: transport.map((item) => ({ id: item.id, source: item.source, providerId: item.provider_id ?? undefined, palletCapacity: item.pallet_capacity, tripCapacity: item.trip_capacity ?? undefined, status: item.status })),
     adjustments: adjustments.map((item) => ({ date: item.adjustment_date, resourceType: item.resource_type, operation: item.operation ?? undefined, source: item.source ?? undefined, providerId: item.provider_id ?? undefined, palletAdjustment: item.pallet_adjustment, tripAdjustment: item.trip_adjustment, peopleCount: item.people_count ?? undefined, responsible: item.responsible ?? undefined, status: item.status ?? undefined })),
-    productionResources: resources.map((item) => ({ id: item.id, name: item.name, resourceType: item.resource_type, providerId: item.provider_id ?? undefined, active: item.active, displayOrder: item.display_order })),
+    productionResources: resources.map(mapProductionResource),
     productionRules: productionRules.map((item) => ({ id: item.id, resourceId: item.resource_id, productId: item.product_id, clientProductId: item.client_product_id ?? undefined, productName: productNames.get(item.product_id) ?? item.product_id, peopleCount: item.people_count ?? undefined, configurationLabel: item.configuration_label, normalUnitsPerDay: item.normal_units_per_day, maximumUnitsPerDay: item.maximum_units_per_day, validFrom: item.valid_from, validTo: item.valid_to ?? undefined, source: item.source, note: item.note ?? undefined, createdAt: item.created_at })),
     productionProducts: productOptions,
   });
@@ -1870,27 +1888,29 @@ export async function createProductionResource(input: ProductionResourceInput) {
     memoryProductionResources.push(resource);
     return resource;
   }
-  const rows = await supabaseServerRequest<DbProductionResource[]>("/rest/v1/production_resources?select=id,name,resource_type,provider_id,active,display_order", { method: "POST", prefer: "return=representation", body: JSON.stringify({ name: value.name, resource_type: value.resourceType, provider_id: value.providerId ?? null, active: value.active, display_order: value.displayOrder }) });
+  const rows = await supabaseServerRequest<DbProductionResource[]>("/rest/v1/production_resources?select=*", { method: "POST", prefer: "return=representation", body: JSON.stringify({ name: value.name, resource_type: value.resourceType, provider_id: value.providerId ?? null, active: value.active, display_order: value.displayOrder }) });
   const row = rows[0];
-  return { id: row.id, name: row.name, resourceType: row.resource_type, providerId: row.provider_id ?? undefined, active: row.active, displayOrder: row.display_order } satisfies ProductionResource;
+  return mapProductionResource(row);
 }
 
-export async function updateProductionResource(id: number | string, changes: { name?: string; active?: boolean; displayOrder?: number }) {
+export async function updateProductionResource(id: number | string, changes: { name?: string; active?: boolean; displayOrder?: number; productKinds?: Array<"Pallet" | "Bin" | "Piso"> | null }) {
   if (useMemoryStore) {
     const resource = memoryProductionResources.find((item) => String(item.id) === String(id));
     if (!resource) return null;
     if (changes.name !== undefined) resource.name = changes.name.trim();
     if (changes.active !== undefined) resource.active = changes.active;
     if (changes.displayOrder !== undefined) resource.displayOrder = changes.displayOrder;
+    if (changes.productKinds !== undefined) resource.productKinds = changes.productKinds?.length ? changes.productKinds : undefined;
     return resource;
   }
   const body: Record<string, unknown> = {};
   if (changes.name !== undefined) body.name = changes.name.trim();
   if (changes.active !== undefined) body.active = changes.active;
   if (changes.displayOrder !== undefined) body.display_order = changes.displayOrder;
-  const rows = await supabaseServerRequest<DbProductionResource[]>(`/rest/v1/production_resources?id=eq.${encodeURIComponent(String(id))}&select=id,name,resource_type,provider_id,active,display_order`, { method: "PATCH", prefer: "return=representation", body: JSON.stringify(body) });
+  if (changes.productKinds !== undefined) body.product_kinds = changes.productKinds?.length ? changes.productKinds : null;
+  const rows = await supabaseServerRequest<DbProductionResource[]>(`/rest/v1/production_resources?id=eq.${encodeURIComponent(String(id))}&select=*`, { method: "PATCH", prefer: "return=representation", body: JSON.stringify(body) });
   const row = rows[0];
-  return row ? { id: row.id, name: row.name, resourceType: row.resource_type, providerId: row.provider_id ?? undefined, active: row.active, displayOrder: row.display_order } satisfies ProductionResource : null;
+  return row ? mapProductionResource(row) : null;
 }
 
 export async function createProductionRule(input: ProductionRuleInput) {
@@ -2259,9 +2279,10 @@ export async function recordTreatmentNotPerformed(input: TreatmentNotPerformed) 
 
 export async function getTreatmentOptions(): Promise<TreatmentProductOption[]> {
   const [products, movements, clients, orders] = await Promise.all([getProducts(), getStockMovements(), getClients(), getOrders()]);
+  // Se incluyen también los vínculos inactivos: un pedido abierto puede seguir apuntando a uno.
   const relations = useMemoryStore
-    ? memoryClientProducts.filter((item) => item.active)
-    : (await supabaseRequest<DbClientProductRow[]>(`/rest/v1/client_products?select=${masterSelect}&active=eq.true&order=display_order.asc,id.asc`)).map(mapClientProduct);
+    ? memoryClientProducts
+    : (await supabaseRequest<DbClientProductRow[]>(`/rest/v1/client_products?select=${masterSelect}&order=display_order.asc,id.asc`)).map(mapClientProduct);
   const balances = calculateStockBalances(movements);
   const clientMap = new Map(clients.map((client) => [client.id, client.name]));
   const relationDestinations = await Promise.all(relations.map(async (relation) => {
@@ -2273,7 +2294,7 @@ export async function getTreatmentOptions(): Promise<TreatmentProductOption[]> {
       controls: relation.controls.filter((control) => control.active).map((control) => ({ id: control.id, title: control.title, detail: control.detail })),
       primaryAsset: primary && url ? { id: primary.id, url, mimeType: primary.mimeType, altText: primary.altText } : undefined,
     };
-    const destinations: TreatmentDestination[] = [{ key: `client:${relation.id}`, label: base.clientName, ...base }];
+    const destinations: TreatmentDestination[] = relation.active ? [{ key: `client:${relation.id}`, label: base.clientName, ...base }] : [];
     for (const order of orders.filter((item) => !isOrderClosed(item))) for (const line of order.lines.filter((item) => String(item.clientProductId) === String(relation.id))) {
       destinations.push({ key: `order:${line.id}`, label: `${base.clientName} · ${order.reference}`, ...base, orderLineId: line.id, orderReference: order.reference });
     }
@@ -2328,11 +2349,10 @@ export async function recordTreatmentBatch(input: CreateTreatmentBatchInput): Pr
     relation = lineRelation;
   }
   if (relation) {
-    if (!relation.active || relation.productId !== product.id) throw new Error("El cliente/producto no está activo o no coincide con el producto.");
+    if (relation.productId !== product.id) throw new Error("El cliente/producto no coincide con el producto.");
     const activeControls = relation.controls.filter((control) => control.active);
-    if (!activeControls.length || input.controls.length !== activeControls.length) throw new Error("Complete todos los puntos de control activos.");
     if (input.controls.some((check) => !activeControls.some((control) => String(control.id) === String(check.controlId)))) throw new Error("Uno de los controles no pertenece a la ficha seleccionada.");
-  } else if (input.controls.length || !input.note?.trim()) throw new Error("Justifique el registro como stock general.");
+  } else if (input.controls.length) throw new Error("Stock general no admite controles específicos de cliente.");
   const failed = input.controls.filter((control) => control.result === "fail");
   if (failed.some((control) => !control.note?.trim())) throw new Error("Explique cada control no conforme.");
   if (failed.length && !input.note?.trim()) throw new Error("Explique el rechazo del lote.");

@@ -33,8 +33,10 @@ export async function PATCH(request: Request) {
     const name = typeof payload.name === "string" ? payload.name.trim() : undefined;
     const active = typeof payload.active === "boolean" ? payload.active : undefined;
     const displayOrder = payload.displayOrder === undefined ? undefined : Number(payload.displayOrder);
-    if (!id || name === "" || displayOrder !== undefined && (!Number.isInteger(displayOrder) || displayOrder < 0) || name === undefined && active === undefined && displayOrder === undefined) return Response.json({ error: "Indique el recurso y al menos un cambio válido." }, { status: 400 });
-    const resource = await updateProductionResource(id, { name, active, displayOrder });
+    const kinds = ["Pallet", "Bin", "Piso"] as const;
+    const productKinds = payload.productKinds === undefined ? undefined : Array.isArray(payload.productKinds) ? payload.productKinds.filter((item): item is (typeof kinds)[number] => kinds.includes(item as (typeof kinds)[number])) : null;
+    if (!id || name === "" || displayOrder !== undefined && (!Number.isInteger(displayOrder) || displayOrder < 0) || name === undefined && active === undefined && displayOrder === undefined && productKinds === undefined) return Response.json({ error: "Indique el recurso y al menos un cambio válido." }, { status: 400 });
+    const resource = await updateProductionResource(id, { name, active, displayOrder, productKinds: productKinds && productKinds.length === kinds.length ? null : productKinds });
     return resource ? Response.json({ resource }) : Response.json({ error: "Recurso no encontrado." }, { status: 404 });
   } catch (error) {
     return Response.json({ error: error instanceof Error ? error.message : "No se pudo actualizar el recurso." }, { status: 400 });

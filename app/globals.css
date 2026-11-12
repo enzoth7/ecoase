@@ -3622,7 +3622,6 @@ h3 {
 .shipment-table-status.dispatched { background: var(--blue-soft); color: var(--blue); }
 .shipment-table-status.delivered { background: #dff2e7; color: #235d42; }
 .shipment-table-status.cancelled { background: var(--red-soft); color: var(--red); }
-.shipment-remittance-pending { color: var(--muted); }
 
 @media (max-width: 760px) {
   .order-line-editor,
@@ -5699,7 +5698,6 @@ table thead th, .levels-sheet thead th, .matrix-sheet-table thead th {
 .shipment-table-panel .shipment-tracking-table tbody td { min-width: 0; overflow-wrap: anywhere; }
 .shipment-table-panel .shipment-table-products { min-width: 0; }
 .shipment-table-panel .shipment-table-products strong { overflow-wrap: anywhere; }
-.shipment-table-panel .shipment-remittance-pending { display: block; }
 .shipment-table-panel .production-table-action { width: auto; }
 .shipment-table-panel .production-table-action .secondary-button { width: 100%; min-width: 0; }
 @media (max-width: 1100px) {
@@ -6794,3 +6792,404 @@ table:not(.logistics-planning-board):not(.production-board):not(.quantity-grid):
 .route-legend .secondary-button { min-height: 44px; white-space: nowrap; }
 @media (max-width: 980px) { .route-legend li { grid-template-columns: auto minmax(0, 1fr); } .route-legend dl, .route-legend .secondary-button { grid-column: 1 / -1; } }
 @media (max-width: 560px) { .route-legend dl { grid-template-columns: 1fr; } }
+
+/* Todas las filas de encabezados (tablas, grillas y calendarios): gris azulado oscuro con texto blanco. */
+.data-heading, .list-heading, .shipment-table-heading, .capacity-table-heading,
+.production-board thead th, .production-board thead tr,
+.quantity-grid thead th,
+.levels-sheet thead th, .levels-sheet thead .row-number,
+.matrix-sheet-table thead th,
+.logistics-planning-board thead th {
+  background: var(--brand-black) !important;
+  color: #fff !important;
+  border-color: var(--brand-black) !important;
+}
+.data-heading :is(div, span, strong, small, label, button, select, svg),
+.list-heading :is(div, span, strong, small, label, button, select, svg),
+.shipment-table-heading :is(div, span, strong, small, label, button, select, svg),
+.capacity-table-heading :is(div, span, strong, small, label, button, select, svg),
+.production-board thead th :is(span, strong, button, svg),
+.quantity-grid thead th :is(span, strong, button, svg),
+.levels-sheet thead th :is(span, strong, button, svg, input),
+.matrix-sheet-table thead th :is(span, strong, button, svg),
+.logistics-planning-board thead th :is(span, button, svg),
+.production-board thead .native-column-filter-trigger,
+.levels-sheet thead .native-column-filter-trigger,
+.logistics-planning-board thead .native-column-filter-trigger { color: #fff !important; }
+.data-heading select, .list-heading select { color: #fff !important; }
+.data-heading select option, .list-heading select option { color: var(--ink); }
+.production-board thead th.today strong, .logistics-planning-board thead th.today strong { background: var(--brand-yellow) !important; color: var(--brand-black) !important; }
+.logistics-planning-board thead th.today { box-shadow: none; }
+
+/* Calendario principal: transporte (azul), producción (amarillo) y entrega del pedido (verde). */
+:root { --kind-transport: #1d6fd1; --kind-transport-soft: #e3eefb; --kind-transport-line: #b7d1f1;
+  --kind-production: #d9a000; --kind-production-soft: #fff3c9; --kind-production-line: #ecd78a;
+  --kind-delivery: #2a9d5c; --kind-delivery-soft: #e0f2e7; --kind-delivery-line: #a9d6b9; }
+.calendar-legend { display: flex; flex-wrap: wrap; gap: 8px; margin: 0 0 14px; }
+.calendar-legend-item { display: inline-flex; align-items: center; gap: 8px; min-height: 36px; padding: 0 14px; border: 1px solid var(--line); border-radius: 999px; background: #fff; color: var(--ink); font: inherit; font-size: 13px; font-weight: 600; cursor: pointer; }
+.calendar-legend-item i, .event-kind i { width: 10px; height: 10px; border-radius: 50%; flex: none; }
+.calendar-legend-item.kind-transport i, .event-kind-transport i, .kind-transport .event-kind i { background: var(--kind-transport); }
+.calendar-legend-item.kind-production i, .kind-production .event-kind i { background: var(--kind-production); }
+.calendar-legend-item.kind-delivery i, .kind-delivery .event-kind i { background: var(--kind-delivery); }
+.calendar-legend-item[aria-pressed="false"] { background: var(--brand-gray); color: var(--muted); text-decoration: line-through; }
+.calendar-legend-item[aria-pressed="false"] i { opacity: .35; }
+.calendar-legend-item:focus-visible, .day-event-card:focus-visible { outline: 3px solid var(--accent); outline-offset: 2px; }
+.event-kind { display: inline-flex; align-items: center; gap: 6px; color: var(--ink-2); font-size: 11.5px; font-weight: 700; letter-spacing: .01em; }
+.day-event-card { display: grid; gap: 4px; width: 100%; padding: 10px 11px; border: 1px solid; border-radius: 12px; text-align: left; font: inherit; color: var(--ink); cursor: pointer; }
+.day-event-card strong { font-size: 14px; font-weight: 650; overflow-wrap: anywhere; }
+.day-event-card small { display: inline-flex; align-items: center; gap: 6px; color: var(--ink-2); font-size: 12.5px; font-variant-numeric: tabular-nums; }
+.day-event-card.kind-production { background: var(--kind-production-soft); border-color: var(--kind-production-line); }
+.day-event-card.kind-delivery { background: var(--kind-delivery-soft); border-color: var(--kind-delivery-line); }
+.day-event-card:hover { filter: brightness(.97); }
+.shipment-card.kind-transport { background: var(--kind-transport-soft); border-color: var(--kind-transport-line); }
+.shipment-card.kind-transport header { justify-content: space-between; align-items: center; min-height: 22px; margin-bottom: 4px; }
+.shipment-card.kind-transport.movable:hover { border-color: var(--kind-transport); }
+.day-event-card.compact { padding: 7px 9px; gap: 2px; }
+.day-event-card.compact small { display: none; }
+.day-event-card.kind-transport { background: var(--kind-transport-soft); border-color: var(--kind-transport-line); }
+div.day-event-card { cursor: default; }
+
+/* Leyenda y tarjetas del calendario: el tipo se distingue solo por el color. */
+.calendar-legend-item { gap: 0; border-color: transparent; }
+.calendar-legend-item.kind-transport { background: var(--kind-transport-soft); border-color: var(--kind-transport-line); }
+.calendar-legend-item.kind-production { background: var(--kind-production-soft); border-color: var(--kind-production-line); }
+.calendar-legend-item.kind-delivery { background: var(--kind-delivery-soft); border-color: var(--kind-delivery-line); }
+.calendar-legend-item[aria-pressed="false"] { background: var(--brand-gray); border-color: var(--line); }
+
+/* Etiquetas de etapa del pedido: amarillo = planificación, azul = en producción, verde = enviado. */
+.status-badge.planned { background: var(--kind-production-soft) !important; color: #6b4e00 !important; }
+.status-badge.produced, .status-badge.ht_planning, .status-badge.ht_confirmed { background: var(--kind-transport-soft) !important; color: #174e91 !important; }
+.status-badge.shipped, .status-badge.delivered { background: var(--kind-delivery-soft) !important; color: #1d5c39 !important; }
+
+/* Tarjetas de Pedidos: planificado amarillo, producido azul, HT verde claro, enviado verde oscuro. */
+[data-kpi="planned"] { --kpi-fill: #fff3c9; --kpi-ink: #6b4e00; }
+[data-kpi="produced"] { --kpi-fill: #e3eefb; --kpi-ink: #174e91; }
+[data-kpi="ht"] { --kpi-fill: #e0f2e7; --kpi-ink: #1d5c39; }
+[data-kpi="shipped"] { --kpi-fill: #1f6b45; --kpi-ink: #ffffff; }
+.dashboard-kpis .kpi-card small, .dashboard-kpis .kpi-card strong { color: var(--kpi-ink) !important; }
+
+/* Detalle de pedido: simple, de una sola columna de lectura, acciones con botones de ícono. */
+.order-tracking-panel .od-heading { display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: start; gap: 6px 16px; padding: 0 0 18px; margin: 0 0 18px; border-bottom: 1px solid var(--line); }
+.order-tracking-panel .od-title { display: flex; align-items: center; flex-wrap: wrap; gap: 10px 14px; min-width: 0; }
+.order-tracking-panel .od-title h2 { margin: 0; color: var(--ink); font-size: 28px; font-weight: 700; line-height: 1.15; overflow-wrap: anywhere; }
+.order-tracking-panel .od-header-actions { display: flex; gap: 8px; }
+.order-tracking-panel .od-products { grid-column: 1 / -1; margin: 0; color: var(--muted); font-size: 13px; line-height: 1.5; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+.od-icon-button { flex: none; display: inline-grid; place-items: center; width: 40px; height: 40px; padding: 0; border: 1px solid var(--line); border-radius: 10px; background: #fff; color: var(--ink); cursor: pointer; transition: background 120ms ease, border-color 120ms ease; }
+.od-icon-button:hover { background: var(--brand-gray); border-color: #c4ccd3; }
+.od-icon-button:focus-visible { outline: 3px solid var(--accent); outline-offset: 2px; }
+.od-icon-button.danger { color: #a8261f; }
+.od-icon-button.danger:hover { background: #fdecea; border-color: #f1b8b3; }
+
+.order-tracking-panel .tracking-summary { gap: 10px; margin: 0 0 12px; }
+.order-tracking-panel .tracking-summary > div { align-items: flex-start !important; justify-content: center !important; gap: 4px !important; padding: 16px 18px !important; border: 0 !important; border-radius: 12px !important; text-align: left !important; }
+.order-tracking-panel .tracking-summary strong, .order-tracking-panel .tracking-summary small { text-align: left !important; }
+.order-tracking-panel .tracking-summary strong { font-size: 30px !important; }
+.order-tracking-panel .tracking-summary small { font-size: 13px !important; font-weight: 600 !important; }
+.od-progress { display: flex; height: 8px; margin: 0 0 10px; border-radius: 999px; background: #e4e9ed; overflow: hidden; }
+.od-progress i { display: block; height: 100%; }
+.od-progress i.delivered { background: #2a9d5c; }
+.od-progress i.produced { background: #1d6fd1; }
+.order-tracking-panel .tracking-stock-allocation { margin: 0 0 20px; color: var(--muted); font-size: 12.5px; }
+
+.od-phases { display: grid; margin: 0 0 22px; padding: 0; list-style: none; }
+.od-phases li { display: grid; grid-template-columns: auto minmax(0, 1fr) auto; align-items: center; gap: 14px; padding: 12px 0; border-bottom: 1px solid var(--line); }
+.od-phases li:first-child { border-top: 1px solid var(--line); }
+.od-phase-state { display: inline-grid; place-items: center; width: 30px; height: 30px; border-radius: 50%; }
+.od-phases li.done .od-phase-state { background: var(--kind-delivery-soft); color: #1d5c39; }
+.od-phases li.pending .od-phase-state { background: var(--kind-production-soft); color: #6b4e00; }
+.od-phases li > div { display: grid; gap: 2px; min-width: 0; }
+.od-phases small { color: var(--muted); font-size: 12px; font-weight: 600; }
+.od-phases strong { color: var(--ink); font-size: 15px; font-weight: 650; overflow-wrap: anywhere; }
+
+.order-tracking-panel .od-data { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 18px 28px; margin: 0 0 24px; }
+.order-tracking-panel .od-data > div { display: grid; gap: 3px; min-width: 0; padding: 0 !important; border: 0 !important; background: transparent !important; }
+.order-tracking-panel .od-data .wide { grid-column: 1 / -1; }
+.order-tracking-panel .od-data dt { color: var(--muted); font-size: 12px; font-weight: 600; }
+.order-tracking-panel .od-data dd { margin: 0; color: var(--ink); font-size: 15px; font-weight: 600; overflow-wrap: anywhere; }
+
+.order-tracking-panel .od-section-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin: 0 0 10px; }
+.order-tracking-panel .od-section-head h3 { margin: 0; font-size: 16px; font-weight: 650; color: var(--ink); }
+@media (max-width: 560px) { .order-tracking-panel .od-data { grid-template-columns: 1fr; } .order-tracking-panel .od-title h2 { font-size: 23px; } }
+
+/* Lista de pedidos: producción, secadero y logística con sus fechas planificadas. */
+.order-list-item.with-row-actions .order-row, .list-heading.with-row-actions {
+  --order-data-columns: minmax(0, 1fr) minmax(0, 1.3fr) minmax(0, .85fr) minmax(0, .85fr) minmax(0, .85fr) 56px minmax(0, .85fr) minmax(0, .95fr);
+}
+.order-plan-col { min-width: 0; display: grid; align-content: center; gap: 2px; }
+.order-plan-col strong { font-size: 13.5px; font-weight: 600; font-variant-numeric: tabular-nums; }
+.order-plan-empty { color: var(--muted); font-size: 13px; }
+.operations-layout.detail-open .order-plan-col { display: none; }
+
+/* Detalle de pedido: cinco secciones y más aire. */
+.order-tracking-panel .od-heading { padding-bottom: 20px; margin-bottom: 24px; }
+.order-tracking-panel .tracking-tabs { grid-template-columns: repeat(5, minmax(0, 1fr)); margin: 0 0 28px; }
+.order-tracking-panel .tracking-summary { gap: 14px; margin: 0 0 22px; }
+.order-tracking-panel .od-progress { margin-bottom: 14px; }
+.order-tracking-panel .tracking-stock-allocation { margin-bottom: 28px; }
+.order-tracking-panel .od-phases { margin-bottom: 8px; }
+.order-tracking-panel .od-data { margin-bottom: 32px; }
+.od-lines { display: grid; margin: 0; padding: 0; list-style: none; }
+.od-lines li { display: grid; gap: 12px; padding: 16px 0; border-bottom: 1px solid var(--line); color: var(--ink); font-size: 15px; }
+.od-lines li:first-child { border-top: 1px solid var(--line); }
+.od-lines strong { font-variant-numeric: tabular-nums; font-weight: 700; }
+.order-tracking-panel .tracking-timeline { margin-top: 0; }
+@media (max-width: 560px) { .order-tracking-panel .tracking-tabs { grid-template-columns: repeat(3, minmax(0, 1fr)); } }
+
+.od-line-head { display: flex; align-items: baseline; flex-wrap: wrap; gap: 4px 12px; }
+.od-line-head strong { font-size: 16px; font-weight: 650; }
+.od-line-head small { color: var(--muted); font-size: 12.5px; }
+.od-line-metrics { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px 20px; margin: 0; }
+.od-line-metrics > div { display: grid; gap: 2px; min-width: 0; }
+.od-line-metrics .wide { grid-column: 1 / -1; }
+.od-line-metrics dt { color: var(--muted); font-size: 12px; font-weight: 600; }
+.od-line-metrics dd { margin: 0; color: var(--ink); font-size: 15px; font-weight: 650; font-variant-numeric: tabular-nums; overflow-wrap: anywhere; }
+@media (max-width: 560px) { .od-line-metrics { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+
+/* Productos del pedido: tabla de una fila por producto. */
+.od-lines-wrap { overflow: visible; }
+.od-lines-table { width: 100%; table-layout: fixed; border-collapse: separate; border-spacing: 0; font-size: 13.5px; }
+.od-lines-table thead th { padding: 11px 8px; text-align: left; font-size: 12.5px !important; font-weight: 650; }
+.od-lines-table thead th:first-child { border-radius: 10px 0 0 10px; padding-left: 14px; }
+.od-lines-table thead th:last-child { border-radius: 0 10px 10px 0; }
+.od-lines-table th:first-child { width: 29%; }
+.od-lines-table th.num, .od-lines-table td.num { text-align: right; font-variant-numeric: tabular-nums; }
+.od-lines-table tbody th, .od-lines-table tbody td, .od-lines-table tfoot th, .od-lines-table tfoot td { padding: 12px 8px; border-bottom: 1px solid var(--line); color: var(--ink); vertical-align: top; text-align: left; background: transparent; font-weight: 500; }
+.od-lines-table tbody th { padding-left: 14px; font-weight: 650; }
+.od-lines-table tbody th small { display: block; margin-top: 2px; color: var(--muted); font-size: 12px; font-weight: 500; }
+.od-lines-table td.num { font-weight: 600; }
+.od-lines-table tfoot th, .od-lines-table tfoot td { border-bottom: 0; background: var(--brand-gray); font-weight: 700; padding-top: 13px; padding-bottom: 13px; }
+.od-lines-table tfoot th { border-radius: 10px 0 0 10px; padding-left: 14px; }
+.od-lines-table tfoot td:last-child { border-radius: 0 10px 10px 0; }
+
+/* Producción y Envío del pedido: columnas con aire y acción como botón de ícono. */
+.order-tracking-panel .production-table-panel > header, .order-tracking-panel .shipment-table-panel > header { margin-bottom: 18px; }
+.order-tracking-panel .shipment-table-panel > header small { color: var(--muted) !important; font-size: 13px; }
+.order-tracking-panel .production-tracking-table, .order-tracking-panel .shipment-tracking-table { table-layout: fixed; }
+.order-tracking-panel .production-tracking-table th, .order-tracking-panel .production-tracking-table td,
+.order-tracking-panel .shipment-tracking-table th, .order-tracking-panel .shipment-tracking-table td { padding: 13px 12px; overflow-wrap: anywhere; }
+.order-tracking-panel .production-tracking-table thead th:last-child, .order-tracking-panel .shipment-tracking-table thead th:last-child { width: 72px; }
+.order-tracking-panel .production-tracking-table td.production-table-action, .order-tracking-panel .shipment-tracking-table td.production-table-action { width: 72px; padding: 8px 12px; text-align: center !important; }
+.order-tracking-panel .production-tracking-table thead th:first-child { width: 24%; }
+.order-tracking-panel .production-tracking-table thead th:nth-child(n+2):nth-child(-n+6) { width: 11%; }
+.order-tracking-panel .production-tracking-table thead th:nth-child(7) { width: 18%; }
+.order-tracking-panel .shipment-tracking-table thead th:first-child { width: 14%; }
+.order-tracking-panel .shipment-tracking-table thead th:nth-child(2) { width: 14%; }
+.order-tracking-panel .shipment-tracking-table thead th:nth-child(3) { width: 9%; }
+.order-tracking-panel .shipment-tracking-table thead th:nth-child(4) { width: 11%; }
+.order-tracking-panel .shipment-tracking-table thead th:nth-child(5) { width: 14%; }
+.order-tracking-panel .shipment-tracking-table thead th:nth-child(6) { width: 22%; }
+.order-tracking-panel .shipment-tracking-table thead th:nth-child(7) { width: 13%; }
+.order-tracking-panel .shipment-tracking-table tbody th { white-space: normal; min-width: 0; }
+.order-tracking-panel .shipment-table-status { display: inline-block; padding: 4px 10px; white-space: nowrap; }
+.order-tracking-panel .production-table-dates { gap: 4px; }
+
+/* Pedido: detalle de producto, mismas columnas que el catálogo. */
+.od-product-details { table-layout: auto; font-size: 12.5px; }
+.od-product-details thead th { padding: 10px 8px; font-size: 12px !important; }
+.od-product-details thead th:first-child { width: auto; }
+.od-product-details tbody td, .od-product-details tfoot th, .od-product-details tfoot td { padding: 12px 8px; border-bottom: 1px solid var(--line); vertical-align: top; text-align: left; color: var(--ink); font-weight: 500; overflow-wrap: anywhere; }
+.od-product-details tbody td:first-child, .od-product-details thead th:first-child, .od-product-details tfoot th { padding-left: 14px; }
+.od-product-details tbody td .product-code { font-weight: 700; }
+.od-product-details td.num, .od-product-details th.num { text-align: right; font-variant-numeric: tabular-nums; font-weight: 700; padding-right: 14px; }
+.od-product-details tfoot th { text-align: left; }
+
+/* Pedido: detalle de producto con columnas repartidas en todo el ancho. */
+.order-tracking-panel .od-product-details { table-layout: fixed; width: 100%; font-size: 13px; }
+.order-tracking-panel .od-product-details th, .order-tracking-panel .od-product-details td { padding: 14px 12px; overflow-wrap: break-word; word-break: normal; hyphens: none; }
+.order-tracking-panel .od-product-details thead th { padding: 12px 12px; font-size: 12.5px !important; line-height: 1.25; }
+.order-tracking-panel .od-product-details thead th:first-child, .order-tracking-panel .od-product-details tbody td:first-child, .order-tracking-panel .od-product-details tfoot th { width: 76px; padding-left: 18px; }
+.order-tracking-panel .od-product-details thead th:nth-child(2) { width: 88px; }
+.order-tracking-panel .od-product-details thead th:last-child { width: 80px; padding-right: 18px; }
+.order-tracking-panel .od-product-details td.num, .order-tracking-panel .od-product-details th.num { padding-right: 18px; }
+.order-tracking-panel .od-product-details, .order-tracking-panel .od-product-details td, .order-tracking-panel .od-product-details tfoot th { font-size: 12px; }
+.order-tracking-panel .od-product-details thead th { font-size: 12px !important; }
+.order-tracking-panel .od-product-details, .order-tracking-panel .od-product-details td, .order-tracking-panel .od-product-details tfoot th { font-size: 11.5px; }
+.order-tracking-panel .od-product-details thead th { font-size: 11.5px !important; }
+.order-tracking-panel .od-product-details th, .order-tracking-panel .od-product-details td { padding-left: 8px; padding-right: 8px; }
+.order-tracking-panel .od-product-details thead th:first-child, .order-tracking-panel .od-product-details tbody td:first-child { width: 54px; padding-left: 16px; }
+.order-tracking-panel .od-product-details thead th:nth-child(2) { width: 68px; }
+.order-tracking-panel .od-product-details thead th:last-child { width: 62px; padding-right: 16px; }
+.order-tracking-panel .od-product-details td.num, .order-tracking-panel .od-product-details th.num { padding-right: 16px; }
+
+.order-tracking-panel .shipment-status-list { display: flex; flex-wrap: wrap; gap: 6px; }
+.order-tracking-panel .shipment-tracking-table th.num, .order-tracking-panel .shipment-tracking-table td.num { text-align: right; font-variant-numeric: tabular-nums; }
+.order-tracking-panel .shipment-tracking-table tfoot th, .order-tracking-panel .shipment-tracking-table tfoot td { border-bottom: 0; background: var(--brand-gray); font-weight: 700; padding-top: 13px; padding-bottom: 13px; }
+.order-tracking-panel .shipment-tracking-table tfoot th { border-radius: 10px 0 0 10px; }
+.order-tracking-panel .shipment-tracking-table tfoot td:last-child { border-radius: 0 10px 10px 0; }
+
+/* Catálogo: encabezado más compacto. */
+.products-board .products-heading { min-height: 0 !important; padding-top: 4px !important; padding-bottom: 4px !important; }
+.products-board .products-heading .column-filter { min-height: 40px; }
+
+/* Filtros dentro de encabezados oscuros: el botón se aclara al pasar el mouse y las opciones se leen. */
+.data-heading .column-filter:hover, .list-heading .column-filter:hover, .products-heading .column-filter:hover,
+.data-heading .column-filter-trigger:hover, .data-heading .column-filter-trigger.active,
+table thead th .native-column-filter-trigger:hover, table thead th .native-column-filter-trigger.active {
+  background: rgba(255, 255, 255, 0.14) !important; border-radius: 8px; color: #fff !important; }
+.data-heading .column-filter-trigger, .list-heading .column-filter-trigger { color: #fff !important; }
+.data-heading .column-filter-popover, .list-heading .column-filter-popover { background: #fff !important; color: var(--ink) !important; }
+.data-heading .column-filter-popover *, .list-heading .column-filter-popover * { color: var(--ink) !important; }
+.data-heading .column-filter-popover .column-filter-option, .list-heading .column-filter-popover .column-filter-option { background: #fff !important; }
+.data-heading .column-filter-popover .column-filter-option:hover, .data-heading .column-filter-popover .column-filter-option:focus-visible,
+.list-heading .column-filter-popover .column-filter-option:hover, .list-heading .column-filter-popover .column-filter-option:focus-visible { background: var(--brand-gray) !important; }
+.data-heading .column-filter-popover .column-filter-option[aria-selected="true"], .list-heading .column-filter-popover .column-filter-option[aria-selected="true"] { background: var(--brand-black) !important; }
+.data-heading .column-filter-popover .column-filter-option[aria-selected="true"] *, .data-heading .column-filter-popover .column-filter-option[aria-selected="true"],
+.list-heading .column-filter-popover .column-filter-option[aria-selected="true"] { color: #fff !important; }
+.native-column-popover, .native-column-popover * { color: var(--ink); }
+
+/* Producción planificada: tabla siempre visible debajo del calendario. */
+.production-planned-section { margin-top: 20px; }
+.production-planned-table { width: 100%; table-layout: fixed; border-collapse: separate; border-spacing: 0; font-size: 14px; }
+.production-planned-table thead th { padding: 13px 14px; text-align: left; font-size: 13px; }
+.production-planned-table thead th:first-child { border-radius: 12px 0 0 12px; }
+.production-planned-table thead th:last-child { border-radius: 0 12px 12px 0; }
+.production-planned-table tbody th, .production-planned-table tbody td { padding: 14px; border-bottom: 1px solid var(--line); color: var(--ink); text-align: left; vertical-align: middle; font-weight: 500; overflow-wrap: break-word; background: transparent; }
+.production-planned-table tbody th { font-weight: 650; }
+.production-planned-table .num { text-align: right; font-variant-numeric: tabular-nums; }
+.production-planned-table thead th:nth-child(1) { width: 16%; }
+.production-planned-table thead th:nth-child(2) { width: 15%; }
+.production-planned-table thead th:nth-child(3) { width: 9%; }
+.production-planned-table thead th:nth-child(n+4):nth-child(-n+6) { width: 8%; }
+.production-planned-table thead th:nth-child(7) { width: 15%; }
+.production-planned-table thead th:nth-child(8) { width: 11%; }
+.production-planned-table thead th:last-child { width: 104px; }
+.planned-progress { position: relative; height: 22px; border-radius: 999px; background: #e4e9ed; overflow: hidden; }
+.planned-progress i { position: absolute; inset: 0 auto 0 0; background: #cfe1f7; }
+.planned-progress span { position: relative; display: grid; place-items: center; height: 100%; color: #174e91; font-size: 12px; font-weight: 700; }
+.planned-actions { text-align: right !important; white-space: nowrap; }
+.planned-actions .od-icon-button + .od-icon-button { margin-left: 6px; }
+
+/* Calendarios: encabezado unificado, modelo "Producción" (barra oscura, "Lun 9" en una línea, hoy en círculo amarillo). */
+.logistics-planning-board thead th, .production-board thead th { height: 62px; padding: 0 16px !important; text-align: left; vertical-align: middle; }
+.logistics-planning-board thead th > span, .production-board thead th > span { display: inline !important; font-size: 15px; font-weight: 500; text-transform: capitalize; }
+.logistics-planning-board thead th > strong, .production-board thead th > strong { display: inline-grid; place-items: center; min-width: 24px; height: 24px; margin-left: 6px; border-radius: 50%; font-size: 15px !important; font-weight: 700 !important; line-height: 1; font-variant-numeric: tabular-nums; }
+.logistics-planning-board thead th:first-child, .production-board thead th:first-child { border-radius: 12px 0 0 12px !important; }
+.logistics-planning-board thead th:last-child, .production-board thead th:last-child { border-radius: 0 12px 12px 0 !important; }
+.logistics-planning-board thead .logistics-board-corner, .production-board thead .production-board-corner { font-size: 15px !important; font-weight: 650; }
+.logistics-planning-board-wrap { border: 0 !important; border-radius: 0 !important; }
+.logistics-planning-board thead th.today, .logistics-planning-board thead th.board-day-target { background: var(--brand-black) !important; box-shadow: none !important; }
+
+.operations-calendar-board { gap: 0; }
+.operations-calendar-day > header, .operations-calendar-day.today > header, .operations-calendar-day.overload > header, .operations-calendar-day.outside-month > header, .operations-calendar-day.drop-target > header {
+  background: var(--brand-black) !important; color: #fff !important; min-height: 62px; padding: 0 16px; border-bottom: 0; box-shadow: none !important; align-items: center; margin-bottom: 8px; }
+.operations-calendar-day:first-child > header { border-radius: 12px 0 0 12px; }
+.operations-calendar-day:last-child > header { border-radius: 0 12px 12px 0; }
+.operations-calendar-day > header > div:first-child { display: flex; align-items: center; gap: 6px; }
+.operations-calendar-day > header small { color: #fff !important; font-size: 15px; font-weight: 500; }
+.operations-calendar-day > header strong { display: inline-grid; place-items: center; min-width: 24px; height: 24px; border-radius: 50%; font-size: 15px !important; font-weight: 700; line-height: 1; }
+.operations-calendar-day.today > header strong { background: var(--brand-yellow); color: var(--brand-black) !important; }
+.operations-calendar-day.outside-month > header { opacity: .6; }
+.operations-calendar.month-view .operations-calendar-day > header { min-height: 48px; padding: 0 10px; }
+.operations-calendar-day.weekend > header, .operations-calendar-day.past > header { background: var(--brand-black) !important; color: #fff !important; }
+.operations-calendar-day > header strong { color: #fff !important; font-size: 15px !important; }
+.operations-calendar-day.today > header strong { background: var(--brand-yellow) !important; color: var(--brand-black) !important; font-size: 15px !important; min-width: 24px; height: 24px; }
+.operations-calendar:not(.month-view) .operations-calendar-day > header { min-height: 62px !important; }
+
+/* Calendario principal: el encabezado tapa las líneas divisorias entre días. */
+.operations-calendar-day > header { margin: -1px -1px 8px; position: relative; z-index: 1; }
+.operations-calendar-day:first-child > header { margin-left: -1px; }
+
+/* Transportes planificados: tabla con 8 columnas. */
+.logistics-planned-table thead th:nth-child(1) { width: 18%; }
+.logistics-planned-table thead th:nth-child(2) { width: 16%; }
+.logistics-planned-table thead th:nth-child(3) { width: 10%; }
+.logistics-planned-table thead th:nth-child(n+4):nth-child(-n+6) { width: 10%; }
+.logistics-planned-table thead th:nth-child(7) { width: 14%; }
+.logistics-planned-table thead th:last-child { width: 104px; }
+
+/* Logística: el día de hoy es un círculo, igual que en Producción. */
+.logistics-planning-board thead th > strong { color: #fff; }
+.logistics-planning-board thead th.today > strong { border-radius: 50% !important; background: var(--brand-yellow) !important; color: var(--brand-black) !important; min-width: 24px !important; width: 24px; height: 24px !important; font-size: 14px !important; }
+.logistics-planning-board thead th > span { text-transform: capitalize !important; }
+.logistics-planning-board thead th:not(.today) > strong { color: #fff !important; }
+
+/* Logística: columna de vehículos y tarjetas con el mismo criterio que Producción y el calendario principal. */
+.logistics-planning-board tbody th { padding: 12px 14px; background: #f8f9fa; vertical-align: top; }
+.logistics-planning-board tbody th strong { display: block; color: var(--ink); font-size: 15px; font-weight: 650; line-height: 1.3; }
+.logistics-planning-board tbody th small { display: block; margin-top: 2px; color: var(--muted); font-size: 12.5px; font-weight: 400; }
+.logistics-planning-board tbody td, .logistics-planning-board tbody th { border-color: var(--line); }
+.logistics-planning-board .logistics-calendar-card { background: var(--kind-transport-soft); border-color: var(--kind-transport-line); border-radius: 12px; }
+.logistics-planning-board .logistics-calendar-card strong { font-size: 14px; font-weight: 650; }
+.logistics-planning-board .logistics-calendar-card small { color: var(--ink-2); }
+
+/* Logística: celdas con el mismo fondo que Producción; la tarjeta pasa a verde cuando la salida se confirma entregada. */
+.logistics-planning-board tbody td, .logistics-planning-board tbody td.today { background: #f8f9fa !important; border-color: var(--line); }
+.logistics-planning-board tbody td.board-drop-target { background: #eef3f8 !important; }
+.logistics-planning-board .logistics-calendar-card.is-delivered { background: var(--kind-delivery-soft); border-color: var(--kind-delivery-line); }
+
+/* Producción real: mismo tablero que Transporte real. */
+.production-real-board table { table-layout: fixed; }
+.production-real-board th:nth-child(1) { width: 11%; }
+.production-real-board th:nth-child(2) { width: 24%; }
+.production-real-board th:nth-child(3) { width: 14%; }
+.production-real-board th:nth-child(4) { width: 13%; }
+.production-real-board th:nth-child(5), .production-real-board th:nth-child(6) { width: 9%; }
+.production-real-board th:nth-child(7) { width: 11%; }
+.production-real-board th:nth-child(8) { width: 14%; }
+.production-real-board td:nth-child(5), .production-real-board td:nth-child(6) { font-variant-numeric: tabular-nums; font-weight: 700; }
+.production-real-board td small { display: block; color: var(--muted); }
+.production-real-board td:nth-child(2) strong { font-weight: 650; }
+
+/* Etiquetas de estado de Producción real y Transporte real. */
+.logistics-status.yellow { background: var(--kind-production-soft); color: #6b4e00; }
+.logistics-status.blue { background: var(--kind-transport-soft); color: #174e91; }
+.logistics-status.green { background: var(--kind-delivery-soft); color: #1d5c39; }
+.logistics-status.red { background: #fde7e4; color: #a8261f; }
+.logistics-real > header, .production-weekly-panel > header { align-items: center; }
+.logistics-real-summary { display: block; margin-top: 3px; color: var(--muted); font-size: 13px; }
+.production-weekly-panel > header .production-week-summary { margin: 3px 0 0; color: var(--muted); font-size: 13px; }
+
+/* Registro de HT: mismo tablero que Producción real. */
+.treatment-real-board table { table-layout: fixed; }
+.treatment-real-board th:nth-child(1) { width: 11%; }
+.treatment-real-board th:nth-child(2) { width: 27%; }
+.treatment-real-board th:nth-child(3) { width: 17%; }
+.treatment-real-board th:nth-child(4), .treatment-real-board th:nth-child(5) { width: 10%; }
+.treatment-real-board th:nth-child(6) { width: 11%; }
+.treatment-real-board th:nth-child(7) { width: 14%; }
+.treatment-real-board td:nth-child(4), .treatment-real-board td:nth-child(5) { font-variant-numeric: tabular-nums; font-weight: 700; }
+.treatment-real-board td small { display: block; color: var(--muted); }
+.treatment-real-board td:nth-child(2) strong { font-weight: 650; }
+.treatment-real-board .treatment-registered { display: grid; gap: 2px; }
+.treatment-results > header .treatment-header-actions { display: flex; align-items: center; gap: 14px; flex-wrap: wrap; }
+
+/* Reglas del secadero: una sola línea. */
+.drying-rules .sheet-form { padding: 8px 4px 4px; }
+.drying-rule-row { display: flex; align-items: flex-end; flex-wrap: wrap; gap: 12px 16px; }
+.drying-rule-row label { display: grid; gap: 6px; color: var(--ink); font-size: 14px; font-weight: 650; }
+.drying-rule-row input { width: 200px; min-height: 44px; padding: 8px 12px; border: 1px solid var(--line); border-radius: 9px; background: #fff; color: var(--ink); font: inherit; font-variant-numeric: tabular-nums; }
+.drying-rule-row .primary-button { min-height: 44px; }
+.drying-rule-saved { align-self: center; color: #1d5c39; font-size: 13px; font-weight: 600; }
+
+/* Reglas de rendimiento: encabezado oscuro, textos legibles y entradas iguales. */
+.production-config-section > header small, .phase-header small, .module-surface > header small { color: var(--muted) !important; font-size: 13px; }
+.rule-matrix-head { background: var(--brand-black) !important; color: #fff !important; min-height: 56px; }
+.rule-matrix-head :is(div, span, strong, button, svg) { color: #fff !important; }
+.rule-matrix-head .column-filter:hover, .rule-matrix-head .column-filter-trigger:hover, .rule-matrix-head .column-filter-trigger.active { background: rgba(255, 255, 255, .14) !important; border-radius: 8px; }
+.rule-matrix-head .column-filter-popover, .rule-matrix-head .column-filter-popover * { color: var(--ink) !important; }
+.rule-matrix-head .column-filter-popover .column-filter-option { background: #fff !important; }
+.rule-matrix-head .column-filter-popover .column-filter-option:hover { background: var(--brand-gray) !important; }
+.rule-matrix-head .column-filter-popover .column-filter-option[aria-selected="true"] { background: var(--brand-black) !important; }
+.rule-matrix-head .column-filter-popover .column-filter-option[aria-selected="true"], .rule-matrix-head .column-filter-popover .column-filter-option[aria-selected="true"] * { color: #fff !important; }
+.client-rules-intro h3 { font-size: 20px; font-weight: 650; line-height: 1.25; }
+.client-rules-intro p { max-width: 720px; font-size: 14px; line-height: 1.45; }
+.rule-matrix-toolbar { font-size: 13px; }
+.rule-matrix-metric { font-size: 13px; font-weight: 600; color: var(--ink-2); }
+.rule-matrix-input-row:last-child input { background: #fff; }
+.rule-matrix-input-row input { font-size: 14px; font-weight: 600; font-variant-numeric: tabular-nums; }
+.rule-matrix-product-title strong { font-size: 14px; font-weight: 650; line-height: 1.35; }
+.rule-matrix-note { font-size: 13px; }
+
+/* Recursos: qué tipos de producto produce cada uno. */
+.production-resource-kinds { color: var(--ink); font-size: 14px; font-weight: 500; }
+.resource-kind-picker { display: flex; flex-wrap: wrap; gap: 6px 14px; }
+.resource-kind-picker label { display: inline-flex; align-items: center; gap: 6px; color: var(--ink); font-size: 13px; font-weight: 600; cursor: pointer; }
+.resource-kind-picker input { width: 16px; height: 16px; accent-color: var(--brand-black); }
+
+.resource-kind-fieldset { margin: 0; padding: 0; border: 0; }
+.resource-kind-fieldset legend { margin-bottom: 8px; padding: 0; color: var(--ink); font-size: 14px; font-weight: 650; }
+.production-config-table-wrap .planned-actions { text-align: right; width: 72px; }
+
+/* Recursos: el botón de alta usa .primary-button (amarillo de marca); solo se centra en el encabezado. */
+.production-config-section > header { align-items: center; }
+.resource-add-button { display: inline-flex; align-items: center; justify-content: center; gap: 8px; align-self: center; white-space: nowrap; }

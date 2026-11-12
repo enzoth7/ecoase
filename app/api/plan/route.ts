@@ -1,7 +1,7 @@
 import { getOrders } from "../store";
 import { getOrderOperationalStatus, isOrderClosed, orderOperationalStatusLabels, type OrderOperationalStatus } from "../../data";
 
-const statusPriority: Record<OrderOperationalStatus, number> = { planned: 0, preparation: 1, ready_for_delivery: 2, in_transit: 3, partial_delivery: 4, delivered: 5, cancelled: 6 };
+const statusPriority: Record<OrderOperationalStatus, number> = { planned: 0, produced: 1, ht_planning: 2, ht_confirmed: 3, shipped: 4, delivered: 5, cancelled: 6 };
 
 export async function GET() {
   const plan = (await getOrders())

@@ -3,17 +3,14 @@
 import {
   AlertTriangle,
   CalendarClock,
-  CheckCircle2,
   FileText,
-  GripVertical,
   MoreVertical,
   Package,
   Plus,
-  Search,
   SlidersHorizontal,
   Truck,
 } from "lucide-react";
-import { useCallback, useEffect, useMemo, useState, type DragEvent, type FormEvent } from "react";
+import { useCallback, useEffect, useMemo, useState, type FormEvent } from "react";
 import type { CapacityDay, CapacitySnapshot } from "../capacity";
 import { isActiveProvider, type CapacityStatus, type RescheduleReason, type Shipment, type ShipmentStatus, type TransportSource } from "../data";
 import { AsyncButton, FieldError, ModalShell, StatusBadge, WeekNavigator } from "./ui";
@@ -28,14 +25,20 @@ type CalendarShipment = Shipment & {
   treatmentSummary: string;
 };
 type TransporterOption = { id: string; name: string };
-type CalendarPayload = { from: string; to: string; calendar: CalendarShipment[]; capacity: CapacitySnapshot; transporters: TransporterOption[] };
+type DayEvent = { id: string; orderId?: string; client: string; date: string; quantity?: number; detail?: string; time?: string; done?: boolean };
+type CalendarPayload = { from: string; to: string; calendar: CalendarShipment[]; transport?: DayEvent[]; production?: DayEvent[]; deliveries?: DayEvent[]; capacity: CapacitySnapshot; transporters: TransporterOption[] };
+type EventKind = "transport" | "production" | "delivery";
+const eventKinds: Array<{ kind: EventKind; label: string; hint: string }> = [
+  { kind: "transport", label: "Transporte", hint: "Cuándo sale el viaje" },
+  { kind: "production", label: "Producción", hint: "Cuándo se produce" },
+  { kind: "delivery", label: "Entrega del pedido", hint: "Para qué día es el pedido" },
+];
 type CalendarViewMode = "week" | "month";
-type RescheduleSelection = { shipment: CalendarShipment; targetDate?: string; dragged: boolean };
 
 const shipmentLabels: Record<ShipmentStatus, string> = { planned: "Planificado", ready: "Pronto", loaded: "Cargado", dispatched: "En viaje", delivered: "Entregado", cancelled: "Cancelado" };
 const reasonLabels: Record<RescheduleReason, string> = { production: "Producción", logistics: "Logística", client: "Cliente", weather: "Clima / lluvia", other: "Otro" };
 const nextState: Partial<Record<ShipmentStatus, ShipmentStatus>> = { planned: "ready", ready: "loaded", loaded: "dispatched", dispatched: "delivered" };
-const logisticsActionLabels: Partial<Record<ShipmentStatus, string>> = { planned: "Cargar remito y dejar pronto", ready: "Marcar cargado", loaded: "Confirmar salida", dispatched: "Confirmar entrega" };
+const logisticsActionLabels: Partial<Record<ShipmentStatus, string>> = { planned: "Dejar pronto", ready: "Marcar cargado", loaded: "Confirmar salida", dispatched: "Confirmar entrega" };
 const number = new Intl.NumberFormat("es-UY");
 
 function dateKey(date: Date) { return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}-${String(date.getDate()).padStart(2, "0")}`; }
@@ -225,16 +228,16 @@ function TransitionModal({ shipment, onClose, onSaved }: { shipment: CalendarShi
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
   if (!status) return null;
-  const title = status === "ready" ? "Cargar remito" : status === "loaded" ? "Marcar viaje como cargado" : status === "dispatched" ? "Confirmar salida" : "Confirmar entrega";
-  const description = status === "ready" ? "Ingresá el número de remito para dejar el viaje pronto para cargar." : status === "loaded" ? "Confirmá que la mercadería ya está cargada en el transporte." : status === "dispatched" ? "Confirmá que el viaje salió hacia el cliente." : "Registrá las cantidades aceptadas por el cliente.";
-  const submitLabel = status === "ready" ? "Guardar remito y dejar pronto" : status === "loaded" ? "Marcar cargado" : status === "dispatched" ? "Confirmar salida" : "Confirmar entrega";
+  const title = status === "ready" ? "Dejar viaje pronto" : status === "loaded" ? "Marcar viaje como cargado" : status === "dispatched" ? "Confirmar salida" : "Confirmar entrega";
+  const description = status === "ready" ? "Confirmá que el viaje queda pronto para cargar." : status === "loaded" ? "Confirmá que la mercadería ya está cargada en el transporte." : status === "dispatched" ? "Confirmá que el viaje salió hacia el cliente." : "Registrá las cantidades aceptadas por el cliente.";
+  const submitLabel = status === "ready" ? "Dejar pronto" : status === "loaded" ? "Marcar cargado" : status === "dispatched" ? "Confirmar salida" : "Confirmar entrega";
   const submit = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
     setSaving(true);
     setError("");
     const form = new FormData(event.currentTarget);
     const deliveredLines = status === "delivered" ? shipment.lines.map((line) => ({ shipmentLineId: line.id, deliveredQuantity: Number(form.get(`delivered-${line.id}`)) })) : [];
-    const response = await fetch(`/api/shipments/${shipment.id}/transition`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ nextStatus: status, remittance: form.get("remittance"), sharedRemittanceReason: form.get("sharedReason"), deliveredLines, responsible: "Calendario operativo" }) });
+    const response = await fetch(`/api/shipments/${shipment.id}/transition`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ nextStatus: status, deliveredLines, responsible: "Calendario operativo" }) });
     const body = await response.json() as { error?: string };
     setSaving(false);
     if (!response.ok) return setError(body.error ?? "No se pudo avanzar el viaje.");
@@ -246,90 +249,65 @@ function TransitionModal({ shipment, onClose, onSaved }: { shipment: CalendarShi
       <span className="shipment-transition-client"><strong>{shipment.client}</strong><small>{formatShortDate(shipment.plannedDate)} · {number.format(shipment.totalQuantity)} palets</small></span>
       <span className="shipment-transition-state"><small>Cambio de estado</small><strong>{shipmentLabels[shipment.status]} <span aria-hidden="true">→</span> {shipmentLabels[status]}</strong></span>
     </div>
-    <div className="order-dialog-fields shipment-transition-fields">
-      <label className="field-wide"><span>Número de remito <small>Obligatorio</small></span><input name="remittance" defaultValue={shipment.remittance ?? ""} required placeholder="Ej. 0001-00000603" autoComplete="off" /></label>
-      <label className="field-wide"><span>Motivo si el remito se comparte <small>Opcional</small></span><input name="sharedReason" defaultValue={shipment.sharedRemittanceReason ?? ""} placeholder="Completá este campo únicamente si otro viaje usa el mismo remito" /></label>
-    </div>
+    
     {status === "delivered" && <fieldset className="order-dialog-section delivered-lines"><legend>Cantidad aceptada por producto</legend>{shipment.lines.map((line) => <label key={line.id}><span><strong>{line.product}</strong><small>{number.format(line.plannedQuantity)} planificados</small></span><input aria-label={`Cantidad aceptada de ${line.product}`} name={`delivered-${line.id}`} type="number" min="0" max={line.plannedQuantity} defaultValue={line.plannedQuantity} required /></label>)}</fieldset>}
     <FieldError id="transition-error">{error}</FieldError>
     <div className="modal-actions"><button type="button" className="secondary-button" onClick={onClose}>Cancelar</button><AsyncButton type="submit" className="primary-button" loading={saving}>{submitLabel}</AsyncButton></div>
   </form></ModalShell>;
 }
 
-function ShipmentCard({ shipment, compact = false, onOpen, onReschedule, onAdvance, onDragStart, onDragEnd }: { shipment: CalendarShipment; compact?: boolean; onOpen: (id: string) => void; onReschedule: () => void; onAdvance: () => void; onDragStart?: (event: DragEvent<HTMLElement>) => void; onDragEnd?: () => void }) {
-  const movable = ["planned", "ready"].includes(shipment.status);
-  const dragDescriptionId = `shipment-drag-${shipment.id}`;
-  const treatmentText = shipment.treatmentSummary.trim();
-  const remittanceText = shipment.remittance?.trim() ?? "";
-  const remittanceIsPlaceholder = remittanceText.normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLocaleLowerCase("es").includes("historico no informado");
-  const advanceLabel = shipment.status === "planned" ? "Marcar pronto" : nextState[shipment.status] ? `Marcar ${shipmentLabels[nextState[shipment.status]!].toLocaleLowerCase("es")}` : "Avanzar estado";
-  return <article className={`shipment-card ${compact ? "compact" : ""} ${movable ? "movable" : "locked"}`} draggable={movable} onDragStart={movable ? onDragStart : undefined} onDragEnd={movable ? onDragEnd : undefined} aria-describedby={movable ? dragDescriptionId : undefined}>
-    {movable && <span id={dragDescriptionId} className="sr-only">Se puede arrastrar a otro día. También puede usar el botón Reprogramar.</span>}
-    <header>{movable && <span className="shipment-drag-handle" aria-hidden="true" title="Arrastrar a otro día"><GripVertical size={16} /></span>}</header>
-    <div className="shipment-client-row"><strong className="shipment-client">{shipment.client}</strong><ShipmentStatusBadge status={shipment.status} /></div>
-    {!compact && <div className="shipment-product">{shipment.productLines.map((product, index) => <span key={`${shipment.id}-${index}`}>{product}</span>)}</div>}
-    <div className="shipment-facts"><span><Package size={14} />{number.format(shipment.totalQuantity)} palets</span>{compact ? <span><Truck size={14} />{shipment.transportLabel}</span> : <>{treatmentText && <span><CheckCircle2 size={14} />{treatmentText}</span>}<span><Truck size={14} />{shipment.transportLabel}</span>{remittanceText && !remittanceIsPlaceholder && <span><FileText size={14} />Remito {remittanceText}</span>}</>}</div>
-    <div className="shipment-actions" aria-label="Acciones de la entrega"><button type="button" className="shipment-icon-action" onClick={() => onOpen(shipment.orderId)} aria-label={`Ver pedido de ${shipment.client}`} title="Ver pedido"><Search size={18} aria-hidden="true" /></button>{movable && <button type="button" className="shipment-icon-action" onClick={onReschedule} aria-label={`Reprogramar entrega de ${shipment.client}`} title="Reprogramar"><CalendarClock size={18} aria-hidden="true" /></button>}{!compact && nextState[shipment.status] && <button type="button" className="shipment-icon-action shipment-primary-action" onClick={onAdvance} aria-label={`${advanceLabel}: ${shipment.client}`} title={advanceLabel}><CheckCircle2 size={19} aria-hidden="true" /></button>}</div>
-  </article>;
+function DayEventCard({ event, kind, compact, onOpen }: { event: DayEvent; kind: EventKind; compact: boolean; onOpen: (id: string) => void }) {
+  const label = eventKinds.find((item) => item.kind === kind)!.label;
+  const content = <>
+    <strong>{event.client}</strong>
+    {!compact && event.time && <small><CalendarClock size={13} aria-hidden="true" />{event.time}</small>}
+    {!compact && event.quantity !== undefined && <small><Package size={13} aria-hidden="true" />{number.format(event.quantity)} palets</small>}
+    {!compact && event.detail && <small><Truck size={13} aria-hidden="true" />{event.detail}</small>}
+  </>;
+  const className = `day-event-card kind-${event.done ? "delivery" : kind} ${compact ? "compact" : ""}`;
+  return event.orderId
+    ? <button type="button" className={className} onClick={() => onOpen(event.orderId!)} aria-label={`${label}: ${event.client}. Abrir pedido`}>{content}</button>
+    : <div className={className}>{content}</div>;
 }
 
-export function OperationsCalendarView({ onOpen, onAdd, onChanged }: { onOpen: (id: string) => void; onAdd: (date: string) => void; onChanged?: (id: string) => void }) {
+export function OperationsCalendarView({ onOpen, onAdd }: { onOpen: (id: string) => void; onAdd: (date: string) => void; onChanged?: (id: string) => void }) {
   const [view, setView] = useState<CalendarViewMode>("week");
   const [anchorDate, setAnchorDate] = useState(() => new Date());
-  const [rescheduling, setRescheduling] = useState<RescheduleSelection | null>(null);
-  const [advancing, setAdvancing] = useState<CalendarShipment | null>(null);
-  const [draggedShipmentId, setDraggedShipmentId] = useState<string | null>(null);
-  const [dropTargetDate, setDropTargetDate] = useState<string | null>(null);
+  const [visibleKinds, setVisibleKinds] = useState<Record<EventKind, boolean>>({ transport: true, production: true, delivery: true });
   const today = dateKey(new Date());
   const range = useMemo(() => view === "week" ? { start: startOfWeek(anchorDate), end: endOfWeek(anchorDate) } : { start: startOfMonthGrid(anchorDate), end: endOfMonthGrid(anchorDate) }, [anchorDate, view]);
   const days = useMemo(() => daysBetween(range.start, range.end), [range.start, range.end]);
-  const { payload, error, loading, load } = useShipmentRange(range.start, range.end);
+  const { payload, error, loading } = useShipmentRange(range.start, range.end);
   const periodLabel = view === "week" ? formatRange(range.start) : formatMonth(anchorDate);
-  const finish = async (orderId: string) => { setRescheduling(null); setAdvancing(null); await load(); onChanged?.(orderId); };
   const movePeriod = (direction: -1 | 1) => setAnchorDate((current) => { const next = new Date(current); if (view === "week") next.setDate(next.getDate() + direction * 7); else { next.setDate(1); next.setMonth(next.getMonth() + direction); } return next; });
-  const dropShipment = (targetDate: string, transferredId?: string) => {
-    const shipmentId = transferredId || draggedShipmentId;
-    const shipment = payload?.calendar.find((item) => String(item.id) === shipmentId);
-    setDraggedShipmentId(null);
-    setDropTargetDate(null);
-    if (!shipment || shipment.plannedDate === targetDate || !["planned", "ready"].includes(shipment.status)) return;
-    setRescheduling({ shipment, targetDate, dragged: true });
-  };
 
   return <>
     <section className={`module-surface operations-calendar ${view}-view`} aria-labelledby="calendar-page-title">
       <div className="module-toolbar calendar-toolbar operations-calendar-toolbar">
-        <div><h1 id="calendar-page-title" className="sr-only">Entregas</h1><span className="sr-only">Arrastrá una tarjeta para cambiar su fecha. El motivo queda registrado.</span></div>
+        <div><h1 id="calendar-page-title" className="sr-only">Entregas</h1></div>
         <div className="calendar-toolbar-controls"><WeekNavigator label={periodLabel} onPrevious={() => movePeriod(-1)} onNext={() => movePeriod(1)} /><div className="calendar-view-toggle" role="group" aria-label="Vista del calendario"><button type="button" className={view === "week" ? "active" : ""} aria-pressed={view === "week"} onClick={() => setView("week")}>Semana</button><button type="button" className={view === "month" ? "active" : ""} aria-pressed={view === "month"} onClick={() => setView("month")}>Mes</button></div></div>
       </div>
+      <div className="calendar-legend" role="group" aria-label="Qué mostrar en el calendario">{eventKinds.map((item) => <button key={item.kind} type="button" className={`calendar-legend-item kind-${item.kind}`} aria-pressed={visibleKinds[item.kind]} title={item.hint} onClick={() => setVisibleKinds((current) => ({ ...current, [item.kind]: !current[item.kind] }))}>{item.label}</button>)}</div>
       {error && <p className="form-error" role="alert">{error}</p>}
       {loading && !payload && <div className="calendar-loading" role="status">Cargando entregas…</div>}
       {view === "month" && <div className="month-weekdays" aria-hidden="true">{["Lun", "Mar", "Mié", "Jue", "Vie", "Sáb", "Dom"].map((label) => <span key={label}>{label}</span>)}</div>}
       <div className="operations-calendar-board" aria-label={`${view === "week" ? "Semana" : "Mes"} ${periodLabel}`}>
         {days.map((day) => {
-          const shipments = payload?.calendar.filter((item) => item.plannedDate === day.key) ?? [];
-          const capacity = payload?.capacity.days.find((item) => item.date === day.key)?.transportTotals;
-          const overload = capacity?.tripsMissing ?? 0;
-          const configured = capacity?.tripCapacity !== undefined;
-          const capacityLabel = !payload
-            ? "Cargando…"
-            : configured
-              ? `${shipments.length} de ${capacity!.tripCapacity} viajes`
-              : "Cupos sin configurar";
+          const transport = visibleKinds.transport ? payload?.transport?.filter((item) => item.date === day.key) ?? [] : [];
+          const production = visibleKinds.production ? payload?.production?.filter((item) => item.date === day.key) ?? [] : [];
+          const deliveries = visibleKinds.delivery ? payload?.deliveries?.filter((item) => item.date === day.key) ?? [] : [];
+          const eventCount = transport.length + production.length + deliveries.length;
           const weekday = capitalize(new Intl.DateTimeFormat("es-UY", { weekday: view === "month" ? "narrow" : "short" }).format(day.date));
           const outsideMonth = view === "month" && day.date.getMonth() !== anchorDate.getMonth();
-          const isDropTarget = dropTargetDate === day.key;
           const weekend = day.date.getDay() === 0 || day.date.getDay() === 6;
           const past = day.key < today;
-          return <section key={day.key} className={`operations-calendar-day ${day.key === today ? "today" : ""} ${weekend ? "weekend" : ""} ${past ? "past" : ""} ${shipments.length ? "has-trips" : "empty-day"} ${overload > 0 ? "overload" : ""} ${outsideMonth ? "outside-month" : ""} ${isDropTarget ? "drop-target" : ""}`} aria-label={`${weekday} ${day.date.getDate()}, ${shipments.length} ${shipments.length === 1 ? "viaje" : "viajes"}`} onDragOver={(event) => { if (!draggedShipmentId && !event.dataTransfer.types.includes("text/plain")) return; event.preventDefault(); event.dataTransfer.dropEffect = "move"; setDropTargetDate(day.key); }} onDrop={(event) => { event.preventDefault(); dropShipment(day.key, event.dataTransfer.getData("text/plain")); }}>
-            <header><div><small>{weekday}</small><strong>{day.date.getDate()}</strong></div><div className={`day-capacity ${overload > 0 ? "negative" : "positive"}`}><span className={`day-trip-count ${payload && !configured ? "unavailable" : ""}`}>{capacityLabel}</span></div></header>
-            <div className="operations-day-shipments">{shipments.map((shipment) => <ShipmentCard key={shipment.id} shipment={shipment} compact={view === "month"} onOpen={onOpen} onReschedule={() => setRescheduling({ shipment, dragged: false })} onAdvance={() => setAdvancing(shipment)} onDragStart={(event) => { event.dataTransfer.effectAllowed = "move"; event.dataTransfer.setData("text/plain", String(shipment.id)); setDraggedShipmentId(String(shipment.id)); }} onDragEnd={() => { setDraggedShipmentId(null); setDropTargetDate(null); }} />)}{isDropTarget && !shipments.length && <p>Soltar aquí</p>}<button type="button" className="calendar-add-order-button" onClick={() => onAdd(day.key)}><Plus size={15} aria-hidden="true" />Agregar pedidos</button></div>
+          return <section key={day.key} className={`operations-calendar-day ${day.key === today ? "today" : ""} ${weekend ? "weekend" : ""} ${past ? "past" : ""} ${eventCount ? "has-trips" : "empty-day"} ${outsideMonth ? "outside-month" : ""}`} aria-label={`${weekday} ${day.date.getDate()}, ${eventCount} ${eventCount === 1 ? "evento" : "eventos"}`}>
+            <header><div><small>{weekday}</small><strong>{day.date.getDate()}</strong></div></header>
+            <div className="operations-day-shipments">{deliveries.map((event) => <DayEventCard key={event.id} event={event} kind="delivery" compact={view === "month"} onOpen={onOpen} />)}{production.map((event) => <DayEventCard key={event.id} event={event} kind="production" compact={view === "month"} onOpen={onOpen} />)}{transport.map((event) => <DayEventCard key={event.id} event={event} kind="transport" compact={view === "month"} onOpen={onOpen} />)}<button type="button" className="calendar-add-order-button" onClick={() => onAdd(day.key)}><Plus size={15} aria-hidden="true" />Agregar pedidos</button></div>
           </section>;
         })}
       </div>
     </section>
-    {rescheduling && <RescheduleModal shipment={rescheduling.shipment} suggestedDate={rescheduling.targetDate} dragged={rescheduling.dragged} onClose={() => setRescheduling(null)} onSaved={() => void finish(rescheduling.shipment.orderId)} />}
-    {advancing && <TransitionModal shipment={advancing} onClose={() => setAdvancing(null)} onSaved={() => void finish(advancing.orderId)} />}
   </>;
 }
 
@@ -346,5 +324,5 @@ export function OperationsLogisticsView({ onOpen, onChanged }: { onOpen: (id: st
     return priority(a) - priority(b) || a.plannedDate.localeCompare(b.plannedDate) || a.client.localeCompare(b.client, "es");
   });
   const finish = async (orderId: string) => { setRescheduling(null); setAdvancing(null); await load(); onChanged?.(orderId); };
-  return <><section className="module-surface operations-logistics" aria-labelledby="logistics-page-title"><div className="module-toolbar calendar-toolbar"><div><h2 id="logistics-page-title">Viajes de la semana</h2></div><div className="module-toolbar-actions"><button type="button" className="secondary-button" onClick={() => setConfiguring(true)}><SlidersHorizontal size={17} aria-hidden="true" />Configurar cupos</button><WeekNavigator label={formatRange(weekStart)} onPrevious={() => setWeekStart((current) => { const next = new Date(current); next.setDate(current.getDate() - 7); return next; })} onNext={() => setWeekStart((current) => { const next = new Date(current); next.setDate(current.getDate() + 7); return next; })} /></div></div>{error && <p className="form-error">{error}</p>}{payload && <div className="logistics-capacity-strip" aria-label="Cupos de viaje de la semana">{payload.capacity.days.map((day) => { const totals = day.transportTotals; const issue = totals.tripCapacity === undefined || totals.tripsMissing > 0; return <button key={day.date} type="button" className={`${day.date === today ? "today" : ""} ${issue ? "issue" : ""}`} onClick={() => setAdjustingDay(day)} aria-label={`${formatShortDate(day.date)}: ${totals.tripsCommitted} viajes. ${totals.tripCapacity === undefined ? "Cupos sin configurar" : `${totals.tripsAvailable ?? 0} cupos libres`}`}><small>{capitalize(new Intl.DateTimeFormat("es-UY", { weekday: "short" }).format(new Date(`${day.date}T12:00:00`)))}</small><strong>{new Date(`${day.date}T12:00:00`).getDate()}</strong><div><em><b>{totals.tripsCommitted}</b> {totals.tripsCommitted === 1 ? "viaje asignado" : "viajes asignados"}</em>{totals.tripCapacity === undefined ? <mark><AlertTriangle size={13} aria-hidden="true" />Cupos sin configurar</mark> : totals.tripsMissing > 0 ? <em className="missing"><b>{totals.tripsMissing}</b> cupos faltantes</em> : <em><b>{totals.tripsAvailable ?? 0}</b> cupos libres</em>}</div></button>; })}</div>}<div className="shipment-table logistics-queue"><div className="shipment-table-heading"><span>Entrega</span><span>Cliente / productos</span><span>Cantidad</span><span>Transporte / remito</span><span>Estado</span><span>Próxima acción</span></div>{rows.map((shipment) => <article key={shipment.id} className={`shipment-table-row ${shipment.plannedDate < today && shipment.status !== "delivered" ? "overdue" : ""}`}><div><strong>{formatShortDate(shipment.plannedDate)}</strong>{shipment.plannedDate < today && shipment.status !== "delivered" && <small className="logistics-warning">Atrasado</small>}</div><div><strong>{shipment.client}</strong><small>{shipment.productSummary}</small></div><strong>{number.format(shipment.totalQuantity)}</strong><div><strong>{shipment.transportLabel}</strong><small className={!shipment.remittance ? "logistics-warning" : ""}>{shipment.remittance ? `Remito ${shipment.remittance}` : "Remito pendiente"}</small></div><ShipmentStatusBadge status={shipment.status} /><div className="shipment-row-actions logistics-actions">{logisticsActionLabels[shipment.status] && <button type="button" className="primary-button" onClick={() => setAdvancing(shipment)}>{logisticsActionLabels[shipment.status]}</button>}<details><summary aria-label={`Más acciones para ${shipment.client}`}><MoreVertical size={18} /></summary><button type="button" onClick={() => onOpen(shipment.orderId)}>Ver pedido</button>{["planned", "ready"].includes(shipment.status) && <button type="button" onClick={() => setRescheduling(shipment)}><CalendarClock size={15} />Reprogramar</button>}</details></div></article>)}{!rows.length && <div className="shipment-table-empty"><Truck size={28} /><strong>No hay viajes esta semana</strong></div>}</div></section>{rescheduling && <RescheduleModal shipment={rescheduling} onClose={() => setRescheduling(null)} onSaved={() => void finish(rescheduling.orderId)} />}{advancing && <TransitionModal shipment={advancing} onClose={() => setAdvancing(null)} onSaved={() => void finish(advancing.orderId)} />}{configuring && payload && <HabitualTripCapacityModal capacity={payload.capacity} transporters={payload.transporters ?? []} onClose={() => setConfiguring(false)} onSaved={() => { setConfiguring(false); void load(); }} />}{adjustingDay && payload && <DailyTripCapacityModal day={adjustingDay} transporters={payload.transporters ?? []} onClose={() => setAdjustingDay(null)} onSaved={() => { setAdjustingDay(null); void load(); }} />}</>;
+  return <><section className="module-surface operations-logistics" aria-labelledby="logistics-page-title"><div className="module-toolbar calendar-toolbar"><div><h2 id="logistics-page-title">Viajes de la semana</h2></div><div className="module-toolbar-actions"><button type="button" className="secondary-button" onClick={() => setConfiguring(true)}><SlidersHorizontal size={17} aria-hidden="true" />Configurar cupos</button><WeekNavigator label={formatRange(weekStart)} onPrevious={() => setWeekStart((current) => { const next = new Date(current); next.setDate(current.getDate() - 7); return next; })} onNext={() => setWeekStart((current) => { const next = new Date(current); next.setDate(current.getDate() + 7); return next; })} /></div></div>{error && <p className="form-error">{error}</p>}{payload && <div className="logistics-capacity-strip" aria-label="Cupos de viaje de la semana">{payload.capacity.days.map((day) => { const totals = day.transportTotals; const issue = totals.tripCapacity === undefined || totals.tripsMissing > 0; return <button key={day.date} type="button" className={`${day.date === today ? "today" : ""} ${issue ? "issue" : ""}`} onClick={() => setAdjustingDay(day)} aria-label={`${formatShortDate(day.date)}: ${totals.tripsCommitted} viajes. ${totals.tripCapacity === undefined ? "Cupos sin configurar" : `${totals.tripsAvailable ?? 0} cupos libres`}`}><small>{capitalize(new Intl.DateTimeFormat("es-UY", { weekday: "short" }).format(new Date(`${day.date}T12:00:00`)))}</small><strong>{new Date(`${day.date}T12:00:00`).getDate()}</strong><div><em><b>{totals.tripsCommitted}</b> {totals.tripsCommitted === 1 ? "viaje asignado" : "viajes asignados"}</em>{totals.tripCapacity === undefined ? <mark><AlertTriangle size={13} aria-hidden="true" />Cupos sin configurar</mark> : totals.tripsMissing > 0 ? <em className="missing"><b>{totals.tripsMissing}</b> cupos faltantes</em> : <em><b>{totals.tripsAvailable ?? 0}</b> cupos libres</em>}</div></button>; })}</div>}<div className="shipment-table logistics-queue"><div className="shipment-table-heading"><span>Entrega</span><span>Cliente / productos</span><span>Cantidad</span><span>Transporte</span><span>Estado</span><span>Próxima acción</span></div>{rows.map((shipment) => <article key={shipment.id} className={`shipment-table-row ${shipment.plannedDate < today && shipment.status !== "delivered" ? "overdue" : ""}`}><div><strong>{formatShortDate(shipment.plannedDate)}</strong>{shipment.plannedDate < today && shipment.status !== "delivered" && <small className="logistics-warning">Atrasado</small>}</div><div><strong>{shipment.client}</strong><small>{shipment.productSummary}</small></div><strong>{number.format(shipment.totalQuantity)}</strong><div><strong>{shipment.transportLabel}</strong></div><ShipmentStatusBadge status={shipment.status} /><div className="shipment-row-actions logistics-actions">{logisticsActionLabels[shipment.status] && <button type="button" className="primary-button" onClick={() => setAdvancing(shipment)}>{logisticsActionLabels[shipment.status]}</button>}<details><summary aria-label={`Más acciones para ${shipment.client}`}><MoreVertical size={18} /></summary><button type="button" onClick={() => onOpen(shipment.orderId)}>Ver pedido</button>{["planned", "ready"].includes(shipment.status) && <button type="button" onClick={() => setRescheduling(shipment)}><CalendarClock size={15} />Reprogramar</button>}</details></div></article>)}{!rows.length && <div className="shipment-table-empty"><Truck size={28} /><strong>No hay viajes esta semana</strong></div>}</div></section>{rescheduling && <RescheduleModal shipment={rescheduling} onClose={() => setRescheduling(null)} onSaved={() => void finish(rescheduling.orderId)} />}{advancing && <TransitionModal shipment={advancing} onClose={() => setAdvancing(null)} onSaved={() => void finish(advancing.orderId)} />}{configuring && payload && <HabitualTripCapacityModal capacity={payload.capacity} transporters={payload.transporters ?? []} onClose={() => setConfiguring(false)} onSaved={() => { setConfiguring(false); void load(); }} />}{adjustingDay && payload && <DailyTripCapacityModal day={adjustingDay} transporters={payload.transporters ?? []} onClose={() => setAdjustingDay(null)} onSaved={() => { setAdjustingDay(null); void load(); }} />}</>;
 }

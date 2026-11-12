@@ -7,7 +7,6 @@ import type { Product, ProductKind } from "../data";
 import type { ClientProductOption } from "../master-data";
 import { canProduceProductKind } from "../production-resource-applicability";
 import { useNavigate } from "../navigation-client";
-import ColumnFilter from "./ColumnFilter";
 
 type Client = { id?: string; name: string };
 type Draft = { normal: string; maximum: string };
@@ -38,8 +37,6 @@ export default function ClientProductionRules({ clients, catalogProducts, capaci
   const [message, setMessage] = useState("");
   const [saving, setSaving] = useState(false);
   const [clientListOpen, setClientListOpen] = useState(false);
-  const [kindFilter, setKindFilter] = useState("");
-  const [resourceFilter, setResourceFilter] = useState<{ id: string; value: string } | null>(null);
   const [editsByClient, setEditsByClient] = useState<Record<string, Record<string, Draft>>>(() => {
     try { return JSON.parse(sessionStorage.getItem(draftStorageKey) ?? "{}") as Record<string, Record<string, Draft>>; }
     catch { return {}; }
@@ -49,11 +46,8 @@ export default function ClientProductionRules({ clients, catalogProducts, capaci
   const catalogKinds = useMemo(() => new Map(catalogProducts.map((product) => [product.id, product.kind])), [catalogProducts]);
   const hasPalletBaseline = capacity.production.rules.some((rule) => rule.source === "planilla de rendimiento inicial");
   const kindOf = (product: ClientProductOption) => catalogKinds.get(product.productId) ?? product.kind ?? kindFromLabel(product.label);
-  const savedRuleKeys = new Set(capacity.production.rules.filter((rule) => rule.clientProductId !== undefined).map((rule) => key(rule.clientProductId!, rule.resourceId)));
   const matrixResources = resources.filter((resource) => products.some((product) => canProduceProductKind(resource, kindOf(product))));
-  const visibleProducts = products.filter((product) => (!kindFilter || kindOf(product) === kindFilter) && (!resourceFilter || (
-    resourceFilter.value === "configured" ? savedRuleKeys.has(key(product.id, resourceFilter.id)) : !savedRuleKeys.has(key(product.id, resourceFilter.id))
-  )));
+  const visibleProducts = products;
   const matrixColumns = matrixResources.length ? `minmax(190px, 2fr) repeat(${matrixResources.length}, minmax(0, 1fr))` : "minmax(0, 1fr)";
 
   useEffect(() => {
@@ -140,7 +134,7 @@ export default function ClientProductionRules({ clients, catalogProducts, capaci
     <button type="button" className="client-rules-mobile-toggle" aria-expanded={clientListOpen} aria-controls="client-rules-list" onClick={() => setClientListOpen((open) => !open)}>Clientes: {clients.find((client) => client.id === clientId)?.name ?? "Elegí un cliente"}<ChevronDown size={16} aria-hidden="true" /></button>
     <nav id="client-rules-list" className={`client-rules-list ${clientListOpen ? "open" : ""}`} aria-label="Clientes con productos">
       <strong>Clientes</strong>
-      {clients.filter((client) => client.id).map((client) => <button type="button" key={client.id} className={client.id === clientId ? "selected" : ""} onClick={() => { setKindFilter(""); setResourceFilter(null); setClientListOpen(false); navigate(`/reglas-produccion?cliente=${encodeURIComponent(client.id!)}`); }}>{client.name}</button>)}
+      {clients.filter((client) => client.id).map((client) => <button type="button" key={client.id} className={client.id === clientId ? "selected" : ""} onClick={() => { setClientListOpen(false); navigate(`/reglas-produccion?cliente=${encodeURIComponent(client.id!)}`); }}>{client.name}</button>)}
     </nav>
     <div className="client-rules-content">
       <div className="client-rules-intro">
@@ -152,13 +146,10 @@ export default function ClientProductionRules({ clients, catalogProducts, capaci
       {loading && <p>Cargando productos…</p>}
       {!loading && !products.length && <p>Este cliente todavía no tiene productos vinculados. Cargalos en Clientes para configurar su rendimiento.</p>}
       {!loading && products.length > 0 && <>
-        <div className="rule-matrix-toolbar">
-          <span>{visibleProducts.length === products.length ? `${products.length} ${products.length === 1 ? "producto" : "productos"}` : `${visibleProducts.length} de ${products.length} productos`}</span>
-        </div>
         <div className="client-rule-matrix" role="table" aria-label="Reglas de rendimiento por producto y productor" style={{ "--matrix-columns": matrixColumns } as CSSProperties}>
           <div className="rule-matrix-head" role="row">
-            <div role="columnheader"><ColumnFilter label="Producto" value={kindFilter} options={([ ["Pallet", "Pallets"], ["Bin", "Bins"], ["Piso", "Pisos"] ] as const).filter(([kind]) => products.some((product) => kindOf(product) === kind)).map(([value, label]) => ({ value, label }))} onChange={setKindFilter} /></div>
-            {matrixResources.map((resource) => <div role="columnheader" key={resource.id}><ColumnFilter label={resource.name} value={resourceFilter?.id === String(resource.id) ? resourceFilter.value : ""} options={[{ value: "configured", label: "Con regla" }, { value: "missing", label: "Sin regla" }]} onChange={(value) => setResourceFilter(value ? { id: String(resource.id), value } : null)} /></div>)}
+            <div role="columnheader">Producto</div>
+            {matrixResources.map((resource) => <div role="columnheader" key={resource.id}>{resource.name}</div>)}
           </div>
           <div className="rule-matrix-body" role="rowgroup">
             {visibleProducts.map((product) => <div id={`client-rule-${product.id}`} key={product.id} className={`rule-matrix-product client-rule-product ${focusProductIds.includes(String(product.id)) ? "focused" : ""}`} role="row">
@@ -176,9 +167,7 @@ export default function ClientProductionRules({ clients, catalogProducts, capaci
               </div>; })}
             </div>)}
           </div>
-          {!visibleProducts.length && <p className="rule-matrix-empty">No hay productos para este filtro.</p>}
         </div>
-        <p className="rule-matrix-note">Normal es el ritmo habitual, no un mínimo obligatorio. El máximo requiere coordinación previa.</p>
       </>}
     </div>
   </div>;

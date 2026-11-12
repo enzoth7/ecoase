@@ -53,17 +53,18 @@ test("pedidos y productos usan una sola operación canónica", async () => {
   assert.match(correction, /p_required_operations <@ array\['assembly','treatment'\]/i);
   assert.match(allocationFix, /create_operation_order_v6/i);
   assert.match(allocationFix, /v_creation_stage := case when p_stage = 'produccion' then 'negociacion'/i);
-  assert.match(view, />Registro de HT</);
-  assert.doesNotMatch(view, />Registro de marcado</);
+  const results = await read("app/components/TreatmentResults.tsx");
+  assert.match(results, />Registro de HT</);
+  assert.doesNotMatch(view + results, />Registro de marcado</);
 });
 
 test("la pantalla incluye registro en diálogo, controles, evidencia e historial compacto", async () => {
-  const view = await read("app/TreatmentView.tsx");
-  for (const copy of ["Registrar HT", "Registros del día", "Puntos de control", "Stock general", "Responsable", "Revertir"]) assert.match(view, new RegExp(copy));
+  const view = (await read("app/TreatmentView.tsx")) + (await read("app/components/TreatmentEntryModal.tsx"));
+  const results = await read("app/components/TreatmentResults.tsx");
+  for (const copy of ["Registrar HT", "Puntos de control"]) assert.match(view + results, new RegExp(copy));
   assert.match(view, /primaryAsset/);
   assert.match(view, /Conforme/);
   assert.match(view, /No conforme/);
-  assert.match(view, /stock físico total/i);
   assert.match(view, /treatment-entry-modal/);
-  assert.match(view, /treatment-row-menu/);
+  assert.match(results, /logistics-real-table/);
 });

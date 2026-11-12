@@ -345,7 +345,7 @@ export default function ClientMasterView({ clients, products, levels, onAdd, onD
             return <div key={id ?? name} className="client-list-item">
               {id ? <>
                 <AppLink href={`/clientes/${encodeURIComponent(id)}`} className="client-table-row" aria-label={`Abrir ficha de ${name}`}>{cells}</AppLink>
-                <RowDeleteButton label={`Eliminar cliente ${name}`} onClick={() => onDelete(id, name)} />
+                <RowDeleteButton iconOnly label={`Eliminar cliente ${name}`} onClick={() => onDelete(id, name)} />
               </> : <div className="client-table-row unavailable" aria-disabled="true">{cells}</div>}
             </div>;
           }) : <EmptyState icon={Users} title="No hay clientes para ese filtro" action={(query || department || status) ? <button type="button" onClick={() => { setQuery(""); setDepartment(""); setStatus(""); }}>Limpiar filtros</button> : undefined} />}

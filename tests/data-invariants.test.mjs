@@ -34,14 +34,14 @@ test("deriva el estado operativo desde producción, viajes y entregas", () => {
   assert.equal(getOrderOperationalStatus(planned), "planned");
 
   const preparation = structuredClone(source);
-  preparation.lines[0].productionAllocations = [{ id: 1, orderLineId: preparation.lines[0].id, plannedDate: "2026-08-31", plannedQuantity: 100, status: "confirmed", createdAt: "2026-08-31T12:00:00Z", updatedAt: "2026-08-31T12:00:00Z" }];
-  assert.equal(getOrderOperationalStatus(preparation), "preparation");
+  preparation.lines[0].productionAllocations = [{ id: 1, orderLineId: preparation.lines[0].id, plannedDate: "2026-08-31", plannedQuantity: 100, status: "completed", createdAt: "2026-08-31T12:00:00Z", updatedAt: "2026-08-31T12:00:00Z" }];
+  assert.equal(getOrderOperationalStatus(preparation), "produced");
 
   const shipment = { id: 1, orderId: source.id, plannedDate: "2026-08-31", status: "ready", transportSource: "internal", transportLabel: "Interno", createdAt: "2026-08-31T12:00:00Z", updatedAt: "2026-08-31T12:00:00Z", lines: [], events: [] };
-  assert.equal(getOrderOperationalStatus({ ...structuredClone(source), shipments: [shipment] }), "ready_for_delivery");
-  assert.equal(getOrderOperationalStatus({ ...structuredClone(source), shipments: [{ ...shipment, status: "dispatched" }] }), "in_transit");
-  assert.equal(getOrderOperationalStatus({ ...structuredClone(source), dispatchedAt: "2026-08-31T12:00:00Z" }), "in_transit");
-  assert.equal(getOrderOperationalStatus({ ...structuredClone(source), delivered: 100, pending: 500 }), "partial_delivery");
+  assert.equal(getOrderOperationalStatus({ ...structuredClone(source), shipments: [shipment] }), "planned");
+  assert.equal(getOrderOperationalStatus({ ...structuredClone(source), shipments: [{ ...shipment, status: "dispatched" }] }), "shipped");
+  assert.equal(getOrderOperationalStatus({ ...structuredClone(source), dispatchedAt: "2026-08-31T12:00:00Z" }), "shipped");
+  assert.equal(getOrderOperationalStatus({ ...structuredClone(source), delivered: 100, pending: 500 }), "shipped");
   assert.equal(getOrderOperationalStatus({ ...structuredClone(source), delivered: 600, pending: 0 }), "delivered");
   assert.equal(getOrderOperationalStatus({ ...structuredClone(source), stage: "cancelado" }), "cancelled");
   assert.equal(isOrderClosed({ ...structuredClone(source), delivered: 600, pending: 0 }), true);

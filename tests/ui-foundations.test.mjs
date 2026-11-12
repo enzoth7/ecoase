@@ -87,10 +87,10 @@ test("stock deja la información secundaria en el detalle", async () => {
 test("los indicadores de pedidos funcionan como filtros accesibles", async () => {
   const source = await readFile(dashboardPath, "utf8");
   assert.match(source, /aria-label="Filtros rápidos de pedidos"/);
-  assert.match(source, /aria-pressed=\{orderKpiFilter === "in-progress"\}/);
-  assert.match(source, /aria-pressed=\{orderKpiFilter === "waiting"\}/);
-  assert.match(source, /aria-pressed=\{orderKpiFilter === "total"\}/);
-  assert.match(source, /aria-pressed=\{orderKpiFilter === "compliance"\}/);
+  assert.match(source, /aria-pressed=\{orderKpiFilter === "planned"\}/);
+  assert.match(source, /aria-pressed=\{orderKpiFilter === "produced"\}/);
+  assert.match(source, /aria-pressed=\{orderKpiFilter === "ht"\}/);
+  assert.match(source, /aria-pressed=\{orderKpiFilter === "shipped"\}/);
   assert.match(source, /isOrderInPeriod\(order, kpiPeriod, today\)/);
   assert.match(source, /setSelectedId\(""\)/);
 });

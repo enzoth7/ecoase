@@ -92,6 +92,12 @@ export async function getLogisticsRuns(orderId?: string) {
   return orderId ? runs.filter((run) => run.orderId === orderId) : runs;
 }
 
+export async function getTransportRuns(from: string, to: string) {
+  const { runs, vehicles } = await listConfiguration();
+  return runs.filter((run) => run.status !== "cancelled" && run.plannedDate >= from && run.plannedDate <= to)
+    .map((run) => ({ ...run, vehicleName: vehicles.find((vehicle) => vehicle.id === run.vehicleId)?.name }));
+}
+
 export async function getLogisticsSnapshot() {
   const [config, orders, products, clients, providers, stock, movements, batches] = await Promise.all([
     listConfiguration(), getOrders(), getProducts(), getClients(), getProviders(), getStockSummary(), getStockMovements(), getLogisticsTreatmentProgress(),

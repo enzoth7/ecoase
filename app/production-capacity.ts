@@ -10,6 +10,8 @@ export type ProductionResource = {
   providerId?: string;
   active: boolean;
   displayOrder: number;
+  /** Tipos de producto que produce. Sin valor, produce todos. */
+  productKinds?: Array<"Pallet" | "Bin" | "Piso">;
 };
 
 export type ProductionProduct = { id: string; name: string };

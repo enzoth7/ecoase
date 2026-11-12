@@ -58,34 +58,30 @@ test("pedidos planifica transporte desde Logística y audita la planificación p
   assert.match(migration, /insert into public\.order_changes/i);
 });
 
-test("el calendario muestra producto, marcado, transporte, remito y capacidad", async () => {
+test("el calendario suma transporte, producción y entrega del pedido", async () => {
   const [calendar, capacity] = await Promise.all([read("app/components/OperationsCalendar.tsx"), read("app/capacity.ts")]);
-  assert.match(calendar, /productSummary/);
-  assert.match(calendar, /treatmentSummary/);
-  assert.match(calendar, /Número de remito/);
-  assert.match(calendar, /capacityLabel/);
-  assert.match(calendar, /tripsMissing/);
+  assert.match(calendar, /DayEventCard/);
+  assert.match(calendar, /kind="transport"/);
+  assert.match(calendar, /kind="production"/);
+  assert.match(calendar, /kind="delivery"/);
   assert.match(capacity, /productionAllocations/);
   assert.match(capacity, /deliveryShipments/);
 });
 
 test("el diálogo de remito usa el sistema visual operativo", async () => {
   const [calendar, styles] = await Promise.all([read("app/components/OperationsCalendar.tsx"), read("app/globals.css")]);
-  for (const text of ["Cargar remito", "Guardar remito y dejar pronto", "Cambio de estado", "Obligatorio", "Opcional"]) assert.match(calendar, new RegExp(text));
+  for (const text of ["Dejar viaje pronto", "Dejar pronto", "Cambio de estado"]) assert.match(calendar, new RegExp(text));
   assert.match(calendar, /order-operation-modal shipment-transition-modal/);
   assert.match(calendar, /order-operation-form shipment-transition-form/);
   assert.match(styles, /\.shipment-transition-summary/);
   assert.match(styles, /\.shipment-transition-form \.modal-actions/);
 });
 
-test("el calendario permite cambiar entre semana y mes y arrastrar entregas", async () => {
+test("el calendario permite cambiar entre semana y mes y filtrar por tipo", async () => {
   const calendar = await read("app/components/OperationsCalendar.tsx");
   assert.match(calendar, /CalendarViewMode = "week" \| "month"/);
-  assert.match(calendar, /draggable=\{movable\}/);
-  assert.match(calendar, /onDragOver/);
-  assert.match(calendar, /onDrop/);
-  assert.match(calendar, /Confirmar cambio de fecha/);
   assert.match(calendar, /Vista del calendario/);
+  assert.match(calendar, /Qué mostrar en el calendario/);
 });
 
 test("la capacidad logística usa cupos de viaje y no palets libres", async () => {

@@ -22,9 +22,6 @@ export async function POST(request: Request, { params }: RouteContext) {
   if (kind === "direccion" && !payload.deliveryAddress?.trim()) {
     return Response.json({ error: "Indique la dirección de entrega." }, { status: 400 });
   }
-  if (kind === "despacho" && !payload.remittance?.trim()) {
-    return Response.json({ error: "El número de remito es obligatorio para despachar." }, { status: 400 });
-  }
   if (kind === "incidencia" && !payload.note?.trim()) {
     return Response.json({ error: "Describa la incidencia." }, { status: 400 });
   }
@@ -34,7 +31,6 @@ export async function POST(request: Request, { params }: RouteContext) {
       kind,
       deliveredQuantity,
       deliveryAddress: payload.deliveryAddress,
-      remittance: payload.remittance,
       dispatchedAt,
       deliveredAt,
       note: payload.note,

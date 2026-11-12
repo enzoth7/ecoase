@@ -134,7 +134,7 @@ export default function LevelsView({ levels, onSaved }: { levels: ProductLevel[]
       <FieldError id="levels-error">{error}</FieldError>
       {message && <p className="levels-message" role="status">{message}</p>}
       <div className="levels-scroll">
-        <table className="levels-sheet">
+        <table className="levels-sheet" data-column-filters="off">
           <thead>
             <tr>
               <th className="row-number" scope="col"><span className="sr-only">Fila</span></th>

@@ -3,6 +3,7 @@
 import { useEffect, useRef, useState, type CSSProperties } from "react";
 import type { InternalProductionDefault } from "../capacity";
 import type { OperationOrder } from "../data";
+import type { TreatmentNotPerformed, TreatmentWeek } from "../treatment";
 import { dryingDayMs, dryingQuantityOnDay, parseDryingDay as parseDay, shiftDryingDay as shiftDay } from "../drying";
 import { setBoardDragImage } from "./ProductionPlanner";
 import { AsyncButton, FieldError, WeekNavigator } from "./ui";
@@ -63,24 +64,21 @@ export function DryingRulesView() {
         setSaving(false);
       }
     }}>
-      <div className="sheet-fields">
-        <label>Capacidad normal diaria<input type="number" min="1" max="2147483647" step="1" required value={draft ?? normalCapacity} disabled={!rule || saving} onChange={(event) => { setDraft(event.target.value); setSaved(false); }} /><small className="field-help">Unidades de HT por día. Si se supera este valor, el calendario muestra un aviso.</small></label>
-        <p className="field-help">Los pedidos programados en varios días se reparten entre esas fechas para estimar la carga diaria.</p>
+      <div className="drying-rule-row">
+        <label>Capacidad diaria (unidades)<input type="number" min="1" max="2147483647" step="1" required value={draft ?? normalCapacity} disabled={!rule || saving} onChange={(event) => { setDraft(event.target.value); setSaved(false); }} /></label>
+        <AsyncButton type="submit" className="primary-button" loading={saving} disabled={!rule || draft === null || units === normalCapacity}>Guardar</AsyncButton>
+        {saved && <span role="status" className="drying-rule-saved">Guardado</span>}
       </div>
       <FieldError id="drying-rule-error">{error || saveError}</FieldError>
-      <div className="drying-rule-actions">
-        <AsyncButton type="submit" className="primary-button" loading={saving} disabled={!rule || draft === null || units === normalCapacity}>Guardar regla</AsyncButton>
-        {saved && <span role="status">Regla guardada.</span>}
-      </div>
     </form>
   </section>;
 }
 
-export type DryingEntry = { order: OperationOrder; lines: { product: string; quantity: number }[] };
+export type DryingEntry = { order: OperationOrder; lines: { lineId?: string; product: string; quantity: number; done?: boolean; byDay?: Record<string, number> }[] };
 
-export async function saveDryingPlan(orderId: string, startDate: string, endDate?: string, note?: string) {
+export async function saveDryingPlan(orderId: string, startDate: string, endDate?: string, note?: string, allocations?: Array<{ orderLineId: string; date: string; quantity: number }>) {
   const response = await fetch(`/api/orders/${encodeURIComponent(orderId)}/drying`, {
-    method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ startDate, endDate, note }),
+    method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ startDate, endDate, note, allocations }),
   });
   const payload = await response.json() as { order?: OperationOrder; error?: string };
   if (!response.ok || !payload.order) throw new Error(payload.error ?? "No se pudo programar el secado.");
@@ -97,12 +95,23 @@ export function DryingCalendar({ entries, onPlan, onSaved }: { entries: DryingEn
   const [error, setError] = useState("");
   const lastDrag = useRef(0);
   const dropInProgress = useRef(false);
+  // Lo que se marcó como "No se hizo" en el registro de HT se pinta en rojo.
+  const [missed, setMissed] = useState<TreatmentNotPerformed[]>([]);
+  const weekFrom = start, weekTo = shiftDay(start, 6);
+  useEffect(() => {
+    const controller = new AbortController();
+    fetch(`/api/treatment/results?from=${weekFrom}&to=${weekTo}`, { signal: controller.signal })
+      .then((response) => response.ok ? response.json() as Promise<{ week?: TreatmentWeek }> : Promise.reject())
+      .then((payload) => setMissed(payload.week?.notPerformed ?? []))
+      .catch(() => { if (!controller.signal.aborted) setMissed([]); });
+    return () => controller.abort();
+  }, [weekFrom, weekTo, entries.length]);
   const week = Array.from({ length: 7 }, (_, index) => {
     const day = shiftDay(start, index);
     const date = parseDay(day);
     const dayLabel = `${weekday.format(date).replace(".", "")} ${date.getUTCDate()}`;
-    const cards = entries.flatMap(({ order, lines }) => lines.map(({ product, quantity }, index) => ({
-      order, product, index, quantity: dryingQuantityOnDay(order, quantity, day),
+    const cards = entries.flatMap(({ order, lines }) => lines.map(({ lineId, product, quantity, done, byDay }, index) => ({
+      order, product, index, done: Boolean(done), lineId, quantity: byDay ? byDay[day] ?? 0 : dryingQuantityOnDay(order, quantity, day),
     })).filter(({ quantity }) => quantity > 0));
     const total = cards.reduce((sum, card) => sum + card.quantity, 0);
     return { day, date, dayLabel, cards, total };
@@ -116,7 +125,8 @@ export function DryingCalendar({ entries, onPlan, onSaved }: { entries: DryingEn
     dropInProgress.current = true;
     setSaving(true); setTarget(day); setError("");
     try {
-      onSaved(await saveDryingPlan(order.id, shiftDay(startDate, delta), shiftDay(order.dryingEndDate ?? startDate, delta), order.dryingNote));
+      const shifted = order.lines.flatMap((line) => (line.dryingAllocations ?? []).map((item) => ({ orderLineId: line.id, date: shiftDay(item.date, delta), quantity: item.quantity })));
+      onSaved(await saveDryingPlan(order.id, shiftDay(startDate, delta), shiftDay(order.dryingEndDate ?? startDate, delta), order.dryingNote, shifted.length ? shifted : undefined));
     } catch (error) {
       setError(error instanceof Error ? error.message : "No se pudo mover la programación.");
     } finally {
@@ -131,7 +141,7 @@ export function DryingCalendar({ entries, onPlan, onSaved }: { entries: DryingEn
     </header>
     <FieldError id="drying-calendar-error">{error || ruleError}</FieldError>
     <div className="production-board-wrap">
-      <table className="production-board drying-board">
+      <table className="production-board drying-board" data-column-filters="off">
         <thead><tr><th className="production-board-corner" scope="col">Tratamiento</th>{days.map(({ day, date }) => <th key={day} scope="col" className={day === today ? "today" : ""}><span>{weekday.format(date).replace(".", "")}</span><strong>{date.getUTCDate()}</strong></th>)}</tr></thead>
         <tbody><tr>
           <th scope="row"><strong>Secadero</strong><small>{number.format(normalCapacity)} u. por día</small></th>
@@ -147,9 +157,10 @@ export function DryingCalendar({ entries, onPlan, onSaved }: { entries: DryingEn
               event.preventDefault();
               if (dragging?.order.id === event.dataTransfer.getData("text/plain")) void drop(day);
             }}>
-              {cards.map(({ order, product, quantity, index }) => {
+              {cards.map(({ order, product, quantity, index, done, lineId }) => {
+                const notDone = !done && Boolean(lineId) && missed.some((item) => item.orderLineId === lineId && item.date === day);
                 const label = `${number.format(quantity)} u. | ${order.client}`;
-                return <button type="button" key={`${order.id}-${index}`} data-order-id={order.id} draggable={!saving} className={`board-chip${dragging?.order.id === order.id ? " board-chip-dragging" : ""}`} onClick={() => { if (!saving && Date.now() - lastDrag.current > 500) onPlan(order); }} onDragStart={(event) => {
+                return <button type="button" key={`${order.id}-${index}`} data-order-id={order.id} draggable={!saving} className={`board-chip${done ? " board-chip-result-client" : ""}${notDone ? " board-chip-result-not-produced" : ""}${dragging?.order.id === order.id ? " board-chip-dragging" : ""}`} onClick={() => { if (!saving && Date.now() - lastDrag.current > 500) onPlan(order); }} onDragStart={(event) => {
                   lastDrag.current = Date.now();
                   event.dataTransfer.effectAllowed = "move";
                   event.dataTransfer.setData("text/plain", order.id);
