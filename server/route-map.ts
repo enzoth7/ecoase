@@ -59,6 +59,6 @@ export const routes = [
   { pattern: /^\/oauth\/authorize$/, keys: [], load: () => import("../app/oauth/authorize/route") },
   { pattern: /^\/oauth\/token$/, keys: [], load: () => import("../app/oauth/token/route") },
   { pattern: /^\/oauth\/register$/, keys: [], load: () => import("../app/oauth/register/route") },
-  { pattern: /^\/\.well-known\/oauth-authorization-server$/, keys: [], load: () => import("../app/oauth/well-known-authorization-server/route") },
+  { pattern: /^\/\.well-known\/(oauth-authorization-server|openid-configuration)(\/.*)?$/, keys: [], load: () => import("../app/oauth/well-known-authorization-server/route") },
   { pattern: /^\/\.well-known\/oauth-protected-resource(\/.*)?$/, keys: [], load: () => import("../app/oauth/well-known-protected-resource/route") },
 ];

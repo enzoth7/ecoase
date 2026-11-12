@@ -13,7 +13,7 @@ const mime: Record<string, string> = { ".html": "text/html; charset=utf-8", ".js
 createServer(async (incoming, outgoing) => {
   try {
     const url = new URL(incoming.url || "/", `http://${incoming.headers.host || "localhost"}`);
-    if (url.pathname.startsWith("/api/") || url.pathname === "/mcp" || url.pathname.startsWith("/oauth/") || url.pathname.startsWith("/.well-known/oauth-")) {
+    if (url.pathname.startsWith("/api/") || url.pathname === "/mcp" || url.pathname.startsWith("/oauth/") || url.pathname.startsWith("/.well-known/oauth-") || url.pathname.startsWith("/.well-known/openid-")) {
       await serveApi(incoming, outgoing, dispatch);
       return;
     }

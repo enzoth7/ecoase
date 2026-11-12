@@ -7806,7 +7806,7 @@ var init_route_map = __esm({
       { pattern: /^\/oauth\/authorize$/, keys: [], load: () => Promise.resolve().then(() => (init_route57(), route_exports57)) },
       { pattern: /^\/oauth\/token$/, keys: [], load: () => Promise.resolve().then(() => (init_route58(), route_exports58)) },
       { pattern: /^\/oauth\/register$/, keys: [], load: () => Promise.resolve().then(() => (init_route59(), route_exports59)) },
-      { pattern: /^\/\.well-known\/oauth-authorization-server$/, keys: [], load: () => Promise.resolve().then(() => (init_route60(), route_exports60)) },
+      { pattern: /^\/\.well-known\/(oauth-authorization-server|openid-configuration)(\/.*)?$/, keys: [], load: () => Promise.resolve().then(() => (init_route60(), route_exports60)) },
       { pattern: /^\/\.well-known\/oauth-protected-resource(\/.*)?$/, keys: [], load: () => Promise.resolve().then(() => (init_route61(), route_exports61)) }
     ];
   }

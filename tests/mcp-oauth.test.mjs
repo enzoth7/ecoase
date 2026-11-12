@@ -58,6 +58,7 @@ test("publica los datos que Claude necesita para descubrir el acceso", async () 
     assert.equal(server.issuer, ORIGIN);
     assert.equal(server.authorization_endpoint, `${ORIGIN}/oauth/authorize`);
     assert.deepEqual(server.code_challenge_methods_supported, ["S256"]);
+    for (const path of ["/.well-known/openid-configuration", "/.well-known/oauth-authorization-server/mcp"]) assert.equal((await (await send(path)).json()).token_endpoint, `${ORIGIN}/oauth/token`);
     for (const path of ["/.well-known/oauth-protected-resource", "/.well-known/oauth-protected-resource/mcp"]) {
       const resource = await (await send(path)).json();
       assert.equal(resource.resource, `${ORIGIN}/mcp`);
