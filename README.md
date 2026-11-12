@@ -91,8 +91,8 @@ Con algún token configurado, cada pedido debe enviar `Authorization: Bearer <to
 
 **Conexión**
 
-- Claude Code: `claude mcp add --transport http ecoase https://TU-DOMINIO/mcp --header "Authorization: Bearer TU_TOKEN"`
-- Claude Desktop: los conectores personalizados de la interfaz no permiten enviar un encabezado propio; usá el puente `mcp-remote` en `claude_desktop_config.json`: `{ "mcpServers": { "ecoase": { "command": "npx", "args": ["-y", "mcp-remote", "https://TU-DOMINIO/mcp", "--header", "Authorization:${ECOASE_AUTH}"], "env": { "ECOASE_AUTH": "Bearer TU_TOKEN" } } } }`
+- Claude Code (la dirección de producción es la primera; `ecoase.vercel.app` solo redirige): `claude mcp add --transport http ecoase https://dashboardoperativo.vercel.app/mcp --header "Authorization: Bearer TU_TOKEN"`
+- Claude Desktop: los conectores personalizados de la interfaz no permiten enviar un encabezado propio; usá el puente `mcp-remote` en `claude_desktop_config.json`: `{ "mcpServers": { "ecoase": { "command": "npx", "args": ["-y", "mcp-remote", "https://dashboardoperativo.vercel.app/mcp", "--header", "Authorization:${ECOASE_AUTH}"], "env": { "ECOASE_AUTH": "Bearer TU_TOKEN" } } } }`
 - Pruebas locales: iniciá la aplicación y conectá MCP Inspector a `http://localhost:3000/mcp` con Streamable HTTP. Los tests son `npm run test:mcp` (incluye un pedido completo de punta a punta).
 
 Las herramientas de archivos (subir planos o fotos) no están en el MCP; se hacen desde la pantalla de Clientes.
