@@ -560,8 +560,8 @@ function ProductFormModal({ product, products, levels, clients, palletClass = "a
   const [error, setError] = useState("");
   const [dirty, setDirty] = useState(false);
   const [draft, setDraftState] = useState(() => draftFromProduct(product, products, levels));
-  const [palletClassDraft, setPalletClassDraft] = useState<PalletClass | "auto">(palletClass);
-  useEffect(() => { if (classesReady) setPalletClassDraft(palletClass); }, [classesReady, palletClass]);
+  const [palletClassEdit, setPalletClassEdit] = useState<PalletClass | "auto" | null>(null);
+  const palletClassDraft = palletClassEdit ?? palletClass;
   const setDraft: Dispatch<SetStateAction<ProductDraft>> = (value) => { setDirty(true); setError(""); setDraftState(value); };
   const clientIdsByName = new Map(clients.map((client) => [client.name, client.id]));
   const [clientIds, setClientIds] = useState<string[]>(() => (product?.clientNames ?? []).map((name) => clientIdsByName.get(name)).filter((id): id is string => Boolean(id)));
@@ -603,7 +603,7 @@ function ProductFormModal({ product, products, levels, clients, palletClass = "a
       <form onSubmit={save}>
         <ProductDraftFields draft={draft} setDraft={setDraft} levels={levels} />
         {product?.kind === "Pallet" && <fieldset className="sheet-group field-wide"><legend>Logística</legend>
-          <label className="option-field"><span>Tamaño logístico</span><select value={palletClassDraft} onChange={(event) => { setPalletClassDraft(event.target.value as PalletClass | "auto"); setDirty(true); }} disabled={!classesReady}>
+          <label className="option-field"><span>Tamaño logístico</span><select value={palletClassDraft} onChange={(event) => { setPalletClassEdit(event.target.value as PalletClass | "auto"); setDirty(true); }} disabled={!classesReady}>
             <option value="auto">Automático según superficie</option>
             <option value="small">Chico</option>
             <option value="large">Grande</option>

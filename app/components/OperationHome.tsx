@@ -47,14 +47,13 @@ export default function OperationHome({ orders, treatmentProductIds, onOpenOrder
 
   useEffect(() => {
     const controller = new AbortController();
-    setStock({ status: "loading", rows: [] });
     fetch("/api/stock/summary", { signal: controller.signal })
       .then(async (response) => {
         const payload = await response.json() as { stock?: StockSummaryRow[] };
         if (!response.ok || !payload.stock) throw new Error("No se pudo cargar el stock.");
         setStock({ status: "ready", rows: scopeStockInventory(payload.stock, orders) });
       })
-      .catch((error: unknown) => { if (!controller.signal.aborted) setStock({ status: "error", rows: [] }); });
+      .catch(() => { if (!controller.signal.aborted) setStock({ status: "error", rows: [] }); });
     return () => controller.abort();
   }, [orders]);
 

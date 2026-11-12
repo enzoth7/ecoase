@@ -140,8 +140,9 @@ test("configura capacidades de transporte y parámetros por cliente", async ({ p
   await dialog.getByRole("button", { name: "Continuar" }).click();
   await dialog.locator(".logistics-line input[type=number]").first().fill("81");
   await expect(dialog.getByRole("complementary", { name: "Carga y volumen" })).toContainText("La carga supera la capacidad configurada del transportista.");
+  // Superar la capacidad del transportista es una advertencia: se puede continuar.
   await dialog.getByRole("button", { name: "Continuar" }).click();
-  await expect(dialog.getByRole("heading", { name: "¿Cuántos palets listos enviás?" })).toBeVisible();
+  await expect(dialog.getByRole("heading", { name: "Revisá la salida" })).toBeVisible();
 });
 
 test("el mapa nacional muestra clientes externos y sus tiempos aunque no existan salidas", async ({ page, request }) => {
@@ -192,19 +193,18 @@ test("solo planifica palets listos y confirma el transporte después", async ({ 
   await dialog.getByLabel("Capacidad de esta salida").fill("4");
   await expect(capacityPanel).toContainText("Capacidad indicada4");
   await dialog.getByRole("button", { name: "Continuar" }).click();
-  await expect(dialog.getByRole("heading", { name: "¿Cuántos palets listos enviás?" })).toBeVisible();
+  await expect(dialog.getByRole("heading", { name: "¿Cuántos palets enviás?" })).toBeVisible();
   await expect(dialog.locator(".logistics-lines-head")).toHaveText("Nombre del productoTamañoCantidad");
   const loadRow = dialog.locator(".logistics-line").first();
   await expect(loadRow.locator(".logistics-line-size")).toHaveText("Chico");
-  await expect(loadRow.locator(".logistics-line-quantity small")).toHaveText("de 6");
+  await expect(loadRow.locator(".logistics-line-quantity small")).toContainText("6 listos");
   await expect(loadRow.locator("input[type=number]")).toBeEmpty();
   expect(await loadRow.evaluate((element) => getComputedStyle(element).gridTemplateColumns.split(" ").length)).toBe(3);
   await dialog.locator(".logistics-line input[type=number]").first().fill("7");
-  await expect(capacityPanel).toContainText("La carga supera los palets listos para enviar.");
-  await dialog.getByRole("button", { name: "Continuar" }).click();
-  await expect(dialog).toContainText("La carga supera las unidades listas");
+  // Superar lo listo es una advertencia: se puede planificar igual.
+  await expect(capacityPanel).toContainText("La carga supera los palets listos para enviar. Se puede planificar igual.");
   await dialog.locator(".logistics-line input[type=number]").first().fill("5");
-  await expect(capacityPanel).toContainText("La carga supera la capacidad indicada.");
+  await expect(capacityPanel).toContainText("La carga supera la capacidad indicada. Se puede guardar igual.");
   await dialog.locator(".logistics-line input[type=number]").first().fill("4");
   await expect(capacityPanel).toContainText("Capacidad completa.");
   await page.setViewportSize({ width: 390, height: 844 });
@@ -216,19 +216,6 @@ test("solo planifica palets listos y confirma el transporte después", async ({ 
   await expect(dialog).not.toContainText("Este es el plan que se guardará");
   await dialog.getByRole("button", { name: "Guardar planificación" }).click();
   await expect(dialog).not.toBeVisible();
-  const recentPlans = page.locator(".logistics-recent-plans");
-  await expect(page.locator(".logistics-transport-queue .logistics-recent-plans")).toHaveCount(1);
-  await expect(page.locator(".logistics-planning .logistics-recent-plans")).toHaveCount(0);
-  await expect(recentPlans.locator("summary")).toContainText("Planificados recientemente");
-  await recentPlans.locator("summary").click();
-  const recentOrder = recentPlans.locator(".queue-card").filter({ hasText: clientName });
-  await expect(recentOrder).not.toContainText("Sin salida asignada");
-  await expect(recentOrder).toContainText("2 palets listos para otra salida");
-  await expect(recentOrder.getByRole("button", { name: "Planificar pendientes" })).toBeVisible();
-  await expect(recentOrder.getByRole("button", { name: "Replanificar" })).toBeVisible();
-  await recentOrder.getByRole("button", { name: "Replanificar" }).click();
-  await expect(page.getByRole("dialog", { name: "Asignar transporte" })).toBeVisible();
-  await page.getByRole("dialog", { name: "Asignar transporte" }).getByRole("button", { name: "Cerrar" }).click();
   const plannedRuns = await request.get(`/api/logistics/runs?orderId=${orderId}`);
   expect(plannedRuns.ok()).toBeTruthy();
   expect((await plannedRuns.json()).runs).toHaveLength(1);

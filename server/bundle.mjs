@@ -738,11 +738,11 @@ function productHeatTreatmentLabel(value) {
 }
 function cleanAttributes(raw) {
   if (!raw || typeof raw !== "object" || Array.isArray(raw)) return {};
-  const clean = {};
+  const clean2 = {};
   for (const [key, value] of Object.entries(raw)) {
-    if (typeof value === "string" && value.trim()) clean[key] = value.trim();
+    if (typeof value === "string" && value.trim()) clean2[key] = value.trim();
   }
-  return clean;
+  return clean2;
 }
 function normalizeMeasure(value) {
   return (value ?? "").toLocaleLowerCase("es").replace(/×/g, "x").replace(/,/g, ".").replace(/\s+/g, "");
@@ -814,16 +814,16 @@ function levelSlug(label, taken) {
 function cleanOptions(options) {
   if (!Array.isArray(options)) return [];
   const seen = /* @__PURE__ */ new Set();
-  const clean = [];
+  const clean2 = [];
   for (const option of options) {
     if (typeof option !== "string") continue;
     const value = option.trim();
     const key = value.toLocaleLowerCase("es");
     if (!value || seen.has(key)) continue;
     seen.add(key);
-    clean.push(value);
+    clean2.push(value);
   }
-  return clean;
+  return clean2;
 }
 var MEASURE_LEVEL, TREATMENT_LEVEL, LOGO_LEVEL, defaultProductLevels, requiresHeatTreatment;
 var init_classification = __esm({
@@ -1056,8 +1056,8 @@ function seedMemoryPalletProductionRules(relation) {
     });
   }
 }
-function canonicalOperations(operations5) {
-  return [...new Set((operations5 ?? ["assembly"]).map((operation) => operation === "marking" || operation === "ht" ? "treatment" : operation))];
+function canonicalOperations(operations4) {
+  return [...new Set((operations4 ?? ["assembly"]).map((operation) => operation === "marking" || operation === "ht" ? "treatment" : operation))];
 }
 function treatmentFromLabel(label) {
   if (productHeatTreatmentLabel(label) === "Con HT") return "Marcado";
@@ -2144,7 +2144,6 @@ async function transitionShipment(shipmentId, input) {
   const expected = { planned: "ready", ready: "loaded", loaded: "dispatched", dispatched: "delivered" };
   if (input.nextStatus !== expected[shipment.status] && !(input.nextStatus === "cancelled" && !["dispatched", "delivered", "cancelled"].includes(shipment.status))) throw new Error("La transici\xF3n del viaje no es v\xE1lida.");
   const remittance = input.remittance?.trim() || shipment.remittance;
-  const actor = input.responsible?.trim() || "Operaci\xF3n";
   if (input.nextStatus === "ready") {
     shipment.deliveryAddressSnapshot = order.deliveryAddress;
     for (const shipmentLine of shipment.lines) {
@@ -2211,7 +2210,6 @@ async function transitionShipment(shipmentId, input) {
     if (!orderLine?.productId) throw new Error("Una l\xEDnea del viaje no tiene producto can\xF3nico.");
     const actual = shipmentLine.loadedQuantity ?? shipmentLine.plannedQuantity;
     if (actual === 0) continue;
-    const before = calculateStockBalances(memoryStockMovements).get(orderLine.productId)?.ready ?? 0;
     const now2 = (/* @__PURE__ */ new Date()).toISOString();
     memoryStockMovements.push({ id: `movement-${memoryTreatmentId++}`, productId: orderLine.productId, stockState: "ready", quantity: -actual, movementType: "dispatch", orderLineId: orderLine.id, shipmentLineId: shipmentLine.id, remittance, transformationId: crypto.randomUUID(), performedAt: now2, responsible: input.responsible?.trim() || "Operaci\xF3n", note: `Despacho de viaje ${shipment.id}`, createdAt: now2 });
     if (reservation) {
@@ -2507,16 +2505,6 @@ async function saveInternalProduction(value) {
   else upsertMemory(memoryInternalDefaults, (item) => item.operation === value.operation, value);
   return value;
 }
-async function saveInternalTeamCapacity(availablePeople) {
-  if (!useMemoryStore) await supabaseRequest("/rest/v1/rpc/upsert_internal_team_capacity", { method: "POST", body: JSON.stringify({ p_available_people: availablePeople }) });
-  else memoryAvailablePeople = availablePeople;
-  return { availablePeople };
-}
-async function saveExternalProduction(value) {
-  if (!useMemoryStore) await supabaseRequest("/rest/v1/rpc/upsert_external_production_default", { method: "POST", body: JSON.stringify({ p_provider_id: value.providerId, p_operation: value.operation, p_pallet_capacity: value.palletCapacity, p_status: value.status }) });
-  else upsertMemory(memoryExternalDefaults, (item) => item.providerId === value.providerId && item.operation === value.operation, { ...value, id: value.id ?? `external-${Date.now()}` });
-  return value;
-}
 async function saveTransportCapacity(value) {
   if (!useMemoryStore) await supabaseRequest("/rest/v1/rpc/upsert_transport_capacity_default", { method: "POST", body: JSON.stringify({ p_source: value.source, p_provider_id: value.providerId ?? null, p_pallet_capacity: value.palletCapacity, p_status: value.status }) });
   else upsertMemory(memoryTransportDefaults, (item) => item.source === value.source && (item.providerId ?? "") === (value.providerId ?? ""), { ...value, id: value.id ?? `transport-${Date.now()}` });
@@ -2708,22 +2696,17 @@ async function confirmProductionAllocation(id, resourceId, capacityRuleId, overl
   const found = findMemoryAllocation(id);
   if (!found || found.allocation.status !== "draft") throw new Error("Solo se confirman asignaciones en borrador.");
   const rule = memoryProductionRules.find((item) => String(item.id) === String(capacityRuleId));
-  if (!rule || String(rule.resourceId) !== String(resourceId) || rule.productId !== found.line.productId || String(rule.clientProductId) !== String(found.line.clientProductId) || rule.validFrom > found.allocation.plannedDate || rule.validTo && rule.validTo < found.allocation.plannedDate) throw new Error("Seleccione una regla vigente para el recurso y producto del cliente.");
+  if (!rule || String(rule.resourceId) !== String(resourceId) || rule.productId !== found.line.productId || String(rule.clientProductId) !== String(found.line.clientProductId)) throw new Error("Seleccione una regla vigente para el recurso y producto del cliente.");
   const previousResource = found.allocation.productionResourceId;
   const previousRule = found.allocation.capacityRuleId;
   found.allocation.productionResourceId = resourceId;
   found.allocation.capacityRuleId = capacityRuleId;
   const snapshot2 = await getCapacity(found.allocation.plannedDate, found.allocation.plannedDate);
   const resource = snapshot2.production.days[0].resources.find((item) => String(item.resource.id) === String(resourceId));
-  if (!resource || resource.status === "missing_rule" || resource.status === "overloaded") {
+  if (!resource || resource.status === "missing_rule") {
     found.allocation.productionResourceId = previousResource;
     found.allocation.capacityRuleId = previousRule;
-    throw new Error(resource?.status === "overloaded" ? "La asignaci\xF3n supera la capacidad m\xE1xima del recurso." : "No se pudo calcular la capacidad de la asignaci\xF3n.");
-  }
-  if (resource.status === "stretched" && !overloadNote?.trim()) {
-    found.allocation.productionResourceId = previousResource;
-    found.allocation.capacityRuleId = previousRule;
-    throw new Error("Indique una nota para confirmar por encima de la capacidad normal.");
+    throw new Error("No se pudo calcular la capacidad de la asignaci\xF3n.");
   }
   const selectedResource = memoryProductionResources.find((item) => String(item.id) === String(resourceId));
   found.allocation.resourceId = selectedResource?.providerId ?? (selectedResource?.resourceType === "internal_factory" ? "internal" : String(resourceId));
@@ -3017,7 +3000,6 @@ async function recordTreatmentBatch(input) {
   const balances = calculateStockBalances(memoryStockMovements);
   const previous = balances.get(product.id) ?? { pending: 0, ready: 0 };
   const status = failed.length ? "rejected" : "posted";
-  if (status === "posted" && previous.pending < input.quantity) throw new Error("El stock pendiente no alcanza para confirmar el HT.");
   const id = `batch-${memoryTreatmentId++}`;
   const transformationId = crypto.randomUUID();
   const checks = input.controls.map((check) => {
@@ -3368,6 +3350,10 @@ function tripWarnings(run, runs, settings) {
   if (!run.plannedStartAt || !run.plannedEndAt)
     warnings.push("Faltan horarios para evaluar la vuelta.");
   if (!run.destinationAddress) warnings.push("Falta direcci\xF3n de destino.");
+  const atShift = (time) => run.plannedDate && time ? Date.parse(`${run.plannedDate}T${time.slice(0, 5)}:00-03:00`) : Number.NaN;
+  const shiftStart = atShift(settings.shiftStart), shiftEnd = atShift(settings.shiftEnd);
+  if (run.plannedStartAt && Number.isFinite(shiftStart) && Date.parse(run.plannedStartAt) < shiftStart) warnings.push(`La salida es antes del inicio de la jornada (${settings.shiftStart.slice(0, 5)}).`);
+  if (run.plannedEndAt && Number.isFinite(shiftEnd) && Date.parse(run.plannedEndAt) > shiftEnd) warnings.push(`La vuelta termina despu\xE9s del fin de la jornada (${settings.shiftEnd.slice(0, 5)}).`);
   if (run.plannedStartAt && run.plannedEndAt) {
     for (const other of runs) {
       if (String(other.id) === String(run.id) || other.status === "cancelled" || !other.plannedStartAt || !other.plannedEndAt) continue;
@@ -4160,55 +4146,32 @@ var init_route2 = __esm({
   }
 });
 
-// app/api/capacity/external-production/route.ts
+// app/api/capacity/internal-production/route.ts
 var route_exports3 = {};
 __export(route_exports3, {
   PUT: () => PUT2
 });
 async function PUT2(request) {
   const payload = await request.json();
-  const palletCapacity = Number(payload.palletCapacity);
-  const provider = (await getProviders()).find((item) => item.id === payload.providerId && item.type === "Aserradero");
-  if (!provider || !payload.operation || !operations2.includes(payload.operation) || !Number.isInteger(palletCapacity) || palletCapacity < 0 || !payload.status || !["estimated", "confirmed"].includes(payload.status)) {
-    return Response.json({ error: "Revise el aserradero, la operaci\xF3n y la capacidad." }, { status: 400 });
+  const peopleCount = Number(payload.peopleCount);
+  const manualCapacity = payload.manualCapacity === null || payload.manualCapacity === void 0 || payload.manualCapacity === "" ? void 0 : Number(payload.manualCapacity);
+  if (!payload.operation || !operations2.includes(payload.operation) || !Number.isInteger(peopleCount) || peopleCount < 0 || manualCapacity !== void 0 && (!Number.isInteger(manualCapacity) || manualCapacity < 0)) {
+    return Response.json({ error: "Revise la operaci\xF3n, la dotaci\xF3n y la capacidad." }, { status: 400 });
   }
-  return Response.json({ entry: await saveExternalProduction({ providerId: provider.id, operation: payload.operation, palletCapacity, status: payload.status }) });
+  return Response.json({ entry: await saveInternalProduction({ operation: payload.operation, peopleCount, manualCapacity }) });
 }
 var operations2;
 var init_route3 = __esm({
-  "app/api/capacity/external-production/route.ts"() {
+  "app/api/capacity/internal-production/route.ts"() {
     "use strict";
     init_store();
     operations2 = ["assembly", "marking", "ht"];
   }
 });
 
-// app/api/capacity/internal-production/route.ts
+// app/api/capacity/resources/route.ts
 var route_exports4 = {};
 __export(route_exports4, {
-  PUT: () => PUT3
-});
-async function PUT3(request) {
-  const payload = await request.json();
-  const peopleCount = Number(payload.peopleCount);
-  const manualCapacity = payload.manualCapacity === null || payload.manualCapacity === void 0 || payload.manualCapacity === "" ? void 0 : Number(payload.manualCapacity);
-  if (!payload.operation || !operations3.includes(payload.operation) || !Number.isInteger(peopleCount) || peopleCount < 0 || manualCapacity !== void 0 && (!Number.isInteger(manualCapacity) || manualCapacity < 0)) {
-    return Response.json({ error: "Revise la operaci\xF3n, la dotaci\xF3n y la capacidad." }, { status: 400 });
-  }
-  return Response.json({ entry: await saveInternalProduction({ operation: payload.operation, peopleCount, manualCapacity }) });
-}
-var operations3;
-var init_route4 = __esm({
-  "app/api/capacity/internal-production/route.ts"() {
-    "use strict";
-    init_store();
-    operations3 = ["assembly", "marking", "ht"];
-  }
-});
-
-// app/api/capacity/resources/route.ts
-var route_exports5 = {};
-__export(route_exports5, {
   GET: () => GET2,
   PATCH: () => PATCH,
   POST: () => POST
@@ -4250,7 +4213,7 @@ async function PATCH(request) {
   }
 }
 var types, iso2;
-var init_route5 = __esm({
+var init_route4 = __esm({
   "app/api/capacity/resources/route.ts"() {
     "use strict";
     init_store();
@@ -4260,8 +4223,8 @@ var init_route5 = __esm({
 });
 
 // app/api/capacity/route.ts
-var route_exports6 = {};
-__export(route_exports6, {
+var route_exports5 = {};
+__export(route_exports5, {
   GET: () => GET3
 });
 async function GET3(request) {
@@ -4274,7 +4237,7 @@ async function GET3(request) {
   return Response.json({ capacity: await getCapacity(from, to) });
 }
 var isoDate2;
-var init_route6 = __esm({
+var init_route5 = __esm({
   "app/api/capacity/route.ts"() {
     "use strict";
     init_store();
@@ -4283,8 +4246,8 @@ var init_route6 = __esm({
 });
 
 // app/api/capacity/rules/route.ts
-var route_exports7 = {};
-__export(route_exports7, {
+var route_exports6 = {};
+__export(route_exports6, {
   DELETE: () => DELETE,
   PATCH: () => PATCH2,
   POST: () => POST2
@@ -4337,7 +4300,7 @@ async function DELETE(request) {
   }
 }
 var isoDate3;
-var init_route7 = __esm({
+var init_route6 = __esm({
   "app/api/capacity/rules/route.ts"() {
     "use strict";
     init_store();
@@ -4345,32 +4308,12 @@ var init_route7 = __esm({
   }
 });
 
-// app/api/capacity/team/route.ts
-var route_exports8 = {};
-__export(route_exports8, {
-  PUT: () => PUT4
-});
-async function PUT4(request) {
-  const payload = await request.json();
-  const availablePeople = Number(payload.availablePeople);
-  if (!Number.isInteger(availablePeople) || availablePeople < 0) {
-    return Response.json({ error: "Indique una cantidad entera de personas disponibles." }, { status: 400 });
-  }
-  return Response.json({ team: await saveInternalTeamCapacity(availablePeople) });
-}
-var init_route8 = __esm({
-  "app/api/capacity/team/route.ts"() {
-    "use strict";
-    init_store();
-  }
-});
-
 // app/api/capacity/transport/route.ts
-var route_exports9 = {};
-__export(route_exports9, {
-  PUT: () => PUT5
+var route_exports7 = {};
+__export(route_exports7, {
+  PUT: () => PUT3
 });
-async function PUT5(request) {
+async function PUT3(request) {
   const payload = await request.json();
   const usesTripCapacity = payload.tripCapacity !== void 0;
   const capacity = Number(usesTripCapacity ? payload.tripCapacity : payload.palletCapacity);
@@ -4382,7 +4325,7 @@ async function PUT5(request) {
   const entry = usesTripCapacity ? await saveTransportTripCapacity({ source: payload.source, providerId: provider?.id, tripCapacity: capacity, status }) : await saveTransportCapacity({ source: payload.source, providerId: provider?.id, palletCapacity: capacity, status });
   return Response.json({ entry });
 }
-var init_route9 = __esm({
+var init_route7 = __esm({
   "app/api/capacity/transport/route.ts"() {
     "use strict";
     init_store();
@@ -4390,11 +4333,11 @@ var init_route9 = __esm({
 });
 
 // app/api/capacity/trip-adjustments/route.ts
-var route_exports10 = {};
-__export(route_exports10, {
-  PUT: () => PUT6
+var route_exports8 = {};
+__export(route_exports8, {
+  PUT: () => PUT4
 });
-async function PUT6(request) {
+async function PUT4(request) {
   const payload = await request.json();
   const tripCapacity = Number(payload.tripCapacity);
   const responsible = payload.responsible?.trim() ?? "";
@@ -4410,7 +4353,7 @@ async function PUT6(request) {
   return Response.json({ adjustment });
 }
 var isoDate4;
-var init_route10 = __esm({
+var init_route8 = __esm({
   "app/api/capacity/trip-adjustments/route.ts"() {
     "use strict";
     init_store();
@@ -4419,8 +4362,8 @@ var init_route10 = __esm({
 });
 
 // app/api/clients/route.ts
-var route_exports11 = {};
-__export(route_exports11, {
+var route_exports9 = {};
+__export(route_exports9, {
   GET: () => GET4,
   POST: () => POST3
 });
@@ -4450,7 +4393,7 @@ async function POST3(request) {
     return Response.json({ error: error instanceof Error ? error.message : "No se pudo crear el cliente." }, { status: 400 });
   }
 }
-var init_route11 = __esm({
+var init_route9 = __esm({
   "app/api/clients/route.ts"() {
     "use strict";
     init_store();
@@ -4459,14 +4402,14 @@ var init_route11 = __esm({
 });
 
 // app/api/history/route.ts
-var route_exports12 = {};
-__export(route_exports12, {
+var route_exports10 = {};
+__export(route_exports10, {
   GET: () => GET5
 });
 async function GET5() {
   return Response.json({ history: (await getOrders()).filter(isOrderClosed) });
 }
-var init_route12 = __esm({
+var init_route10 = __esm({
   "app/api/history/route.ts"() {
     "use strict";
     init_store();
@@ -4474,33 +4417,13 @@ var init_route12 = __esm({
   }
 });
 
-// app/api/logistics/availability/route.ts
-var route_exports13 = {};
-__export(route_exports13, {
-  GET: () => GET6
+// app/api/logistics/config/route.ts
+var route_exports11 = {};
+__export(route_exports11, {
+  GET: () => GET6,
+  PUT: () => PUT5
 });
 async function GET6() {
-  try {
-    const { availability, stock } = await getLogisticsSnapshot();
-    return Response.json({ availability, stock });
-  } catch (error) {
-    return Response.json({ error: error instanceof Error ? error.message : "No se pudo cargar la disponibilidad." }, { status: 500 });
-  }
-}
-var init_route13 = __esm({
-  "app/api/logistics/availability/route.ts"() {
-    "use strict";
-    init_logistics_store();
-  }
-});
-
-// app/api/logistics/config/route.ts
-var route_exports14 = {};
-__export(route_exports14, {
-  GET: () => GET7,
-  PUT: () => PUT7
-});
-async function GET7() {
   try {
     const { vehicles, drivers, settings, classes, locations, transportCapacities, clientLimits, limitsSchemaReady } = await getLogisticsSnapshot();
     return Response.json({ vehicles, drivers, settings, classes, locations, transportCapacities, clientLimits, limitsSchemaReady });
@@ -4508,7 +4431,7 @@ async function GET7() {
     return Response.json({ error: error instanceof Error ? error.message : "No se pudo cargar la configuraci\xF3n." }, { status: 500 });
   }
 }
-async function PUT7(request) {
+async function PUT5(request) {
   try {
     const body = await request.json();
     const kind = body.kind;
@@ -4519,7 +4442,7 @@ async function PUT7(request) {
   }
 }
 var kinds;
-var init_route14 = __esm({
+var init_route11 = __esm({
   "app/api/logistics/config/route.ts"() {
     "use strict";
     init_logistics_store();
@@ -4528,11 +4451,11 @@ var init_route14 = __esm({
 });
 
 // app/api/logistics/route.ts
-var route_exports15 = {};
-__export(route_exports15, {
-  GET: () => GET8
+var route_exports12 = {};
+__export(route_exports12, {
+  GET: () => GET7
 });
-async function GET8() {
+async function GET7() {
   const logistics = (await getOrders()).filter((order) => !isOrderClosed(order)).map(({ id, client, reference, product, dateLabel, transport, logistics: logistics2, delivery }) => ({
     id,
     client,
@@ -4545,7 +4468,7 @@ async function GET8() {
   }));
   return Response.json({ logistics });
 }
-var init_route15 = __esm({
+var init_route12 = __esm({
   "app/api/logistics/route.ts"() {
     "use strict";
     init_store();
@@ -4554,13 +4477,13 @@ var init_route15 = __esm({
 });
 
 // app/api/logistics/runs/route.ts
-var route_exports16 = {};
-__export(route_exports16, {
-  GET: () => GET9,
+var route_exports13 = {};
+__export(route_exports13, {
+  GET: () => GET8,
   PATCH: () => PATCH3,
   POST: () => POST4
 });
-async function GET9(request) {
+async function GET8(request) {
   try {
     return Response.json({ runs: await getLogisticsRuns(new URL(request.url).searchParams.get("orderId") ?? void 0) });
   } catch (error) {
@@ -4577,7 +4500,7 @@ async function POST4(request) {
 async function PATCH3(request) {
   return POST4(request);
 }
-var init_route16 = __esm({
+var init_route13 = __esm({
   "app/api/logistics/runs/route.ts"() {
     "use strict";
     init_logistics_store();
@@ -4585,18 +4508,18 @@ var init_route16 = __esm({
 });
 
 // app/api/logistics/snapshot/route.ts
-var route_exports17 = {};
-__export(route_exports17, {
-  GET: () => GET10
+var route_exports14 = {};
+__export(route_exports14, {
+  GET: () => GET9
 });
-async function GET10() {
+async function GET9() {
   try {
     return Response.json(await getLogisticsSnapshot());
   } catch (error) {
     return Response.json({ error: error instanceof Error ? error.message : "No se pudo cargar Log\xEDstica." }, { status: 500 });
   }
 }
-var init_route17 = __esm({
+var init_route14 = __esm({
   "app/api/logistics/snapshot/route.ts"() {
     "use strict";
     init_logistics_store();
@@ -4604,12 +4527,12 @@ var init_route17 = __esm({
 });
 
 // app/api/orders/route.ts
-var route_exports18 = {};
-__export(route_exports18, {
-  GET: () => GET11,
+var route_exports15 = {};
+__export(route_exports15, {
+  GET: () => GET10,
   POST: () => POST5
 });
-async function GET11() {
+async function GET10() {
   return Response.json({ orders: (await getOrders()).filter((order) => !isOrderClosed(order)) });
 }
 async function POST5(request) {
@@ -4618,7 +4541,7 @@ async function POST5(request) {
   const lines = rawLines.map((line) => ({ clientProductId: line.clientProductId, quantity: Number(line.quantity) })).filter((line) => (typeof line.clientProductId === "number" || typeof line.clientProductId === "string") && Number.isInteger(line.quantity) && line.quantity > 0);
   const orderDate = typeof payload.orderDate === "string" && isoDate5.test(payload.orderDate) ? payload.orderDate : "";
   const plannedDate = typeof payload.plannedDate === "string" && isoDate5.test(payload.plannedDate) ? payload.plannedDate : "";
-  const requiredOperations = Array.isArray(payload.requiredOperations) ? payload.requiredOperations.filter((item) => operations4.includes(item)) : [];
+  const requiredOperations = Array.isArray(payload.requiredOperations) ? payload.requiredOperations.filter((item) => operations3.includes(item)) : [];
   if (!lines.length || !orderDate || !plannedDate) {
     return Response.json({ error: "Cliente, al menos un producto con cantidad, fecha del pedido y fecha de entrega son obligatorios." }, { status: 400 });
   }
@@ -4636,57 +4559,35 @@ async function POST5(request) {
     return Response.json({ error: error instanceof Error ? error.message : "No se pudo crear el pedido." }, { status: 400 });
   }
 }
-var isoDate5, operations4;
-var init_route18 = __esm({
+var isoDate5, operations3;
+var init_route15 = __esm({
   "app/api/orders/route.ts"() {
     "use strict";
     init_store();
     init_data();
     isoDate5 = /^\d{4}-\d{2}-\d{2}$/;
-    operations4 = ["assembly", "treatment"];
-  }
-});
-
-// app/api/plan/route.ts
-var route_exports19 = {};
-__export(route_exports19, {
-  GET: () => GET12
-});
-async function GET12() {
-  const plan = (await getOrders()).filter((order) => !isOrderClosed(order)).map((order) => {
-    const operationalStatus = getOrderOperationalStatus(order);
-    return { ...order, operationalStatus, operationalStatusLabel: orderOperationalStatusLabels[operationalStatus] };
-  }).sort((a, b) => statusPriority2[a.operationalStatus] - statusPriority2[b.operationalStatus] || a.client.localeCompare(b.client, "es"));
-  return Response.json({ plan });
-}
-var statusPriority2;
-var init_route19 = __esm({
-  "app/api/plan/route.ts"() {
-    "use strict";
-    init_store();
-    init_data();
-    statusPriority2 = { planned: 0, produced: 1, ht_planning: 2, ht_confirmed: 3, shipped: 4, delivered: 5, cancelled: 6 };
+    operations3 = ["assembly", "treatment"];
   }
 });
 
 // app/api/product-levels/route.ts
-var route_exports20 = {};
-__export(route_exports20, {
-  GET: () => GET13,
-  PUT: () => PUT8
+var route_exports16 = {};
+__export(route_exports16, {
+  GET: () => GET11,
+  PUT: () => PUT6
 });
 async function snapshot() {
   const [levels, products2] = await Promise.all([getProductLevels(), getProducts()]);
   return { levels, usage: countLevelUsage(products2, levels) };
 }
-async function GET13() {
+async function GET11() {
   try {
     return Response.json(await snapshot());
   } catch (error) {
     return Response.json({ error: error instanceof Error ? error.message : "No se pudieron cargar los niveles." }, { status: 500 });
   }
 }
-async function PUT8(request) {
+async function PUT6(request) {
   try {
     const body = await request.json();
     if (!Array.isArray(body.levels)) return Response.json({ error: "Falta la lista de niveles." }, { status: 400 });
@@ -4699,7 +4600,7 @@ async function PUT8(request) {
     return Response.json({ error: error instanceof Error ? error.message : "No se pudieron guardar los niveles." }, { status: 400 });
   }
 }
-var init_route20 = __esm({
+var init_route16 = __esm({
   "app/api/product-levels/route.ts"() {
     "use strict";
     init_store();
@@ -4737,12 +4638,12 @@ var init_parse = __esm({
 });
 
 // app/api/products/route.ts
-var route_exports21 = {};
-__export(route_exports21, {
-  GET: () => GET14,
+var route_exports17 = {};
+__export(route_exports17, {
+  GET: () => GET12,
   POST: () => POST6
 });
-async function GET14() {
+async function GET12() {
   return Response.json({ products: await getProducts() });
 }
 async function POST6(request) {
@@ -4764,7 +4665,7 @@ async function POST6(request) {
     return Response.json({ error: error instanceof Error ? error.message : "No se pudo crear el producto." }, { status: 400 });
   }
 }
-var init_route21 = __esm({
+var init_route17 = __esm({
   "app/api/products/route.ts"() {
     "use strict";
     init_store();
@@ -4773,12 +4674,12 @@ var init_route21 = __esm({
 });
 
 // app/api/providers/route.ts
-var route_exports22 = {};
-__export(route_exports22, {
-  GET: () => GET15,
+var route_exports18 = {};
+__export(route_exports18, {
+  GET: () => GET13,
   POST: () => POST7
 });
-async function GET15() {
+async function GET13() {
   return Response.json({ providers: await getProviders() });
 }
 async function POST7(request) {
@@ -4796,7 +4697,7 @@ async function POST7(request) {
     );
   }
 }
-var init_route22 = __esm({
+var init_route18 = __esm({
   "app/api/providers/route.ts"() {
     "use strict";
     init_store();
@@ -4804,8 +4705,8 @@ var init_route22 = __esm({
 });
 
 // app/api/stock/movements/adjustments/route.ts
-var route_exports23 = {};
-__export(route_exports23, {
+var route_exports19 = {};
+__export(route_exports19, {
   POST: () => POST8
 });
 async function POST8(request) {
@@ -4820,7 +4721,7 @@ async function POST8(request) {
     return Response.json({ error: error instanceof Error ? error.message : "No se pudo registrar el ajuste." }, { status: 400 });
   }
 }
-var init_route23 = __esm({
+var init_route19 = __esm({
   "app/api/stock/movements/adjustments/route.ts"() {
     "use strict";
     init_store();
@@ -4828,8 +4729,8 @@ var init_route23 = __esm({
 });
 
 // app/api/stock/movements/receipts/route.ts
-var route_exports24 = {};
-__export(route_exports24, {
+var route_exports20 = {};
+__export(route_exports20, {
   POST: () => POST9
 });
 async function POST9(request) {
@@ -4848,7 +4749,7 @@ async function POST9(request) {
     return Response.json({ error: error instanceof Error ? error.message : "No se pudo registrar la entrada." }, { status: 400 });
   }
 }
-var init_route24 = __esm({
+var init_route20 = __esm({
   "app/api/stock/movements/receipts/route.ts"() {
     "use strict";
     init_store();
@@ -4856,11 +4757,11 @@ var init_route24 = __esm({
 });
 
 // app/api/stock/summary/route.ts
-var route_exports25 = {};
-__export(route_exports25, {
-  GET: () => GET16
+var route_exports21 = {};
+__export(route_exports21, {
+  GET: () => GET14
 });
-async function GET16(request) {
+async function GET14(request) {
   try {
     const includeOrderCommitments = new URL(request.url).searchParams.get("destinos") === "1";
     const [stock, imports] = await Promise.all([getStockSummary(includeOrderCommitments), getStockImportReport()]);
@@ -4869,7 +4770,7 @@ async function GET16(request) {
     return Response.json({ error: error instanceof Error ? error.message : "No se pudo cargar el stock." }, { status: 500 });
   }
 }
-var init_route25 = __esm({
+var init_route21 = __esm({
   "app/api/stock/summary/route.ts"() {
     "use strict";
     init_store();
@@ -4877,8 +4778,8 @@ var init_route25 = __esm({
 });
 
 // app/api/treatment/batches/route.ts
-var route_exports26 = {};
-__export(route_exports26, {
+var route_exports22 = {};
+__export(route_exports22, {
   POST: () => POST10
 });
 async function POST10(request) {
@@ -4908,7 +4809,7 @@ async function POST10(request) {
     return Response.json({ error: error instanceof Error ? error.message : "No se pudo registrar el HT." }, { status: Number.isFinite(status) ? status : 400 });
   }
 }
-var init_route26 = __esm({
+var init_route22 = __esm({
   "app/api/treatment/batches/route.ts"() {
     "use strict";
     init_store();
@@ -4916,18 +4817,18 @@ var init_route26 = __esm({
 });
 
 // app/api/treatment/options/route.ts
-var route_exports27 = {};
-__export(route_exports27, {
-  GET: () => GET17
+var route_exports23 = {};
+__export(route_exports23, {
+  GET: () => GET15
 });
-async function GET17() {
+async function GET15() {
   try {
     return Response.json({ options: await getTreatmentOptions() });
   } catch (error) {
     return Response.json({ error: error instanceof Error ? error.message : "No se pudieron cargar las opciones de HT." }, { status: 500 });
   }
 }
-var init_route27 = __esm({
+var init_route23 = __esm({
   "app/api/treatment/options/route.ts"() {
     "use strict";
     init_store();
@@ -4948,15 +4849,15 @@ var init_drying = __esm({
 });
 
 // app/api/treatment/results/route.ts
-var route_exports28 = {};
-__export(route_exports28, {
-  GET: () => GET18,
+var route_exports24 = {};
+__export(route_exports24, {
+  GET: () => GET16,
   POST: () => POST11
 });
 function validDay(value) {
   return typeof value === "string" && /^\d{4}-\d{2}-\d{2}$/.test(value) && Number.isFinite(parseDryingDay(value).valueOf()) && shiftDryingDay(value, 0) === value;
 }
-async function GET18(request) {
+async function GET16(request) {
   const query = new URL(request.url).searchParams;
   const from = query.get("from");
   const to = query.get("to");
@@ -4985,7 +4886,7 @@ async function POST11(request) {
     return Response.json({ error: error instanceof Error ? error.message : "No se pudo registrar el resultado." }, { status: 400 });
   }
 }
-var init_route28 = __esm({
+var init_route24 = __esm({
   "app/api/treatment/results/route.ts"() {
     "use strict";
     init_store();
@@ -4994,11 +4895,11 @@ var init_route28 = __esm({
 });
 
 // app/api/treatment/route.ts
-var route_exports29 = {};
-__export(route_exports29, {
-  GET: () => GET19
+var route_exports25 = {};
+__export(route_exports25, {
+  GET: () => GET17
 });
-async function GET19(request) {
+async function GET17(request) {
   const date = new URL(request.url).searchParams.get("date") ?? new Intl.DateTimeFormat("en-CA", { timeZone: "America/Montevideo" }).format(/* @__PURE__ */ new Date());
   if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) return Response.json({ error: "Indique una fecha v\xE1lida." }, { status: 400 });
   try {
@@ -5007,7 +4908,7 @@ async function GET19(request) {
     return Response.json({ error: error instanceof Error ? error.message : "No se pudo cargar el registro diario." }, { status: 500 });
   }
 }
-var init_route29 = __esm({
+var init_route25 = __esm({
   "app/api/treatment/route.ts"() {
     "use strict";
     init_store();
@@ -5015,16 +4916,16 @@ var init_route29 = __esm({
 });
 
 // app/api/client-product-assets/[id]/content/route.ts
-var route_exports30 = {};
-__export(route_exports30, {
-  GET: () => GET20
+var route_exports26 = {};
+__export(route_exports26, {
+  GET: () => GET18
 });
-async function GET20(_request, { params }) {
+async function GET18(_request, { params }) {
   const { id } = await params;
   const content = getMemoryClientProductAssetContent(id);
   return content ? new Response(content.bytes, { headers: { "content-type": content.mimeType, "cache-control": "private, max-age=60" } }) : Response.json({ error: "Archivo no encontrado." }, { status: 404 });
 }
-var init_route30 = __esm({
+var init_route26 = __esm({
   "app/api/client-product-assets/[id]/content/route.ts"() {
     "use strict";
     init_store();
@@ -5032,15 +4933,15 @@ var init_route30 = __esm({
 });
 
 // app/api/client-product-assets/[id]/route.ts
-var route_exports31 = {};
-__export(route_exports31, {
+var route_exports27 = {};
+__export(route_exports27, {
   DELETE: () => DELETE2
 });
 async function DELETE2(_request, { params }) {
   const { id } = await params;
   return await softDeleteClientProductAsset(id) ? new Response(null, { status: 204 }) : Response.json({ error: "Archivo no encontrado." }, { status: 404 });
 }
-var init_route31 = __esm({
+var init_route27 = __esm({
   "app/api/client-product-assets/[id]/route.ts"() {
     "use strict";
     init_store();
@@ -5048,8 +4949,8 @@ var init_route31 = __esm({
 });
 
 // app/api/client-product-assets/[id]/signed-url/route.ts
-var route_exports32 = {};
-__export(route_exports32, {
+var route_exports28 = {};
+__export(route_exports28, {
   POST: () => POST12
 });
 async function POST12(_request, { params }) {
@@ -5057,7 +4958,7 @@ async function POST12(_request, { params }) {
   const url = await getClientProductAssetUrl(id);
   return url ? Response.json({ url }) : Response.json({ error: "Archivo no encontrado." }, { status: 404 });
 }
-var init_route32 = __esm({
+var init_route28 = __esm({
   "app/api/client-product-assets/[id]/signed-url/route.ts"() {
     "use strict";
     init_store();
@@ -5065,8 +4966,8 @@ var init_route32 = __esm({
 });
 
 // app/api/client-products/[id]/assets/route.ts
-var route_exports33 = {};
-__export(route_exports33, {
+var route_exports29 = {};
+__export(route_exports29, {
   POST: () => POST13
 });
 async function POST13(request, { params }) {
@@ -5082,7 +4983,7 @@ async function POST13(request, { params }) {
     return Response.json({ error: error instanceof Error ? error.message : "No se pudo cargar el archivo." }, { status });
   }
 }
-var init_route33 = __esm({
+var init_route29 = __esm({
   "app/api/client-products/[id]/assets/route.ts"() {
     "use strict";
     init_store();
@@ -5090,11 +4991,11 @@ var init_route33 = __esm({
 });
 
 // app/api/client-products/[id]/controls/route.ts
-var route_exports34 = {};
-__export(route_exports34, {
-  PUT: () => PUT9
+var route_exports30 = {};
+__export(route_exports30, {
+  PUT: () => PUT7
 });
-async function PUT9(request, { params }) {
+async function PUT7(request, { params }) {
   const { id } = await params;
   try {
     const body = await request.json();
@@ -5104,7 +5005,7 @@ async function PUT9(request, { params }) {
     return Response.json({ error: error instanceof Error ? error.message : "No se pudieron guardar los controles." }, { status: 400 });
   }
 }
-var init_route34 = __esm({
+var init_route30 = __esm({
   "app/api/client-products/[id]/controls/route.ts"() {
     "use strict";
     init_store();
@@ -5112,8 +5013,8 @@ var init_route34 = __esm({
 });
 
 // app/api/client-products/[id]/route.ts
-var route_exports35 = {};
-__export(route_exports35, {
+var route_exports31 = {};
+__export(route_exports31, {
   PATCH: () => PATCH4
 });
 async function PATCH4(request, { params }) {
@@ -5131,7 +5032,7 @@ async function PATCH4(request, { params }) {
     return Response.json({ error: error instanceof Error ? error.message : "No se pudo actualizar." }, { status });
   }
 }
-var init_route35 = __esm({
+var init_route31 = __esm({
   "app/api/client-products/[id]/route.ts"() {
     "use strict";
     init_store();
@@ -5139,15 +5040,15 @@ var init_route35 = __esm({
 });
 
 // app/api/clients/[clientId]/products/route.ts
-var route_exports36 = {};
-__export(route_exports36, {
-  GET: () => GET21,
+var route_exports32 = {};
+__export(route_exports32, {
+  GET: () => GET19,
   POST: () => POST14
 });
 function statusOf(error) {
   return typeof error === "object" && error && "status" in error && typeof error.status === "number" ? error.status : 400;
 }
-async function GET21(request, { params }) {
+async function GET19(request, { params }) {
   const { clientId } = await params;
   const activeOnly = new URL(request.url).searchParams.get("active") === "true";
   return Response.json({ products: await getClientProductOptions(clientId, activeOnly) });
@@ -5167,7 +5068,7 @@ async function POST14(request, { params }) {
     return Response.json({ error: error instanceof Error ? error.message : "No se pudo habilitar el producto." }, { status: statusOf(error) });
   }
 }
-var init_route36 = __esm({
+var init_route32 = __esm({
   "app/api/clients/[clientId]/products/route.ts"() {
     "use strict";
     init_store();
@@ -5175,13 +5076,13 @@ var init_route36 = __esm({
 });
 
 // app/api/clients/[clientId]/route.ts
-var route_exports37 = {};
-__export(route_exports37, {
+var route_exports33 = {};
+__export(route_exports33, {
   DELETE: () => DELETE3,
-  GET: () => GET22,
+  GET: () => GET20,
   PATCH: () => PATCH5
 });
-async function GET22(_request, { params }) {
+async function GET20(_request, { params }) {
   const { clientId } = await params;
   const detail = await getClientDetail(clientId);
   return detail ? Response.json(detail) : Response.json({ error: "Cliente no encontrado." }, { status: 404 });
@@ -5205,7 +5106,7 @@ async function DELETE3(_request, { params }) {
     return Response.json({ error: error instanceof Error ? error.message : "No se pudo eliminar el cliente." }, { status: 400 });
   }
 }
-var init_route37 = __esm({
+var init_route33 = __esm({
   "app/api/clients/[clientId]/route.ts"() {
     "use strict";
     init_store();
@@ -5213,8 +5114,8 @@ var init_route37 = __esm({
 });
 
 // app/api/logistics/routes/[id]/route.ts
-var route_exports38 = {};
-__export(route_exports38, {
+var route_exports34 = {};
+__export(route_exports34, {
   POST: () => POST15
 });
 async function POST15(_request, context) {
@@ -5224,7 +5125,7 @@ async function POST15(_request, context) {
     return Response.json({ error: error instanceof Error ? error.message : "No se pudo calcular la ruta." }, { status: 400 });
   }
 }
-var init_route38 = __esm({
+var init_route34 = __esm({
   "app/api/logistics/routes/[id]/route.ts"() {
     "use strict";
     init_logistics_store();
@@ -5232,11 +5133,11 @@ var init_route38 = __esm({
 });
 
 // app/api/order-lines/[id]/production-allocations/route.ts
-var route_exports39 = {};
-__export(route_exports39, {
-  PUT: () => PUT10
+var route_exports35 = {};
+__export(route_exports35, {
+  PUT: () => PUT8
 });
-async function PUT10(request, context) {
+async function PUT8(request, context) {
   const payload = await request.json();
   const allocations = Array.isArray(payload.allocations) ? payload.allocations.map((item) => ({ resourceId: typeof item.resourceId === "string" ? item.resourceId : void 0, plannedDate: typeof item.plannedDate === "string" ? item.plannedDate : "", plannedQuantity: Number(item.plannedQuantity), status: statuses.includes(item.status) ? item.status : "draft", note: typeof item.note === "string" ? item.note : void 0 })) : [];
   if (allocations.some((item) => !isoDate6.test(item.plannedDate) || !Number.isInteger(item.plannedQuantity) || item.plannedQuantity <= 0)) return Response.json({ error: "Revise fechas y cantidades." }, { status: 400 });
@@ -5248,7 +5149,7 @@ async function PUT10(request, context) {
   }
 }
 var isoDate6, statuses;
-var init_route39 = __esm({
+var init_route35 = __esm({
   "app/api/order-lines/[id]/production-allocations/route.ts"() {
     "use strict";
     init_store();
@@ -5258,8 +5159,8 @@ var init_route39 = __esm({
 });
 
 // app/api/orders/[id]/drying/route.ts
-var route_exports40 = {};
-__export(route_exports40, {
+var route_exports36 = {};
+__export(route_exports36, {
   POST: () => POST16
 });
 async function POST16(request, { params }) {
@@ -5279,7 +5180,7 @@ async function POST16(request, { params }) {
   }
 }
 var isoDate7;
-var init_route40 = __esm({
+var init_route36 = __esm({
   "app/api/orders/[id]/drying/route.ts"() {
     "use strict";
     init_store();
@@ -5288,15 +5189,15 @@ var init_route40 = __esm({
 });
 
 // app/api/orders/[id]/history/route.ts
-var route_exports41 = {};
-__export(route_exports41, {
-  GET: () => GET23
+var route_exports37 = {};
+__export(route_exports37, {
+  GET: () => GET21
 });
-async function GET23(_request, context) {
+async function GET21(_request, context) {
   const { id } = await context.params;
   return Response.json({ history: await getOrderHistory(id) });
 }
-var init_route41 = __esm({
+var init_route37 = __esm({
   "app/api/orders/[id]/history/route.ts"() {
     "use strict";
     init_store();
@@ -5304,8 +5205,8 @@ var init_route41 = __esm({
 });
 
 // app/api/orders/[id]/production-plan/route.ts
-var route_exports42 = {};
-__export(route_exports42, {
+var route_exports38 = {};
+__export(route_exports38, {
   POST: () => POST17
 });
 async function POST17(request, { params }) {
@@ -5318,7 +5219,7 @@ async function POST17(request, { params }) {
     return Response.json({ error: error instanceof Error ? error.message : "No se pudo guardar la planificaci\xF3n." }, { status: 400 });
   }
 }
-var init_route42 = __esm({
+var init_route38 = __esm({
   "app/api/orders/[id]/production-plan/route.ts"() {
     "use strict";
     init_store();
@@ -5326,13 +5227,13 @@ var init_route42 = __esm({
 });
 
 // app/api/orders/[id]/route.ts
-var route_exports43 = {};
-__export(route_exports43, {
+var route_exports39 = {};
+__export(route_exports39, {
   DELETE: () => DELETE4,
-  GET: () => GET24,
+  GET: () => GET22,
   PATCH: () => PATCH6
 });
-async function GET24(_request, context) {
+async function GET22(_request, context) {
   const order = await getOrderDetail((await context.params).id);
   return order ? Response.json({ order }) : Response.json({ error: "Pedido no encontrado." }, { status: 404 });
 }
@@ -5378,7 +5279,7 @@ async function DELETE4(_request, context) {
     return Response.json({ error: message }, { status: message === "Pedido no encontrado." ? 404 : 409 });
   }
 }
-var init_route43 = __esm({
+var init_route39 = __esm({
   "app/api/orders/[id]/route.ts"() {
     "use strict";
     init_store();
@@ -5386,8 +5287,8 @@ var init_route43 = __esm({
 });
 
 // app/api/orders/[id]/shipments/route.ts
-var route_exports44 = {};
-__export(route_exports44, {
+var route_exports40 = {};
+__export(route_exports40, {
   POST: () => POST18
 });
 async function POST18(request, context) {
@@ -5402,7 +5303,7 @@ async function POST18(request, context) {
     return Response.json({ error: error instanceof Error ? error.message : "No se pudo crear el viaje." }, { status: 400 });
   }
 }
-var init_route44 = __esm({
+var init_route40 = __esm({
   "app/api/orders/[id]/shipments/route.ts"() {
     "use strict";
     init_store();
@@ -5410,8 +5311,8 @@ var init_route44 = __esm({
 });
 
 // app/api/orders/[id]/transport/route.ts
-var route_exports45 = {};
-__export(route_exports45, {
+var route_exports41 = {};
+__export(route_exports41, {
   POST: () => POST19
 });
 async function POST19(request, { params }) {
@@ -5427,7 +5328,7 @@ async function POST19(request, { params }) {
     return Response.json({ error: error instanceof Error ? error.message : "No se pudo asignar el transporte." }, { status: 400 });
   }
 }
-var init_route45 = __esm({
+var init_route41 = __esm({
   "app/api/orders/[id]/transport/route.ts"() {
     "use strict";
     init_store();
@@ -5435,8 +5336,8 @@ var init_route45 = __esm({
 });
 
 // app/api/orders/[id]/updates/route.ts
-var route_exports46 = {};
-__export(route_exports46, {
+var route_exports42 = {};
+__export(route_exports42, {
   POST: () => POST20
 });
 async function POST20(request, { params }) {
@@ -5474,7 +5375,7 @@ async function POST20(request, { params }) {
   }
 }
 var updateKinds;
-var init_route46 = __esm({
+var init_route42 = __esm({
   "app/api/orders/[id]/updates/route.ts"() {
     "use strict";
     init_store();
@@ -5483,8 +5384,8 @@ var init_route46 = __esm({
 });
 
 // app/api/production-allocations/[id]/complete/route.ts
-var route_exports47 = {};
-__export(route_exports47, {
+var route_exports43 = {};
+__export(route_exports43, {
   POST: () => POST21
 });
 async function POST21(request, context) {
@@ -5500,7 +5401,7 @@ async function POST21(request, context) {
     return Response.json({ error: error instanceof Error ? error.message : "No se pudo completar la asignaci\xF3n." }, { status: 400 });
   }
 }
-var init_route47 = __esm({
+var init_route43 = __esm({
   "app/api/production-allocations/[id]/complete/route.ts"() {
     "use strict";
     init_store();
@@ -5508,8 +5409,8 @@ var init_route47 = __esm({
 });
 
 // app/api/production-allocations/[id]/confirm/route.ts
-var route_exports48 = {};
-__export(route_exports48, {
+var route_exports44 = {};
+__export(route_exports44, {
   POST: () => POST22
 });
 async function POST22(request, context) {
@@ -5526,7 +5427,7 @@ async function POST22(request, context) {
     return Response.json({ error: error instanceof Error ? error.message : "No se pudo confirmar la asignaci\xF3n." }, { status: 400 });
   }
 }
-var init_route48 = __esm({
+var init_route44 = __esm({
   "app/api/production-allocations/[id]/confirm/route.ts"() {
     "use strict";
     init_store();
@@ -5534,8 +5435,8 @@ var init_route48 = __esm({
 });
 
 // app/api/production-allocations/[id]/move/route.ts
-var route_exports49 = {};
-__export(route_exports49, {
+var route_exports45 = {};
+__export(route_exports45, {
   PATCH: () => PATCH7
 });
 async function PATCH7(request, context) {
@@ -5548,7 +5449,7 @@ async function PATCH7(request, context) {
     return Response.json({ error: error instanceof Error ? error.message : "No se pudo mover la asignaci\xF3n." }, { status: 400 });
   }
 }
-var init_route49 = __esm({
+var init_route45 = __esm({
   "app/api/production-allocations/[id]/move/route.ts"() {
     "use strict";
     init_store();
@@ -5556,8 +5457,8 @@ var init_route49 = __esm({
 });
 
 // app/api/production-allocations/[id]/result/route.ts
-var route_exports50 = {};
-__export(route_exports50, {
+var route_exports46 = {};
+__export(route_exports46, {
   POST: () => POST23
 });
 async function POST23(request, context) {
@@ -5575,7 +5476,7 @@ async function POST23(request, context) {
     return Response.json({ error: error instanceof Error ? error.message : "No se pudo registrar la producci\xF3n." }, { status: 400 });
   }
 }
-var init_route50 = __esm({
+var init_route46 = __esm({
   "app/api/production-allocations/[id]/result/route.ts"() {
     "use strict";
     init_store();
@@ -5583,8 +5484,8 @@ var init_route50 = __esm({
 });
 
 // app/api/products/[id]/route.ts
-var route_exports51 = {};
-__export(route_exports51, {
+var route_exports47 = {};
+__export(route_exports47, {
   DELETE: () => DELETE5,
   PATCH: () => PATCH8
 });
@@ -5618,7 +5519,7 @@ async function DELETE5(_, { params }) {
     return Response.json({ error: error instanceof Error ? error.message : "No se pudo eliminar el producto." }, { status: 409 });
   }
 }
-var init_route51 = __esm({
+var init_route47 = __esm({
   "app/api/products/[id]/route.ts"() {
     "use strict";
     init_store();
@@ -5627,8 +5528,8 @@ var init_route51 = __esm({
 });
 
 // app/api/providers/[id]/route.ts
-var route_exports52 = {};
-__export(route_exports52, {
+var route_exports48 = {};
+__export(route_exports48, {
   DELETE: () => DELETE6,
   PATCH: () => PATCH9
 });
@@ -5669,7 +5570,7 @@ async function DELETE6(_, { params }) {
   }
 }
 var validProviderTypes;
-var init_route52 = __esm({
+var init_route48 = __esm({
   "app/api/providers/[id]/route.ts"() {
     "use strict";
     init_store();
@@ -5678,8 +5579,8 @@ var init_route52 = __esm({
 });
 
 // app/api/shipments/[id]/reschedule/route.ts
-var route_exports53 = {};
-__export(route_exports53, {
+var route_exports49 = {};
+__export(route_exports49, {
   POST: () => POST24
 });
 async function POST24(request, context) {
@@ -5693,7 +5594,7 @@ async function POST24(request, context) {
   }
 }
 var reasons;
-var init_route53 = __esm({
+var init_route49 = __esm({
   "app/api/shipments/[id]/reschedule/route.ts"() {
     "use strict";
     init_store();
@@ -5702,8 +5603,8 @@ var init_route53 = __esm({
 });
 
 // app/api/shipments/[id]/route.ts
-var route_exports54 = {};
-__export(route_exports54, {
+var route_exports50 = {};
+__export(route_exports50, {
   PATCH: () => PATCH10
 });
 async function PATCH10(request, context) {
@@ -5717,7 +5618,7 @@ async function PATCH10(request, context) {
     return Response.json({ error: error instanceof Error ? error.message : "No se pudo editar el viaje." }, { status: 400 });
   }
 }
-var init_route54 = __esm({
+var init_route50 = __esm({
   "app/api/shipments/[id]/route.ts"() {
     "use strict";
     init_store();
@@ -5725,8 +5626,8 @@ var init_route54 = __esm({
 });
 
 // app/api/shipments/[id]/transition/route.ts
-var route_exports55 = {};
-__export(route_exports55, {
+var route_exports51 = {};
+__export(route_exports51, {
   POST: () => POST25
 });
 async function POST25(request, context) {
@@ -5748,7 +5649,7 @@ async function POST25(request, context) {
   }
 }
 var statuses2;
-var init_route55 = __esm({
+var init_route51 = __esm({
   "app/api/shipments/[id]/transition/route.ts"() {
     "use strict";
     init_store();
@@ -5758,11 +5659,11 @@ var init_route55 = __esm({
 });
 
 // app/api/stock/[productId]/route.ts
-var route_exports56 = {};
-__export(route_exports56, {
-  GET: () => GET25
+var route_exports52 = {};
+__export(route_exports52, {
+  GET: () => GET23
 });
-async function GET25(_, { params }) {
+async function GET23(_, { params }) {
   try {
     const stock = await getStockDetail((await params).productId);
     return stock ? Response.json({ stock }) : Response.json({ error: "Producto no encontrado." }, { status: 404 });
@@ -5770,7 +5671,7 @@ async function GET25(_, { params }) {
     return Response.json({ error: error instanceof Error ? error.message : "No se pudo cargar el producto." }, { status: 500 });
   }
 }
-var init_route56 = __esm({
+var init_route52 = __esm({
   "app/api/stock/[productId]/route.ts"() {
     "use strict";
     init_store();
@@ -5778,8 +5679,8 @@ var init_route56 = __esm({
 });
 
 // app/api/stock/movements/[id]/reverse/route.ts
-var route_exports57 = {};
-__export(route_exports57, {
+var route_exports53 = {};
+__export(route_exports53, {
   POST: () => POST26
 });
 async function POST26(request, { params }) {
@@ -5794,7 +5695,7 @@ async function POST26(request, { params }) {
     return Response.json({ error: error instanceof Error ? error.message : "No se pudo revertir el movimiento." }, { status: 400 });
   }
 }
-var init_route57 = __esm({
+var init_route53 = __esm({
   "app/api/stock/movements/[id]/reverse/route.ts"() {
     "use strict";
     init_store();
@@ -5802,8 +5703,8 @@ var init_route57 = __esm({
 });
 
 // app/api/treatment/batches/[id]/reverse/route.ts
-var route_exports58 = {};
-__export(route_exports58, {
+var route_exports54 = {};
+__export(route_exports54, {
   POST: () => POST27
 });
 async function POST27(request, context) {
@@ -5818,7 +5719,7 @@ async function POST27(request, context) {
     return Response.json({ error: error instanceof Error ? error.message : "No se pudo revertir el lote." }, { status: 400 });
   }
 }
-var init_route58 = __esm({
+var init_route54 = __esm({
   "app/api/treatment/batches/[id]/reverse/route.ts"() {
     "use strict";
     init_store();
@@ -5826,11 +5727,11 @@ var init_route58 = __esm({
 });
 
 // app/api/treatment/batches/[id]/route.ts
-var route_exports59 = {};
-__export(route_exports59, {
-  GET: () => GET26
+var route_exports55 = {};
+__export(route_exports55, {
+  GET: () => GET24
 });
-async function GET26(_request, context) {
+async function GET24(_request, context) {
   try {
     const batch = await getTreatmentBatchDetail((await context.params).id);
     return batch ? Response.json({ batch }) : Response.json({ error: "Lote no encontrado." }, { status: 404 });
@@ -5838,7 +5739,7 @@ async function GET26(_request, context) {
     return Response.json({ error: error instanceof Error ? error.message : "No se pudo cargar el lote." }, { status: 500 });
   }
 }
-var init_route59 = __esm({
+var init_route55 = __esm({
   "app/api/treatment/batches/[id]/route.ts"() {
     "use strict";
     init_store();
@@ -5949,6 +5850,7 @@ function summarizeOrder(order) {
       treatedQuantity: line.treatedQuantity,
       treatmentPendingQuantity: line.treatmentPendingQuantity,
       production: (line.productionAllocations ?? []).map((allocation) => ({
+        id: allocation.id,
         date: allocation.plannedDate,
         quantity: allocation.plannedQuantity,
         actualQuantity: allocation.actualQuantity,
@@ -5982,8 +5884,55 @@ var init_operational = __esm({
   }
 });
 
-// app/mcp/server.ts
-import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
+// app/mcp/bridge.ts
+async function callApi({ method, path, query, body }) {
+  const { dispatch: dispatch2 } = await Promise.resolve().then(() => (init_router(), router_exports));
+  const url = new URL(`http://interno.ecoase${path}`);
+  for (const [key, value] of Object.entries(query ?? {})) if (value !== void 0 && value !== "") url.searchParams.set(key, String(value));
+  const init = { method, headers: { accept: "application/json", ...body !== void 0 ? { "content-type": "application/json" } : {} } };
+  if (body !== void 0) init.body = JSON.stringify(body);
+  const response = await dispatch2(new Request(url, init));
+  const text2 = await response.text();
+  let data = text2;
+  if (!text2) data = { ok: response.ok };
+  else {
+    try {
+      data = JSON.parse(text2);
+    } catch {
+    }
+  }
+  return { ok: response.ok, status: response.status, data };
+}
+function apiErrorMessage(response) {
+  const data = response.data;
+  const message = typeof data === "object" && data && typeof data.error === "string" ? data.error : typeof data === "string" && data ? data : "";
+  if (response.status === 404) return message || "No se encontr\xF3 lo que se pidi\xF3. Revis\xE1 el identificador.";
+  if (response.status === 405) return "Esa operaci\xF3n no est\xE1 disponible.";
+  if (response.status >= 500) return message || "El servidor no pudo completar la operaci\xF3n. Prob\xE1 de nuevo en unos segundos.";
+  return message || `La operaci\xF3n fue rechazada (c\xF3digo ${response.status}).`;
+}
+function shrink(value) {
+  if (JSON.stringify(value)?.length <= MAX_CHARS) return value;
+  const trim = (item, depth) => {
+    if (Array.isArray(item)) {
+      const kept = item.slice(0, MAX_ITEMS).map((entry) => trim(entry, depth + 1));
+      return item.length > MAX_ITEMS ? [...kept, { _omitidos: item.length - MAX_ITEMS, _aviso: "Lista recortada: ped\xED un rango o filtro m\xE1s acotado." }] : kept;
+    }
+    if (item && typeof item === "object" && depth < 8) return Object.fromEntries(Object.entries(item).map(([key, entry]) => [key, trim(entry, depth + 1)]));
+    return item;
+  };
+  return trim(value, 0);
+}
+var MAX_CHARS, MAX_ITEMS;
+var init_bridge = __esm({
+  "app/mcp/bridge.ts"() {
+    "use strict";
+    MAX_CHARS = 12e4;
+    MAX_ITEMS = 100;
+  }
+});
+
+// app/mcp/kit.ts
 import { z } from "zod";
 function todayKey() {
   return new Intl.DateTimeFormat("en-CA", { timeZone: "America/Montevideo", year: "numeric", month: "2-digit", day: "2-digit" }).format(/* @__PURE__ */ new Date());
@@ -5993,6 +5942,1236 @@ function addDays2(date, days) {
   value.setUTCDate(value.getUTCDate() + days);
   return value.toISOString().slice(0, 10);
 }
+function normalize2(value) {
+  return value.trim().toLocaleLowerCase("es").normalize("NFD").replace(new RegExp("\\p{Diacritic}", "gu"), "");
+}
+function fail(message) {
+  return { ok: false, message };
+}
+function done(summary, data) {
+  return { ok: true, summary, data };
+}
+function clean(value) {
+  return Object.fromEntries(Object.entries(value).filter(([, entry]) => entry !== void 0));
+}
+function format(outcome) {
+  if (!outcome.ok) return { isError: true, content: [{ type: "text", text: outcome.message }] };
+  const payload = outcome.data === void 0 ? "" : `
+${JSON.stringify(shrink(outcome.data))}`;
+  return { content: [{ type: "text", text: `${outcome.summary}${payload}` }] };
+}
+function tool(server, context, spec) {
+  if (spec.access === "write" && !context.canWrite) return;
+  const readOnly = spec.access === "read";
+  server.registerTool(
+    spec.name,
+    {
+      title: spec.title,
+      description: spec.description,
+      inputSchema: spec.input,
+      annotations: {
+        readOnlyHint: readOnly,
+        destructiveHint: readOnly ? false : Boolean(spec.destructive),
+        idempotentHint: readOnly ? true : Boolean(spec.idempotent),
+        openWorldHint: false
+      }
+    },
+    (async (args) => {
+      try {
+        return format(await spec.run(args));
+      } catch (error) {
+        return format(fail(error instanceof Error ? error.message : "No se pudo completar la operaci\xF3n."));
+      }
+    })
+  );
+}
+function apiTool(server, context, spec) {
+  tool(server, context, {
+    ...spec,
+    run: async (args) => {
+      const response = await callApi(spec.request(args));
+      if (!response.ok) return fail(apiErrorMessage(response));
+      const data = spec.pick ? spec.pick(response.data, args) : response.data;
+      return done(typeof spec.summary === "function" ? spec.summary(response.data, args) : spec.summary, data);
+    }
+  });
+}
+function pickKeys(data, keys) {
+  if (!keys?.length || !data || typeof data !== "object") return data;
+  return Object.fromEntries(Object.entries(data).filter(([key]) => keys.includes(key)));
+}
+function count(value, key) {
+  const list = value?.[key];
+  return Array.isArray(list) ? list.length : 0;
+}
+var isoDate8, RESPONSABLE, fecha, identificador, cantidad, momento;
+var init_kit = __esm({
+  "app/mcp/kit.ts"() {
+    "use strict";
+    init_bridge();
+    isoDate8 = /^\d{4}-\d{2}-\d{2}$/;
+    RESPONSABLE = "Claude (MCP)";
+    fecha = (detalle = "Fecha en formato AAAA-MM-DD.") => z.string().regex(isoDate8, "Us\xE1 el formato AAAA-MM-DD.").describe(detalle);
+    identificador = (detalle) => z.union([z.string().min(1), z.number()]).describe(detalle);
+    cantidad = (detalle) => z.number().int().positive().describe(detalle);
+    momento = (detalle = "Fecha y hora ISO 8601, por ejemplo 2026-11-12T14:30:00-03:00.") => z.string().refine((value) => !Number.isNaN(Date.parse(value)), "Us\xE1 fecha y hora ISO 8601.").describe(detalle);
+  }
+});
+
+// app/mcp/tools-admin.ts
+import { z as z2 } from "zod";
+function registerAdminTools(server, context) {
+  apiTool(server, context, {
+    name: "registrar_entrada_stock",
+    title: "Registrar una entrada de stock",
+    description: "Suma unidades al stock: producci\xF3n interna, recepci\xF3n de un proveedor o devoluci\xF3n. Eleg\xED si entran como pendientes de HT o listas.",
+    access: "write",
+    input: {
+      productoId: identificador("ID del producto."),
+      tipo: z2.enum(["internal_production", "supplier_receipt", "return"]).describe("internal_production = producci\xF3n propia; supplier_receipt = recepci\xF3n de proveedor; return = devoluci\xF3n."),
+      estado: estadoStock,
+      cantidad: z2.number().int().positive(),
+      momento: momento("Cu\xE1ndo entr\xF3. Si se omite, ahora.").optional(),
+      proveedorId: z2.string().optional().describe("Proveedor de origen."),
+      referencia: z2.string().optional().describe("Remito o referencia de origen."),
+      nota: z2.string().optional(),
+      responsable
+    },
+    request: (args) => ({
+      method: "POST",
+      path: "/api/stock/movements/receipts",
+      body: clean({
+        productId: String(args.productoId),
+        movementType: args.tipo,
+        stockState: args.estado,
+        quantity: args.cantidad,
+        occurredAt: args.momento ?? (/* @__PURE__ */ new Date()).toISOString(),
+        providerId: args.proveedorId,
+        sourceReference: args.referencia,
+        note: args.nota,
+        responsible: args.responsable ?? RESPONSABLE
+      })
+    }),
+    summary: "Entrada de stock registrada."
+  });
+  apiTool(server, context, {
+    name: "ajustar_stock",
+    title: "Ajustar el stock por diferencia",
+    description: "Corrige el stock de un producto sumando o restando unidades (diferencia positiva o negativa). Exige el motivo y no puede dejar el stock negativo. Queda en el historial: ped\xED confirmaci\xF3n.",
+    access: "write",
+    destructive: true,
+    input: {
+      productoId: identificador("ID del producto."),
+      estado: estadoStock,
+      diferencia: z2.number().int().refine((value) => value !== 0, "La diferencia no puede ser cero.").describe("Unidades a sumar (+) o restar (-)."),
+      motivo: z2.string().min(1).describe("Por qu\xE9 se ajusta."),
+      momento: momento("Cu\xE1ndo. Si se omite, ahora.").optional(),
+      responsable
+    },
+    request: (args) => ({
+      method: "POST",
+      path: "/api/stock/movements/adjustments",
+      body: { productId: String(args.productoId), stockState: args.estado, quantityDelta: args.diferencia, reason: args.motivo, occurredAt: args.momento ?? (/* @__PURE__ */ new Date()).toISOString(), responsible: args.responsable ?? RESPONSABLE }
+    }),
+    summary: "Ajuste de stock registrado."
+  });
+  apiTool(server, context, {
+    name: "revertir_movimiento_stock",
+    title: "Revertir un movimiento de stock",
+    description: "Anula un movimiento de stock con un movimiento inverso y deja el motivo. No se revierte dos veces ni si dejar\xEDa el stock negativo. Ped\xED confirmaci\xF3n.",
+    access: "write",
+    destructive: true,
+    input: { movimientoId: identificador("ID del movimiento (de stock_producto)."), motivo: z2.string().min(1), momento: momento("Cu\xE1ndo. Si se omite, ahora.").optional(), responsable },
+    request: (args) => ({
+      method: "POST",
+      path: `/api/stock/movements/${enc(args.movimientoId)}/reverse`,
+      body: { reason: args.motivo, occurredAt: args.momento ?? (/* @__PURE__ */ new Date()).toISOString(), responsible: args.responsable ?? RESPONSABLE }
+    }),
+    summary: "Movimiento revertido."
+  });
+  tool(server, context, {
+    name: "guardar_recurso_produccion",
+    title: "Crear o editar un recurso de producci\xF3n",
+    description: "Crea un recurso (f\xE1brica interna, cuadrilla interna o aserradero externo) o edita uno existente si pas\xE1s recursoId. `produce` limita qu\xE9 tipos de producto fabrica; si se omite o est\xE1n los tres, produce todos.",
+    access: "write",
+    input: {
+      recursoId: identificador("ID del recurso a editar. Si se omite, se crea uno nuevo.").optional(),
+      nombre: z2.string().min(1).optional(),
+      tipo: z2.enum(["internal_factory", "internal_crew", "external_supplier"]).optional().describe("Obligatorio al crear."),
+      proveedorId: z2.string().optional().describe("Aserradero asociado; obligatorio si el tipo es external_supplier."),
+      produce: z2.array(tiposProducto).min(1).optional().describe("Tipos de producto que produce."),
+      orden: z2.number().int().min(0).optional().describe("Orden de aparici\xF3n."),
+      activo: z2.boolean().optional().describe("Solo al editar.")
+    },
+    run: async (args) => {
+      if (args.recursoId !== void 0) {
+        const response = await callApi({ method: "PATCH", path: "/api/capacity/resources", body: clean({ id: args.recursoId, name: args.nombre, active: args.activo, displayOrder: args.orden, productKinds: args.produce }) });
+        return response.ok ? done("Recurso actualizado.", response.data) : fail(apiErrorMessage(response));
+      }
+      if (!args.nombre || !args.tipo) return fail("Para crear un recurso indic\xE1 nombre y tipo.");
+      const created = await callApi({ method: "POST", path: "/api/capacity/resources", body: clean({ name: args.nombre, resourceType: args.tipo, providerId: args.proveedorId, displayOrder: args.orden }) });
+      if (!created.ok) return fail(apiErrorMessage(created));
+      const resource = created.data.resource;
+      if (args.produce && resource?.id !== void 0) {
+        const kinds2 = await callApi({ method: "PATCH", path: "/api/capacity/resources", body: { id: resource.id, productKinds: args.produce } });
+        if (!kinds2.ok) return fail(`El recurso se cre\xF3, pero no se pudo guardar qu\xE9 produce: ${apiErrorMessage(kinds2)}`);
+        return done("Recurso creado.", kinds2.data);
+      }
+      return done("Recurso creado.", created.data);
+    }
+  });
+  const reglaCampos = {
+    recursoId: identificador("ID del recurso (listar_recursos_produccion)."),
+    productoId: z2.string().min(1).describe("ID del producto del cat\xE1logo."),
+    clienteProductoId: identificador("Relaci\xF3n cliente-producto a la que aplica (ver_cliente)."),
+    etiqueta: z2.string().min(1).describe("Nombre de la configuraci\xF3n, por ejemplo \xABF\xE1brica \xD72\xBB."),
+    normalPorDia: z2.number().int().positive().describe("Unidades por d\xEDa en condiciones normales."),
+    maximoPorDia: z2.number().int().positive().describe("Unidades por d\xEDa como m\xE1ximo (no menor a la normal)."),
+    vigenteDesde: fecha("Desde cu\xE1ndo rige."),
+    vigenteHasta: fecha("Hasta cu\xE1ndo rige. Vac\xEDo = sin fin.").optional(),
+    personas: z2.number().int().min(0).optional().describe("Personas de la cuadrilla, si importa."),
+    fuente: z2.string().optional().describe("Origen del dato. Por defecto \xABmanual\xBB."),
+    nota: z2.string().optional()
+  };
+  tool(server, context, {
+    name: "guardar_regla_rendimiento",
+    title: "Crear o editar una regla de rendimiento",
+    description: "Define cu\xE1ntas unidades por d\xEDa produce un recurso de un producto de un cliente (normal y m\xE1ximo). Pas\xE1 reglaId para editar una existente (se reemplazan todos sus valores). Las reglas alimentan las advertencias de capacidad.",
+    access: "write",
+    input: { reglaId: identificador("ID de la regla a editar. Si se omite, se crea una nueva.").optional(), ...reglaCampos },
+    run: async (args) => {
+      const body = clean({
+        id: args.reglaId,
+        resourceId: args.recursoId,
+        productId: args.productoId,
+        clientProductId: args.clienteProductoId,
+        configurationLabel: args.etiqueta,
+        normalUnitsPerDay: args.normalPorDia,
+        maximumUnitsPerDay: args.maximoPorDia,
+        validFrom: args.vigenteDesde,
+        validTo: args.vigenteHasta,
+        peopleCount: args.personas,
+        source: args.fuente,
+        note: args.nota
+      });
+      const response = await callApi({ method: args.reglaId === void 0 ? "POST" : "PATCH", path: "/api/capacity/rules", body });
+      return response.ok ? done(args.reglaId === void 0 ? "Regla creada." : "Regla actualizada.", response.data) : fail(apiErrorMessage(response));
+    }
+  });
+  apiTool(server, context, {
+    name: "eliminar_regla_rendimiento",
+    title: "Eliminar una regla de rendimiento",
+    description: "Elimina una regla de rendimiento. Si ya se us\xF3 en producci\xF3n realizada, se rechaza. Ped\xED confirmaci\xF3n.",
+    access: "write",
+    destructive: true,
+    input: { reglaId: identificador("ID de la regla.") },
+    request: ({ reglaId }) => ({ method: "DELETE", path: "/api/capacity/rules", query: { id: String(reglaId) } }),
+    summary: "Regla eliminada."
+  });
+  tool(server, context, {
+    name: "guardar_capacidad_secadero",
+    title: "Definir la capacidad diaria del secadero",
+    description: "Fija las unidades por d\xEDa que admite el secadero (la referencia contra la que se muestra el porcentaje de carga). Superarla solo genera una advertencia.",
+    access: "write",
+    idempotent: true,
+    input: { unidadesPorDia: z2.number().int().min(1).describe("Capacidad diaria en unidades.") },
+    run: async ({ unidadesPorDia }) => {
+      const today = todayKey();
+      const snapshot2 = await callApi({ method: "GET", path: "/api/capacity", query: { from: today, to: today } });
+      const saved = (snapshot2.data?.capacity?.internalDefaults ?? []).find((entry) => entry.operation === "ht");
+      const response = await callApi({ method: "PUT", path: "/api/capacity/internal-production", body: { operation: "ht", peopleCount: saved?.peopleCount ?? 0, manualCapacity: unidadesPorDia } });
+      return response.ok ? done("Capacidad del secadero guardada.", response.data) : fail(apiErrorMessage(response));
+    }
+  });
+  apiTool(server, context, {
+    name: "guardar_capacidad_transporte",
+    title: "Definir los cupos de viajes de un transporte",
+    description: "Fija cu\xE1ntos viajes por d\xEDa admite la flota propia o un transportista externo (valor base, todos los d\xEDas).",
+    access: "write",
+    idempotent: true,
+    input: {
+      origen: z2.enum(["internal", "external"]),
+      transportistaId: z2.string().optional().describe("Obligatorio si el origen es external."),
+      viajesPorDia: z2.number().int().min(0),
+      estado: z2.enum(["estimated", "confirmed"]).default("confirmed").describe("estimated = estimado; confirmed = confirmado.")
+    },
+    request: (args) => ({ method: "PUT", path: "/api/capacity/transport", body: clean({ source: args.origen, providerId: args.transportistaId, tripCapacity: args.viajesPorDia, status: args.estado }) }),
+    summary: "Cupos de transporte guardados."
+  });
+  apiTool(server, context, {
+    name: "guardar_cupos_viajes_dia",
+    title: "Excepci\xF3n de cupos de viajes en un d\xEDa",
+    description: "Cambia los cupos de viajes de un transporte solo para un d\xEDa (por ejemplo, un cami\xF3n extra o uno en reparaci\xF3n).",
+    access: "write",
+    idempotent: true,
+    input: {
+      fecha: fecha("D\xEDa de la excepci\xF3n."),
+      origen: z2.enum(["internal", "external"]),
+      transportistaId: z2.string().optional().describe("Obligatorio si el origen es external."),
+      cupos: z2.number().int().min(0).describe("Cupos de viajes ese d\xEDa."),
+      responsable: z2.string().min(1).describe("Qui\xE9n aporta o confirma el cupo."),
+      estado: z2.enum(["estimated", "confirmed"]).default("confirmed")
+    },
+    request: (args) => ({ method: "PUT", path: "/api/capacity/trip-adjustments", body: clean({ date: args.fecha, source: args.origen, providerId: args.transportistaId, tripCapacity: args.cupos, responsible: args.responsable, status: args.estado }) }),
+    summary: "Excepci\xF3n guardada."
+  });
+  apiTool(server, context, {
+    name: "ajustar_capacidad_dia",
+    title: "Ajuste de capacidad de un d\xEDa",
+    description: "Suma o resta capacidad (en palets) a un recurso solo para un d\xEDa: producci\xF3n interna, producci\xF3n de un aserradero externo o transporte. Para producci\xF3n interna se indica la cantidad de personas.",
+    access: "write",
+    idempotent: true,
+    input: {
+      fecha: fecha("D\xEDa del ajuste."),
+      recurso: z2.enum(["internal_production", "external_production", "transport"]),
+      operacion: z2.enum(["assembly", "marking", "ht"]).optional().describe("Obligatoria para producci\xF3n interna o externa."),
+      origen: z2.enum(["internal", "external"]).optional().describe("Obligatorio para transport."),
+      proveedorId: z2.string().optional().describe("Aserradero o transportista externo."),
+      ajustePalets: z2.number().int().describe("Palets a sumar (+) o restar (-)."),
+      personas: z2.number().int().min(0).optional().describe("Solo producci\xF3n interna."),
+      responsable: z2.string().optional().describe("Qui\xE9n aporta la capacidad (obligatorio salvo producci\xF3n interna o ajuste 0)."),
+      estado: z2.enum(["estimated", "confirmed"]).optional()
+    },
+    request: (args) => ({
+      method: "PUT",
+      path: "/api/capacity/adjustments",
+      body: clean({ date: args.fecha, resourceType: args.recurso, operation: args.operacion, source: args.origen, providerId: args.proveedorId, palletAdjustment: args.ajustePalets, peopleCount: args.personas, responsible: args.responsable, status: args.estado })
+    }),
+    summary: "Ajuste de capacidad guardado."
+  });
+  tool(server, context, {
+    name: "guardar_cliente",
+    title: "Crear o editar un cliente",
+    description: "Crea un cliente o edita uno existente si pas\xE1s clienteId. La direcci\xF3n de entrega es necesaria para despachar sus viajes.",
+    access: "write",
+    input: {
+      clienteId: identificador("ID del cliente a editar. Si se omite, se crea uno nuevo.").optional(),
+      nombre: z2.string().min(1).optional(),
+      direccion: z2.string().optional(),
+      departamento: z2.string().optional(),
+      activo: z2.boolean().optional().describe("Solo al editar.")
+    },
+    run: async (args) => {
+      const body = clean({ name: args.nombre, address: args.direccion, department: args.departamento, active: args.activo });
+      if (args.clienteId === void 0 && !args.nombre) return fail("Para crear un cliente indic\xE1 el nombre.");
+      const response = await callApi({ method: args.clienteId === void 0 ? "POST" : "PATCH", path: args.clienteId === void 0 ? "/api/clients" : `/api/clients/${enc(args.clienteId)}`, body });
+      return response.ok ? done(args.clienteId === void 0 ? "Cliente creado." : "Cliente actualizado.", response.data) : fail(apiErrorMessage(response));
+    }
+  });
+  apiTool(server, context, {
+    name: "eliminar_cliente",
+    title: "Eliminar un cliente",
+    description: "Elimina un cliente sin pedidos. Si tiene historial, desactivalo con guardar_cliente (activo=false). Ped\xED confirmaci\xF3n expl\xEDcita.",
+    access: "write",
+    destructive: true,
+    input: { clienteId: identificador("ID del cliente.") },
+    request: ({ clienteId }) => ({ method: "DELETE", path: `/api/clients/${enc(clienteId)}` }),
+    summary: "Cliente eliminado."
+  });
+  apiTool(server, context, {
+    name: "habilitar_producto_cliente",
+    title: "Habilitar un producto para un cliente",
+    description: "Asocia un producto del cat\xE1logo a un cliente para poder hacerle pedidos. Requiere un primer punto de control.",
+    access: "write",
+    input: {
+      clienteId: identificador("ID del cliente."),
+      productoId: z2.string().min(1).describe("ID del producto del cat\xE1logo."),
+      nombreOperativo: z2.string().optional().describe("C\xF3mo lo llama el cliente."),
+      controlInicial: z2.string().min(1).describe("Primer punto de control del producto para este cliente."),
+      orden: z2.number().int().optional()
+    },
+    request: (args) => ({
+      method: "POST",
+      path: `/api/clients/${enc(args.clienteId)}/products`,
+      body: clean({ productId: args.productoId, operationalName: args.nombreOperativo, initialControl: args.controlInicial, displayOrder: args.orden })
+    }),
+    summary: "Producto habilitado para el cliente."
+  });
+  apiTool(server, context, {
+    name: "editar_producto_cliente",
+    title: "Editar un producto de un cliente",
+    description: "Cambia el nombre operativo, el orden o activa/desactiva un producto habilitado para un cliente. Us\xE1 el clienteProductoId de ver_cliente.",
+    access: "write",
+    idempotent: true,
+    input: {
+      clienteProductoId: identificador("ID de la relaci\xF3n cliente-producto."),
+      nombreOperativo: z2.string().optional(),
+      activo: z2.boolean().optional(),
+      orden: z2.number().int().optional()
+    },
+    request: (args) => ({ method: "PATCH", path: `/api/client-products/${enc(args.clienteProductoId)}`, body: clean({ operationalName: args.nombreOperativo, active: args.activo, displayOrder: args.orden }) }),
+    summary: "Producto del cliente actualizado."
+  });
+  apiTool(server, context, {
+    name: "guardar_controles_producto_cliente",
+    title: "Definir los puntos de control de un producto de cliente",
+    description: "Reemplaza la lista de puntos de control (los que se revisan al registrar HT) de un producto de un cliente. Inclu\xED todos los que deben quedar.",
+    access: "write",
+    idempotent: true,
+    input: {
+      clienteProductoId: identificador("ID de la relaci\xF3n cliente-producto."),
+      controles: z2.array(z2.object({ titulo: z2.string().min(1), detalle: z2.string().optional(), activo: z2.boolean().optional() }))
+    },
+    request: ({ clienteProductoId, controles }) => ({
+      method: "PUT",
+      path: `/api/client-products/${enc(clienteProductoId)}/controls`,
+      body: { controls: controles.map((control) => clean({ title: control.titulo, detail: control.detalle, active: control.activo })) }
+    }),
+    summary: "Controles guardados."
+  });
+  apiTool(server, context, {
+    name: "eliminar_archivo_producto_cliente",
+    title: "Quitar un plano o foto",
+    description: "Quita un plano o foto de un producto de cliente (queda fuera de uso). Ped\xED confirmaci\xF3n.",
+    access: "write",
+    destructive: true,
+    input: { archivoId: identificador("ID del archivo.") },
+    request: ({ archivoId }) => ({ method: "DELETE", path: `/api/client-product-assets/${enc(archivoId)}` }),
+    summary: "Archivo quitado."
+  });
+  const productoCampos = {
+    tipo: tiposProducto.optional().describe("Obligatorio al crear."),
+    medida: z2.string().optional().describe("Medida, por ejemplo 1200x1000."),
+    atributos: z2.record(z2.string(), z2.string()).optional().describe("Valor por nivel de clasificaci\xF3n (ver niveles_producto): clave = id del nivel."),
+    alturaCm: z2.number().positive().nullable().optional().describe("Altura en cm (m\xE1x. dos decimales); null para quitarla."),
+    requiereHT: z2.boolean().optional(),
+    codigoZeta: z2.string().optional().describe("C\xF3digo num\xE9rico Zeta. Obligatorio al crear."),
+    nombreStock: z2.string().optional(),
+    clienteIds: z2.array(z2.string()).optional().describe("Clientes asociados.")
+  };
+  tool(server, context, {
+    name: "guardar_producto",
+    title: "Crear o editar un producto del cat\xE1logo",
+    description: "Crea un producto o edita uno existente si pas\xE1s productoId. Si cambia la clasificaci\xF3n y ya existe otro producto igual, se rechaza.",
+    access: "write",
+    input: { productoId: z2.string().optional().describe("ID del producto a editar. Si se omite, se crea uno nuevo."), ...productoCampos },
+    run: async (args) => {
+      if (args.productoId === void 0 && (!args.tipo || !args.codigoZeta)) return fail("Para crear un producto indic\xE1 tipo y c\xF3digo Zeta.");
+      const body = clean({
+        kind: args.tipo,
+        measure: args.medida,
+        attributes: args.atributos,
+        heightCm: args.alturaCm,
+        requiresTreatment: args.requiereHT,
+        zetaCode: args.codigoZeta,
+        stockName: args.nombreStock,
+        clientIds: args.clienteIds
+      });
+      if (args.productoId !== void 0 && !args.tipo) {
+        const current = await callApi({ method: "GET", path: "/api/products" });
+        const found = (current.data.products ?? []).find((item) => item.id === args.productoId);
+        if (!found) return fail("Producto no encontrado.");
+        body.kind = found.kind;
+      }
+      const response = await callApi({ method: args.productoId === void 0 ? "POST" : "PATCH", path: args.productoId === void 0 ? "/api/products" : `/api/products/${enc(args.productoId)}`, body });
+      return response.ok ? done(args.productoId === void 0 ? "Producto creado." : "Producto actualizado.", response.data) : fail(apiErrorMessage(response));
+    }
+  });
+  apiTool(server, context, {
+    name: "eliminar_producto",
+    title: "Eliminar un producto del cat\xE1logo",
+    description: "Elimina un producto que no figura en pedidos ni tiene stock o movimientos. Ped\xED confirmaci\xF3n expl\xEDcita.",
+    access: "write",
+    destructive: true,
+    input: { productoId: z2.string().min(1) },
+    request: ({ productoId }) => ({ method: "DELETE", path: `/api/products/${enc(productoId)}` }),
+    summary: "Producto eliminado."
+  });
+  apiTool(server, context, {
+    name: "guardar_niveles_producto",
+    title: "Guardar los niveles de clasificaci\xF3n",
+    description: "Reemplaza la lista de niveles de clasificaci\xF3n de productos y sus opciones. Cuidado: es la estructura del cat\xE1logo. Part\xED siempre de niveles_producto y devolv\xE9 la lista completa; \xABMedida\xBB es siempre el primer nivel y no se puede quitar un nivel que usan productos.",
+    access: "write",
+    destructive: true,
+    idempotent: true,
+    input: { niveles: z2.array(z2.object({ id: z2.string().optional(), nombre: z2.string().optional(), opciones: z2.unknown().optional() })).min(1).describe("Lista completa de niveles, con la forma que devuelve niveles_producto (id, label, options).") },
+    request: ({ niveles }) => ({ method: "PUT", path: "/api/product-levels", body: { levels: niveles.map((level) => clean({ id: level.id, label: level.nombre, options: level.opciones })) } }),
+    summary: "Niveles guardados."
+  });
+  tool(server, context, {
+    name: "guardar_proveedor",
+    title: "Crear o editar un proveedor",
+    description: "Crea un aserradero, transportista o importador, o edita uno existente si pas\xE1s proveedorId.",
+    access: "write",
+    input: {
+      proveedorId: z2.string().optional().describe("ID del proveedor a editar. Si se omite, se crea uno nuevo."),
+      nombre: z2.string().min(1).optional(),
+      tipo: z2.enum(["Aserradero", "Transporte", "Importador"]).optional().describe("Obligatorio al crear."),
+      suministra: z2.string().optional().describe("Qu\xE9 provee (texto libre).")
+    },
+    run: async (args) => {
+      if (args.proveedorId === void 0 && (!args.nombre || !args.tipo)) return fail("Para crear un proveedor indic\xE1 nombre y tipo.");
+      const body = clean({ name: args.nombre, type: args.tipo, supplies: args.suministra ?? (args.proveedorId === void 0 ? args.tipo : void 0) });
+      const response = await callApi({ method: args.proveedorId === void 0 ? "POST" : "PATCH", path: args.proveedorId === void 0 ? "/api/providers" : `/api/providers/${enc(args.proveedorId)}`, body });
+      return response.ok ? done(args.proveedorId === void 0 ? "Proveedor creado." : "Proveedor actualizado.", response.data) : fail(apiErrorMessage(response));
+    }
+  });
+  apiTool(server, context, {
+    name: "eliminar_proveedor",
+    title: "Eliminar un proveedor",
+    description: "Elimina un proveedor que no est\xE1 en uso. Ped\xED confirmaci\xF3n expl\xEDcita.",
+    access: "write",
+    destructive: true,
+    input: { proveedorId: z2.string().min(1) },
+    request: ({ proveedorId }) => ({ method: "DELETE", path: `/api/providers/${enc(proveedorId)}` }),
+    summary: "Proveedor eliminado."
+  });
+}
+var enc, responsable, estadoStock, tiposProducto;
+var init_tools_admin = __esm({
+  "app/mcp/tools-admin.ts"() {
+    "use strict";
+    init_bridge();
+    init_kit();
+    enc = (value) => encodeURIComponent(String(value));
+    responsable = z2.string().min(1).optional().describe(`Qui\xE9n lo hace. Si se omite, se registra \xAB${RESPONSABLE}\xBB.`);
+    estadoStock = z2.enum(["pending_treatment", "ready"]).describe("pending_treatment = pendiente de HT; ready = listo.");
+    tiposProducto = z2.enum(["Pallet", "Piso", "Bin"]);
+  }
+});
+
+// app/mcp/tools-logistics.ts
+import { z as z3 } from "zod";
+function registerLogisticsTools(server, context) {
+  apiTool(server, context, {
+    name: "asignar_transporte_pedido",
+    title: "Asignar transporte a un pedido",
+    description: "Define si el pedido va con flota propia o con un transportista externo (existente o nuevo). Aplica a los viajes a\xFAn planificados.",
+    access: "write",
+    idempotent: true,
+    input: {
+      pedidoId: identificador("ID del pedido."),
+      origen: z3.enum(["internal", "external"]).describe("internal = flota propia; external = transportista."),
+      transportistaId: z3.string().optional().describe("ID del transportista registrado (listar_proveedores tipo Transporte)."),
+      nuevoTransportista: z3.string().optional().describe("Nombre de un transportista nuevo para crearlo en el momento.")
+    },
+    request: (args) => ({
+      method: "POST",
+      path: `/api/orders/${enc2(args.pedidoId)}/transport`,
+      body: clean({ source: args.origen, providerId: args.transportistaId, newProviderName: args.nuevoTransportista })
+    }),
+    summary: "Transporte asignado."
+  });
+  apiTool(server, context, {
+    name: "crear_viaje",
+    title: "Crear un viaje de un pedido",
+    description: "Crea un viaje con las unidades de cada l\xEDnea que van ese d\xEDa. Se pueden hacer varios viajes por pedido. Enviar m\xE1s de lo que est\xE1 listo, o m\xE1s de lo que cabe en el veh\xEDculo, es una advertencia y no lo bloquea; lo que se rechaza es superar lo que falta enviar del pedido.",
+    access: "write",
+    input: {
+      pedidoId: identificador("ID del pedido."),
+      fecha: fecha("D\xEDa del viaje."),
+      origenTransporte: z3.enum(["internal", "external"]).default("internal").describe("internal = flota propia; external = transportista."),
+      transportistaId: z3.string().optional().describe("Transportista si el origen es external."),
+      lineas: lineasViaje,
+      responsable: responsable2
+    },
+    request: (args) => ({
+      method: "POST",
+      path: `/api/orders/${enc2(args.pedidoId)}/shipments`,
+      body: clean({
+        plannedDate: args.fecha,
+        transportSource: args.origenTransporte,
+        transportProviderId: args.transportistaId,
+        responsible: args.responsable ?? RESPONSABLE,
+        lines: args.lineas.map((line) => ({ orderLineId: line.lineaId, plannedQuantity: line.cantidad }))
+      })
+    }),
+    summary: "Viaje creado."
+  });
+  apiTool(server, context, {
+    name: "editar_viaje",
+    title: "Editar un viaje planificado",
+    description: "Cambia fecha, transporte o cantidades de un viaje que todav\xEDa est\xE1 planificado. Reemplaza las l\xEDneas: indic\xE1 todas las que quedan.",
+    access: "write",
+    idempotent: true,
+    input: {
+      viajeId: identificador("ID del viaje (de detalle_pedido \u2192 shipments o calendario)."),
+      fecha: fecha("D\xEDa del viaje."),
+      origenTransporte: z3.enum(["internal", "external"]).default("internal"),
+      transportistaId: z3.string().optional(),
+      lineas: lineasViaje,
+      responsable: responsable2
+    },
+    request: (args) => ({
+      method: "PATCH",
+      path: `/api/shipments/${enc2(args.viajeId)}`,
+      body: clean({
+        plannedDate: args.fecha,
+        transportSource: args.origenTransporte,
+        transportProviderId: args.transportistaId,
+        responsible: args.responsable ?? RESPONSABLE,
+        lines: args.lineas.map((line) => ({ orderLineId: line.lineaId, plannedQuantity: line.cantidad }))
+      })
+    }),
+    summary: "Viaje actualizado."
+  });
+  apiTool(server, context, {
+    name: "avanzar_viaje",
+    title: "Avanzar el estado de un viaje",
+    description: "Lleva un viaje al paso siguiente: ready (pronto) \u2192 loaded (cargado) \u2192 dispatched (despachado) \u2192 delivered (entregado), o lo cancela con cancelled. Al cargar se pueden informar las unidades realmente cargadas por l\xEDnea (cargaReal) y al entregar las realmente entregadas (entregaReal). Al despachar se descuenta el stock; si no alcanza queda registrada una incidencia, no se bloquea.",
+    access: "write",
+    input: {
+      viajeId: identificador("ID del viaje."),
+      estado: z3.enum(["ready", "loaded", "dispatched", "delivered", "cancelled"]).describe("Estado al que pasa."),
+      remito: z3.string().optional().describe("N\xFAmero de remito."),
+      motivoRemitoCompartido: z3.string().optional().describe("Si el remito se comparte con otro viaje, por qu\xE9."),
+      cargaReal: z3.array(z3.object({ lineaViajeId: identificador("ID de la l\xEDnea del viaje."), cantidad: z3.number().int().min(0) })).optional().describe("Unidades realmente cargadas (al pasar a loaded)."),
+      entregaReal: z3.array(z3.object({ lineaViajeId: identificador("ID de la l\xEDnea del viaje."), cantidad: z3.number().int().min(0) })).optional().describe("Unidades realmente entregadas (al pasar a delivered)."),
+      responsable: responsable2
+    },
+    request: (args) => ({
+      method: "POST",
+      path: `/api/shipments/${enc2(args.viajeId)}/transition`,
+      body: clean({
+        nextStatus: args.estado,
+        remittance: args.remito,
+        sharedRemittanceReason: args.motivoRemitoCompartido,
+        responsible: args.responsable ?? RESPONSABLE,
+        loadedLines: args.cargaReal?.map((line) => ({ shipmentLineId: String(line.lineaViajeId), loadedQuantity: line.cantidad })),
+        deliveredLines: args.entregaReal?.map((line) => ({ shipmentLineId: String(line.lineaViajeId), deliveredQuantity: line.cantidad }))
+      })
+    }),
+    summary: (data) => `Viaje actualizado${data?.auditWarning ? `. Aviso: ${data.auditWarning}` : "."}`
+  });
+  apiTool(server, context, {
+    name: "reprogramar_viaje",
+    title: "Reprogramar un viaje a otro d\xEDa",
+    description: "Mueve un viaje planificado o pronto a otra fecha y deja registrado el motivo.",
+    access: "write",
+    input: {
+      viajeId: identificador("ID del viaje."),
+      nuevaFecha: fecha("Nuevo d\xEDa."),
+      motivo: z3.enum(["production", "logistics", "client", "weather", "other"]).describe("production = producci\xF3n; logistics = log\xEDstica; client = cliente; weather = clima; other = otro."),
+      nota: z3.string().optional(),
+      responsable: responsable2
+    },
+    request: (args) => ({
+      method: "POST",
+      path: `/api/shipments/${enc2(args.viajeId)}/reschedule`,
+      body: clean({ newDate: args.nuevaFecha, reason: args.motivo, note: args.nota, responsible: args.responsable ?? RESPONSABLE })
+    }),
+    summary: "Viaje reprogramado."
+  });
+  apiTool(server, context, {
+    name: "guardar_salida",
+    title: "Agendar o editar una salida de transporte",
+    description: "Agenda la salida de un viaje (veh\xEDculo, chofer, horarios y destino) o la edita si pas\xE1s salidaId. Modos: delivery (entrega con flota propia o transportista), customer_pickup (retira el cliente), supplier_pickup (retiro en un proveedor). Los solapamientos de veh\xEDculo o chofer y las salidas fuera de jornada son advertencias.",
+    access: "write",
+    input: {
+      salidaId: identificador("ID de la salida a editar. Si se omite, se crea una nueva.").optional(),
+      modo: z3.enum(["delivery", "customer_pickup", "supplier_pickup"]),
+      fecha: fecha("D\xEDa de la salida."),
+      viajeId: identificador("Viaje al que corresponde (delivery y customer_pickup).").optional(),
+      proveedorId: z3.string().optional().describe("Proveedor a retirar (solo supplier_pickup)."),
+      vehiculoId: z3.string().optional().describe("ID del veh\xEDculo (de logistica_configuracion)."),
+      choferId: z3.string().optional().describe("ID del chofer. Si se omite, el habitual del veh\xEDculo."),
+      salida: momento("Hora de salida.").optional(),
+      regreso: momento("Hora de regreso.").optional(),
+      estado: z3.enum(["planned", "in_progress", "completed", "cancelled"]).optional(),
+      direccionDestino: z3.string().optional(),
+      nota: z3.string().optional(),
+      responsable: responsable2
+    },
+    request: (args) => ({
+      method: "POST",
+      path: "/api/logistics/runs",
+      body: clean({
+        id: args.salidaId,
+        mode: args.modo,
+        plannedDate: args.fecha,
+        shipmentId: args.viajeId,
+        providerId: args.proveedorId,
+        vehicleId: args.vehiculoId,
+        driverId: args.choferId,
+        plannedStartAt: args.salida,
+        plannedEndAt: args.regreso,
+        status: args.estado,
+        destinationAddress: args.direccionDestino,
+        note: args.nota,
+        responsible: args.responsable ?? RESPONSABLE
+      })
+    }),
+    summary: "Salida guardada."
+  });
+  apiTool(server, context, {
+    name: "calcular_ruta_salida",
+    title: "Calcular la ruta y la hora de regreso",
+    description: "Calcula el recorrido, la distancia, la duraci\xF3n y la hora estimada de regreso del cami\xF3n de una salida. Necesita direcci\xF3n de destino y horario de salida.",
+    access: "write",
+    idempotent: true,
+    input: { salidaId: identificador("ID de la salida.") },
+    request: ({ salidaId }) => ({ method: "POST", path: `/api/logistics/routes/${enc2(salidaId)}` }),
+    summary: "Ruta calculada."
+  });
+  apiTool(server, context, {
+    name: "guardar_configuracion_logistica",
+    title: "Guardar configuraci\xF3n de Log\xEDstica",
+    description: [
+      "Crea o actualiza un dato de configuraci\xF3n de Log\xEDstica seg\xFAn `tipo`; `datos` lleva los campos de ese tipo:",
+      "\u2022 vehicle: id, name, smallCapacity (chicos), largeCapacity (grandes), habitualDriverId, lengthM, widthM, heightM, weightT, active.",
+      "\u2022 driver: id, name, active.",
+      "\u2022 settings: originAddress, shiftStart, shiftEnd (HH:MM), breakMinutes, loadMinutes, unloadMinutes, marginMinutes.",
+      "\u2022 class: productId, palletClass (small | large | unclassified | auto), reason.",
+      "\u2022 location: entityType (client | provider), entityId, address, latitude, longitude, precision (exact | city | unknown), verified.",
+      "\u2022 transport_capacity: source (provider | customer_pickup), providerId, smallCapacity, largeCapacity.",
+      "\u2022 client_limit: clientId, distanceKm, travelHours, handlingMinutes, ordersPerDay."
+    ].join("\n"),
+    access: "write",
+    idempotent: true,
+    input: {
+      tipo: z3.enum(["settings", "vehicle", "driver", "class", "location", "transport_capacity", "client_limit"]),
+      datos: z3.record(z3.string(), z3.unknown()).describe("Campos del tipo elegido.")
+    },
+    request: ({ tipo, datos }) => ({ method: "PUT", path: "/api/logistics/config", body: { ...datos, kind: tipo } }),
+    summary: "Configuraci\xF3n guardada."
+  });
+}
+var enc2, responsable2, lineasViaje;
+var init_tools_logistics = __esm({
+  "app/mcp/tools-logistics.ts"() {
+    "use strict";
+    init_kit();
+    enc2 = (value) => encodeURIComponent(String(value));
+    responsable2 = z3.string().min(1).optional().describe(`Qui\xE9n lo hace. Si se omite, se registra \xAB${RESPONSABLE}\xBB.`);
+    lineasViaje = z3.array(z3.object({
+      lineaId: z3.string().min(1).describe("ID de la l\xEDnea del pedido (de detalle_pedido)."),
+      cantidad: cantidad("Unidades que van en este viaje.")
+    })).min(1);
+  }
+});
+
+// app/mcp/tools-operations.ts
+import { z as z4 } from "zod";
+function registerOperationTools(server, context) {
+  apiTool(server, context, {
+    name: "crear_pedido",
+    title: "Crear un pedido",
+    description: "Crea un pedido de un cliente con uno o m\xE1s productos. El cliente sale de los productos elegidos: us\xE1 el clienteProductoId que devuelve ver_cliente (productosParaPedido[].id). Las fechas pasadas o ajustadas se aceptan.",
+    access: "write",
+    input: {
+      productos: z4.array(z4.object({
+        clienteProductoId: identificador("ID de la relaci\xF3n cliente-producto (ver_cliente \u2192 productosParaPedido[].id)."),
+        cantidad: cantidad("Unidades pedidas.")
+      })).min(1).describe("L\xEDneas del pedido."),
+      fechaPedido: fecha("D\xEDa en que el cliente hizo el pedido."),
+      fechaEntrega: fecha("D\xEDa para el que se pide la entrega."),
+      notas: z4.string().optional().describe("Notas internas del pedido."),
+      notaFechaEntrega: z4.string().optional().describe("Aclaraci\xF3n sobre la fecha de entrega (por ejemplo, \xABantes del feriado\xBB)."),
+      requiereHT: z4.boolean().optional().describe("Marcar si el pedido requiere HT adem\xE1s del armado.")
+    },
+    request: (args) => ({
+      method: "POST",
+      path: "/api/orders",
+      body: clean({
+        lines: args.productos.map((line) => ({ clientProductId: line.clienteProductoId, quantity: line.cantidad })),
+        orderDate: args.fechaPedido,
+        plannedDate: args.fechaEntrega,
+        notes: args.notas,
+        deliveryDateNote: args.notaFechaEntrega,
+        requiredOperations: args.requiereHT ? ["assembly", "treatment"] : void 0
+      })
+    }),
+    summary: "Pedido creado."
+  });
+  apiTool(server, context, {
+    name: "editar_pedido",
+    title: "Editar un pedido",
+    description: "Cambia datos de un pedido: fecha de entrega, cantidad total pedida, origen de la producci\xF3n (interna, aserradero o importaci\xF3n) y transporte. Indic\xE1 solo lo que cambia. Para cancelar us\xE1 cancelar_pedido.",
+    access: "write",
+    idempotent: true,
+    input: {
+      pedidoId: identificador("ID del pedido."),
+      fechaEntrega: fecha("Nueva fecha de entrega.").optional(),
+      cantidadTotal: z4.number().positive().optional().describe("Nueva cantidad total pedida (no puede ser menor a lo ya entregado)."),
+      origenProduccion: z4.enum(["internal", "sawmill", "import"]).optional().describe("internal = f\xE1brica propia; sawmill = aserradero; import = importaci\xF3n."),
+      productorId: z4.string().optional().describe("ID del aserradero o importador cuando el origen no es interno."),
+      fechaProduccion: fecha("Fecha de producci\xF3n.").optional(),
+      fechaLlegadaImportacion: fecha("Llegada de la importaci\xF3n (obligatoria si el origen es import).").optional(),
+      origenTransporte: z4.enum(["internal", "external"]).optional().describe("internal = flota propia; external = transportista."),
+      transportistaId: z4.string().optional().describe("ID del transportista cuando es externo.")
+    },
+    request: (args) => ({
+      method: "PATCH",
+      path: `/api/orders/${enc3(args.pedidoId)}`,
+      body: clean({
+        plannedDate: args.fechaEntrega,
+        requested: args.cantidadTotal,
+        productionSource: args.origenProduccion,
+        producerProviderId: args.productorId,
+        productionDate: args.fechaProduccion,
+        importArrivalDate: args.fechaLlegadaImportacion,
+        transportSource: args.origenTransporte,
+        transportProviderId: args.transportistaId
+      })
+    }),
+    summary: "Pedido actualizado."
+  });
+  apiTool(server, context, {
+    name: "cancelar_pedido",
+    title: "Cancelar un pedido",
+    description: "Cancela un pedido: queda en el historial como Cancelado y se liberan sus reservas. Ped\xED confirmaci\xF3n antes de usarla.",
+    access: "write",
+    destructive: true,
+    idempotent: true,
+    input: { pedidoId: identificador("ID del pedido.") },
+    request: ({ pedidoId }) => ({ method: "PATCH", path: `/api/orders/${enc3(pedidoId)}`, body: { cancelled: true } }),
+    summary: "Pedido cancelado."
+  });
+  apiTool(server, context, {
+    name: "eliminar_pedido",
+    title: "Eliminar un pedido",
+    description: "Elimina definitivamente un pedido que no tiene movimientos de stock ni HT. No se puede deshacer. Si ya tuvo actividad, us\xE1 cancelar_pedido. Ped\xED confirmaci\xF3n expl\xEDcita.",
+    access: "write",
+    destructive: true,
+    input: { pedidoId: identificador("ID del pedido.") },
+    request: ({ pedidoId }) => ({ method: "DELETE", path: `/api/orders/${enc3(pedidoId)}` }),
+    summary: "Pedido eliminado."
+  });
+  apiTool(server, context, {
+    name: "registrar_novedad_pedido",
+    title: "Registrar una novedad del pedido",
+    description: "Registra una entrega parcial, un cambio de direcci\xF3n, un despacho o una incidencia en el pedido. Para viajes con cargas y remitos prefer\xED crear_viaje y avanzar_viaje.",
+    access: "write",
+    input: {
+      pedidoId: identificador("ID del pedido."),
+      tipo: z4.enum(["entrega", "direccion", "despacho", "incidencia"]),
+      cantidadEntregada: cantidad("Unidades entregadas (solo para \xABentrega\xBB).").optional(),
+      direccion: z4.string().optional().describe("Nueva direcci\xF3n de entrega (solo para \xABdireccion\xBB)."),
+      fechaDespacho: momento("Cu\xE1ndo sali\xF3 (solo \xABdespacho\xBB).").optional(),
+      fechaEntrega: momento("Cu\xE1ndo se entreg\xF3 (solo \xABentrega\xBB).").optional(),
+      nota: z4.string().optional().describe("Detalle. Obligatorio para \xABincidencia\xBB.")
+    },
+    request: (args) => ({
+      method: "POST",
+      path: `/api/orders/${enc3(args.pedidoId)}/updates`,
+      body: clean({ kind: args.tipo, deliveredQuantity: args.cantidadEntregada, deliveryAddress: args.direccion, dispatchedAt: args.fechaDespacho, deliveredAt: args.fechaEntrega, note: args.nota })
+    }),
+    summary: "Novedad registrada."
+  });
+  apiTool(server, context, {
+    name: "planificar_produccion",
+    title: "Planificar la producci\xF3n de un pedido",
+    description: "Define qu\xE9 se produce, d\xF3nde y cu\xE1ndo. REEMPLAZA toda la planificaci\xF3n pendiente del pedido: inclu\xED todas las asignaciones que quer\xE9s conservar. Lo ya producido no se toca. Superar la capacidad de un d\xEDa no la bloquea (es una advertencia); lo que s\xED se rechaza es asignar m\xE1s unidades que las del pedido. Los IDs de l\xEDnea salen de detalle_pedido y los de recurso de listar_recursos_produccion.",
+    access: "write",
+    input: {
+      pedidoId: identificador("ID del pedido."),
+      asignaciones: z4.array(z4.object({
+        lineaId: z4.string().min(1).describe("ID de la l\xEDnea del pedido."),
+        recursoId: identificador("ID del recurso de producci\xF3n."),
+        fecha: fecha("D\xEDa de producci\xF3n."),
+        cantidad: cantidad("Unidades a producir ese d\xEDa.")
+      })).describe("Lista completa de asignaciones. Vac\xEDa = quitar toda la planificaci\xF3n pendiente.")
+    },
+    request: ({ pedidoId, asignaciones }) => ({
+      method: "POST",
+      path: `/api/orders/${enc3(pedidoId)}/production-plan`,
+      body: { allocations: asignaciones.map((item) => ({ orderLineId: item.lineaId, resourceId: String(item.recursoId), plannedDate: item.fecha, plannedQuantity: item.cantidad })) }
+    }),
+    summary: "Producci\xF3n planificada."
+  });
+  apiTool(server, context, {
+    name: "mover_asignacion_produccion",
+    title: "Mover una asignaci\xF3n de producci\xF3n a otro d\xEDa",
+    description: "Cambia el d\xEDa de una asignaci\xF3n de producci\xF3n (el ID sale de detalle_pedido \u2192 l\xEDneas \u2192 productionAllocations). Solo asignaciones sin resultado.",
+    access: "write",
+    idempotent: true,
+    input: { asignacionId: identificador("ID de la asignaci\xF3n."), fecha: fecha("Nuevo d\xEDa de producci\xF3n.") },
+    request: ({ asignacionId, fecha: plannedDate }) => ({ method: "PATCH", path: `/api/production-allocations/${enc3(asignacionId)}/move`, body: { plannedDate } }),
+    summary: "Asignaci\xF3n movida."
+  });
+  apiTool(server, context, {
+    name: "registrar_resultado_produccion",
+    title: "Registrar lo realmente producido",
+    description: "Carga el resultado real de una asignaci\xF3n de producci\xF3n: cu\xE1ntas unidades se hicieron y qu\xE9 d\xEDa. Si se produjo algo, indic\xE1 el destino: \xABcliente\xBB (queda para el pedido) o \xABstock\xBB. Con 0 unidades queda como no producido. La fecha real no puede ser futura.",
+    access: "write",
+    input: {
+      asignacionId: identificador("ID de la asignaci\xF3n."),
+      cantidadReal: z4.number().int().min(0).describe("Unidades producidas realmente."),
+      fechaReal: fecha("D\xEDa en que se produjo."),
+      destino: z4.enum(["cliente", "stock"]).optional().describe("Obligatorio si cantidadReal > 0."),
+      nota: z4.string().optional()
+    },
+    request: (args) => ({
+      method: "POST",
+      path: `/api/production-allocations/${enc3(args.asignacionId)}/result`,
+      body: clean({ actualQuantity: args.cantidadReal, actualDate: args.fechaReal, destination: args.destino === "cliente" ? "client" : args.destino === "stock" ? "stock" : void 0, note: args.nota })
+    }),
+    summary: "Resultado de producci\xF3n registrado."
+  });
+  apiTool(server, context, {
+    name: "programar_secado",
+    title: "Programar el secadero de un pedido",
+    description: "Programa cu\xE1ntas unidades con HT entran al secadero cada d\xEDa. Con `asignaciones` se define d\xEDa y cantidad por l\xEDnea (recomendado); sin ellas, solo el rango de fechas. Superar la capacidad diaria del secadero no la bloquea.",
+    access: "write",
+    input: {
+      pedidoId: identificador("ID del pedido."),
+      asignaciones: z4.array(z4.object({
+        lineaId: z4.string().min(1).describe("ID de la l\xEDnea del pedido."),
+        fecha: fecha("D\xEDa de secado."),
+        cantidad: cantidad("Unidades que se tratan ese d\xEDa.")
+      })).optional(),
+      fechaInicio: fecha("Primer d\xEDa (si no se detallan asignaciones).").optional(),
+      fechaFin: fecha("\xDAltimo d\xEDa (si no se detallan asignaciones).").optional(),
+      nota: z4.string().optional()
+    },
+    request: (args) => ({
+      method: "POST",
+      path: `/api/orders/${enc3(args.pedidoId)}/drying`,
+      body: clean({
+        startDate: args.fechaInicio,
+        endDate: args.fechaFin,
+        note: args.nota,
+        allocations: args.asignaciones?.map((item) => ({ orderLineId: item.lineaId, date: item.fecha, quantity: item.cantidad }))
+      })
+    }),
+    summary: "Secadero programado."
+  });
+  apiTool(server, context, {
+    name: "registrar_ht",
+    title: "Registrar un tratamiento HT realizado",
+    description: "Registra unidades tratadas con HT: pasan de \xABpendiente de HT\xBB a \xABlistas\xBB. Si el stock pendiente no alcanza (producci\xF3n sin cargar), se guarda igual y el saldo queda negativo como advertencia. Para asociarlo a un pedido indic\xE1 lineaPedidoId (de detalle_pedido); sin l\xEDnea es stock general. Los controles son opcionales.",
+    access: "write",
+    input: {
+      productoId: identificador("ID del producto (de opciones_ht)."),
+      cantidad: cantidad("Unidades tratadas."),
+      momento: momento("Cu\xE1ndo se hizo. Si se omite, ahora.").optional(),
+      responsable: responsable3,
+      lineaPedidoId: z4.string().optional().describe("L\xEDnea del pedido a la que corresponde."),
+      clienteProductoId: identificador("Relaci\xF3n cliente-producto (se deduce de la l\xEDnea si se indica).").optional(),
+      nota: z4.string().optional().describe("Observaci\xF3n. Obligatoria solo si alg\xFAn control es \xABNo conforme\xBB."),
+      controles: z4.array(z4.object({
+        controlId: identificador("ID del punto de control (de opciones_ht)."),
+        resultado: z4.enum(["pass", "fail"]).describe("pass = conforme; fail = no conforme (exige nota)."),
+        nota: z4.string().optional()
+      })).optional()
+    },
+    request: (args) => ({
+      method: "POST",
+      path: "/api/treatment/batches",
+      body: clean({
+        productId: String(args.productoId),
+        quantity: args.cantidad,
+        performedAt: args.momento ?? (/* @__PURE__ */ new Date()).toISOString(),
+        responsible: args.responsable ?? RESPONSABLE,
+        orderLineId: args.lineaPedidoId,
+        clientProductId: args.clienteProductoId,
+        note: args.nota,
+        controls: args.controles?.map((control) => ({ controlId: control.controlId, result: control.resultado, note: control.nota })) ?? []
+      })
+    }),
+    summary: "HT registrado."
+  });
+  apiTool(server, context, {
+    name: "registrar_ht_no_realizado",
+    title: "Registrar que el HT programado no se hizo",
+    description: "Marca que lo programado en el secadero para un d\xEDa no se realiz\xF3 (queda en rojo en el calendario y vuelve a quedar pendiente). La fecha no puede ser futura.",
+    access: "write",
+    input: {
+      pedidoId: identificador("ID del pedido."),
+      lineaId: z4.string().min(1).describe("ID de la l\xEDnea del pedido."),
+      fecha: fecha("D\xEDa programado que no se cumpli\xF3."),
+      responsable: responsable3,
+      nota: z4.string().optional().describe("Motivo.")
+    },
+    request: (args) => ({
+      method: "POST",
+      path: "/api/treatment/results",
+      body: clean({ orderId: String(args.pedidoId), orderLineId: args.lineaId, date: args.fecha, responsible: args.responsable ?? RESPONSABLE, note: args.nota })
+    }),
+    summary: "Registrado como no realizado."
+  });
+  apiTool(server, context, {
+    name: "revertir_lote_ht",
+    title: "Revertir un lote de HT",
+    description: "Anula un lote de HT: las unidades vuelven a \xABpendiente de HT\xBB. Queda registrado el motivo. Solo se revierte una vez. Ped\xED confirmaci\xF3n.",
+    access: "write",
+    destructive: true,
+    input: {
+      loteId: identificador("ID del lote."),
+      motivo: z4.string().min(1).describe("Por qu\xE9 se revierte."),
+      responsable: responsable3,
+      momento: momento("Cu\xE1ndo se revierte. Si se omite, ahora.").optional()
+    },
+    request: (args) => ({
+      method: "POST",
+      path: `/api/treatment/batches/${enc3(args.loteId)}/reverse`,
+      body: { note: args.motivo, responsible: args.responsable ?? RESPONSABLE, performedAt: args.momento ?? (/* @__PURE__ */ new Date()).toISOString() }
+    }),
+    summary: "Lote revertido."
+  });
+}
+var enc3, responsable3;
+var init_tools_operations = __esm({
+  "app/mcp/tools-operations.ts"() {
+    "use strict";
+    init_kit();
+    enc3 = (value) => encodeURIComponent(String(value));
+    responsable3 = z4.string().min(1).optional().describe(`Qui\xE9n lo hace. Si se omite, se registra \xAB${RESPONSABLE}\xBB.`);
+  }
+});
+
+// app/mcp/tools-read.ts
+import { z as z5 } from "zod";
+function registerReadTools(server, context) {
+  tool(server, context, {
+    name: "guia_operativa",
+    title: "Gu\xEDa operativa de Ecoase",
+    description: "Explica el flujo de trabajo del dashboard, las reglas y qu\xE9 herramienta usar en cada paso. Leela al empezar si no conoc\xE9s la operaci\xF3n.",
+    access: "read",
+    input: {},
+    run: async () => done(guideText, { hoy: todayKey(), zonaHoraria: "America/Montevideo" })
+  });
+  tool(server, context, {
+    name: "listar_pedidos",
+    title: "Listar pedidos",
+    description: "Lista pedidos con su estado, cantidades, productos, producci\xF3n y viajes. Filtra por abiertos, cerrados (entregados o cancelados) o todos, por cliente y por texto.",
+    access: "read",
+    input: {
+      estado: z5.enum(["abiertos", "cerrados", "todos"]).default("abiertos").describe("Abiertos = en curso; cerrados = entregados o cancelados."),
+      cliente: z5.string().optional().describe("Parte del nombre del cliente."),
+      texto: z5.string().optional().describe("Busca en referencia, producto y notas."),
+      limite: z5.number().int().min(1).max(200).default(50).describe("M\xE1ximo de pedidos a devolver.")
+    },
+    run: async ({ estado, cliente, texto, limite }) => {
+      const clientNeedle = normalize2(cliente ?? "");
+      const textNeedle = normalize2(texto ?? "");
+      const matches = (await getOrders()).filter((order) => {
+        if (estado === "abiertos" && isOrderClosed(order)) return false;
+        if (estado === "cerrados" && !isOrderClosed(order)) return false;
+        if (clientNeedle && !normalize2(order.client).includes(clientNeedle)) return false;
+        if (textNeedle && !normalize2([order.id, order.reference, order.notes ?? "", ...order.lines.map((line) => line.product)].join(" ")).includes(textNeedle)) return false;
+        return true;
+      });
+      return done(`Hay ${matches.length} pedido(s) ${estado === "todos" ? "" : estado}${matches.length > limite ? `; muestro los primeros ${limite}` : ""}.`, { total: matches.length, pedidos: matches.slice(0, limite).map(summarizeOrder) });
+    }
+  });
+  apiTool(server, context, {
+    name: "detalle_pedido",
+    title: "Detalle completo de un pedido",
+    description: "Devuelve todo un pedido por su ID: l\xEDneas con sus IDs, producci\xF3n planificada y real, secadero, HT, viajes, transporte y fechas. Usalo antes de planificar o modificar.",
+    access: "read",
+    input: { pedidoId: identificador("ID del pedido (lo da listar_pedidos o ver_pedido).") },
+    request: ({ pedidoId }) => ({ method: "GET", path: `/api/orders/${encodeURIComponent(String(pedidoId))}` }),
+    summary: "Detalle del pedido."
+  });
+  apiTool(server, context, {
+    name: "historial_pedido",
+    title: "Historial de cambios de un pedido",
+    description: "Lista los cambios registrados de un pedido (qui\xE9n, cu\xE1ndo y qu\xE9 cambi\xF3).",
+    access: "read",
+    input: { pedidoId: identificador("ID del pedido.") },
+    request: ({ pedidoId }) => ({ method: "GET", path: `/api/orders/${encodeURIComponent(String(pedidoId))}/history` }),
+    summary: (data) => `El pedido tiene ${count(data, "history")} cambio(s) registrados.`
+  });
+  apiTool(server, context, {
+    name: "calendario",
+    title: "Calendario operativo",
+    description: "Viajes, salidas de transporte, producci\xF3n planificada y entregas pedidas dentro de un rango de fechas, m\xE1s la capacidad de esos d\xEDas. Sin fechas, usa la semana actual.",
+    access: "read",
+    input: { desde: fecha("Primer d\xEDa.").optional(), hasta: fecha("\xDAltimo d\xEDa.").optional() },
+    request: ({ desde, hasta }) => ({ method: "GET", path: "/api/calendar", query: { from: desde, to: hasta } }),
+    summary: (data) => `Calendario: ${count(data, "calendar")} viaje(s), ${count(data, "transport")} salida(s), ${count(data, "production")} d\xEDa(s) de producci\xF3n.`
+  });
+  apiTool(server, context, {
+    name: "capacidad_produccion",
+    title: "Capacidad y carga por d\xEDa",
+    description: "Capacidad de producci\xF3n por recurso y producto, carga asignada, estado (libre, ok, sobre lo normal, sobre el m\xE1ximo) y capacidad de transporte, d\xEDa por d\xEDa. La sobrecarga es una advertencia, no un bloqueo.",
+    access: "read",
+    input: { desde: fecha("Primer d\xEDa."), hasta: fecha("\xDAltimo d\xEDa.") },
+    request: ({ desde, hasta }) => ({ method: "GET", path: "/api/capacity", query: { from: desde, to: hasta } }),
+    summary: "Capacidad del per\xEDodo."
+  });
+  apiTool(server, context, {
+    name: "listar_recursos_produccion",
+    title: "Recursos de producci\xF3n",
+    description: "F\xE1bricas, cuadrillas y aserraderos externos que producen, con qu\xE9 tipos de producto produce cada uno (Pallet, Bin, Piso), orden y si est\xE1n activos.",
+    access: "read",
+    input: {},
+    request: () => ({ method: "GET", path: "/api/capacity/resources" }),
+    summary: (data) => `Hay ${count(data, "resources")} recurso(s) de producci\xF3n.`
+  });
+  apiTool(server, context, {
+    name: "logistica_resumen",
+    title: "Log\xEDstica: panorama general",
+    description: "Foto de Log\xEDstica: salidas agendadas, veh\xEDculos, choferes, disponibilidad de palets listos por l\xEDnea de pedido, stock y l\xEDmites. Por defecto devuelve salidas, veh\xEDculos, choferes, ajustes y disponibilidad; ped\xED otras secciones con `secciones`.",
+    access: "read",
+    input: {
+      secciones: z5.array(z5.string()).optional().describe("Secciones a devolver: runs, vehicles, drivers, settings, availability, orders, products, clients, providers, stock, classes, locations, transportCapacities, clientLimits.")
+    },
+    request: () => ({ method: "GET", path: "/api/logistics/snapshot" }),
+    pick: (data, { secciones }) => pickKeys(data, secciones?.length ? secciones : ["runs", "vehicles", "drivers", "settings", "availability"]),
+    summary: "Panorama de Log\xEDstica."
+  });
+  apiTool(server, context, {
+    name: "logistica_configuracion",
+    title: "Configuraci\xF3n de Log\xEDstica",
+    description: "Veh\xEDculos, choferes, jornada, tama\xF1o de cada producto (chico/grande), ubicaciones, capacidades de transportistas y l\xEDmites por cliente.",
+    access: "read",
+    input: {},
+    request: () => ({ method: "GET", path: "/api/logistics/config" }),
+    summary: "Configuraci\xF3n de Log\xEDstica."
+  });
+  apiTool(server, context, {
+    name: "listar_salidas_logistica",
+    title: "Salidas de transporte",
+    description: "Salidas agendadas con veh\xEDculo, chofer, horarios, ruta calculada y estado. Se puede filtrar por pedido.",
+    access: "read",
+    input: { pedidoId: identificador("Solo las salidas de este pedido.").optional() },
+    request: ({ pedidoId }) => ({ method: "GET", path: "/api/logistics/runs", query: { orderId: pedidoId === void 0 ? void 0 : String(pedidoId) } }),
+    summary: (data) => `Hay ${count(data, "runs")} salida(s).`
+  });
+  apiTool(server, context, {
+    name: "stock_producto",
+    title: "Stock y movimientos de un producto",
+    description: "Detalle de stock de un producto: pendiente de HT, listo, reservado, disponible y su historial de movimientos.",
+    access: "read",
+    input: { productoId: identificador("ID del producto (lo da listar_productos o consultar_stock).") },
+    request: ({ productoId }) => ({ method: "GET", path: `/api/stock/${encodeURIComponent(String(productoId))}` }),
+    summary: "Detalle de stock."
+  });
+  tool(server, context, {
+    name: "listar_productos",
+    title: "Cat\xE1logo de productos",
+    description: "Productos del cat\xE1logo con tipo (Pallet, Piso, Bin), medida, clasificaci\xF3n por niveles, c\xF3digo Zeta, si requiere HT y clientes asociados.",
+    access: "read",
+    input: {
+      consulta: z5.string().optional().describe("Texto a buscar en nombre, medida o c\xF3digo."),
+      tipo: z5.enum(["Pallet", "Piso", "Bin"]).optional(),
+      limite: z5.number().int().min(1).max(300).default(100)
+    },
+    run: async ({ consulta, tipo, limite }) => {
+      const response = await callApi({ method: "GET", path: "/api/products" });
+      if (!response.ok) return fail(apiErrorMessage(response));
+      const needle = normalize2(consulta ?? "");
+      const all = response.data.products ?? [];
+      const found = all.filter((product) => (!tipo || product.kind === tipo) && (!needle || normalize2(JSON.stringify(product)).includes(needle)));
+      return done(`Hay ${found.length} producto(s)${found.length > limite ? `; muestro ${limite}` : ""}.`, { total: found.length, productos: found.slice(0, limite) });
+    }
+  });
+  apiTool(server, context, {
+    name: "niveles_producto",
+    title: "Niveles de clasificaci\xF3n de productos",
+    description: "Los niveles con los que se clasifican los productos (Medida, Tratamiento, etc.), sus opciones y cu\xE1ntos productos usa cada una.",
+    access: "read",
+    input: {},
+    request: () => ({ method: "GET", path: "/api/product-levels" }),
+    summary: "Niveles de clasificaci\xF3n."
+  });
+  tool(server, context, {
+    name: "listar_proveedores",
+    title: "Proveedores y transportistas",
+    description: "Aserraderos, transportistas e importadores registrados.",
+    access: "read",
+    input: { tipo: z5.enum(["Aserradero", "Transporte", "Importador"]).optional() },
+    run: async ({ tipo }) => {
+      const response = await callApi({ method: "GET", path: "/api/providers" });
+      if (!response.ok) return fail(apiErrorMessage(response));
+      const providers2 = (response.data.providers ?? []).filter((provider) => !tipo || provider.type === tipo);
+      return done(`Hay ${providers2.length} proveedor(es).`, { proveedores: providers2 });
+    }
+  });
+  tool(server, context, {
+    name: "ver_cliente",
+    title: "Ver un cliente con sus productos",
+    description: "Datos de un cliente y los productos que tiene habilitados, con el clienteProductoId que hace falta para crear pedidos y los puntos de control de cada producto.",
+    access: "read",
+    input: { clienteId: identificador("ID del cliente (lo da listar_clientes o clientes_con_actividad).") },
+    run: async ({ clienteId }) => {
+      const id = encodeURIComponent(String(clienteId));
+      const [detail, options] = await Promise.all([
+        callApi({ method: "GET", path: `/api/clients/${id}` }),
+        callApi({ method: "GET", path: `/api/clients/${id}/products`, query: { active: true } })
+      ]);
+      if (!detail.ok) return fail(apiErrorMessage(detail));
+      return done("Cliente y productos habilitados para pedidos.", { cliente: detail.data, productosParaPedido: options.data?.products ?? [] });
+    }
+  });
+  apiTool(server, context, {
+    name: "clientes_con_actividad",
+    title: "Clientes con su actividad",
+    description: "Clientes con cantidad de pedidos, unidades pedidas, entregadas y pendientes, y pedidos abiertos.",
+    access: "read",
+    input: {},
+    request: () => ({ method: "GET", path: "/api/clients" }),
+    summary: (data) => `Hay ${count(data, "clients")} cliente(s).`
+  });
+  apiTool(server, context, {
+    name: "registro_ht_dia",
+    title: "Registro de HT de un d\xEDa",
+    description: "Resumen del secadero y los lotes de HT registrados en un d\xEDa.",
+    access: "read",
+    input: { fecha: fecha("D\xEDa a consultar. Sin fecha, hoy.").optional() },
+    request: ({ fecha: day }) => ({ method: "GET", path: "/api/treatment", query: { date: day } }),
+    summary: "Registro de HT del d\xEDa."
+  });
+  apiTool(server, context, {
+    name: "registro_ht_semana",
+    title: "Programaci\xF3n y resultados de HT de la semana",
+    description: "Para cada d\xEDa del rango (m\xE1ximo siete d\xEDas): lo programado, lo registrado y lo que no se hizo, por pedido y producto.",
+    access: "read",
+    input: { desde: fecha("Primer d\xEDa."), hasta: fecha("\xDAltimo d\xEDa, hasta siete d\xEDas desde el primero.") },
+    request: ({ desde, hasta }) => ({ method: "GET", path: "/api/treatment/results", query: { from: desde, to: hasta } }),
+    summary: "Semana de HT."
+  });
+  apiTool(server, context, {
+    name: "opciones_ht",
+    title: "Qu\xE9 se puede registrar en HT",
+    description: "Productos con HT y su stock pendiente, con los clientes, l\xEDneas de pedido y puntos de control disponibles para registrar un lote.",
+    access: "read",
+    input: {},
+    request: () => ({ method: "GET", path: "/api/treatment/options" }),
+    summary: (data) => `Hay ${count(data, "options")} producto(s) con HT.`
+  });
+  apiTool(server, context, {
+    name: "ver_lote_ht",
+    title: "Ver un lote de HT",
+    description: "Detalle de un lote de HT: cantidades, controles, responsable y movimientos de stock.",
+    access: "read",
+    input: { loteId: identificador("ID del lote.") },
+    request: ({ loteId }) => ({ method: "GET", path: `/api/treatment/batches/${encodeURIComponent(String(loteId))}` }),
+    summary: "Detalle del lote."
+  });
+  apiTool(server, context, {
+    name: "url_archivo_producto_cliente",
+    title: "Enlace temporal a un plano o foto",
+    description: "Devuelve un enlace temporal para abrir un plano o foto de un producto de cliente.",
+    access: "read",
+    input: { archivoId: identificador("ID del archivo.") },
+    request: ({ archivoId }) => ({ method: "POST", path: `/api/client-product-assets/${encodeURIComponent(String(archivoId))}/signed-url` }),
+    summary: "Enlace temporal (vence en poco tiempo)."
+  });
+}
+var guideText;
+var init_tools_read = __esm({
+  "app/mcp/tools-read.ts"() {
+    "use strict";
+    init_data();
+    init_store();
+    init_bridge();
+    init_operational();
+    init_kit();
+    guideText = `GU\xCDA OPERATIVA DE ECOASE
+
+Flujo normal de un pedido
+1. Pedido: crear_pedido (cliente y productos salen de ver_cliente; us\xE1 clienteProductoId).
+2. Producci\xF3n: planificar_produccion reparte cantidades por d\xEDa y recurso. Al terminar la jornada, registrar_resultado_produccion carga lo realmente producido (destino: cliente o stock).
+3. Secadero / HT (solo productos con HT): programar_secado reparte las unidades por d\xEDa; registrar_ht carga el tratamiento hecho; registrar_ht_no_realizado marca lo que no se hizo.
+4. Log\xEDstica: crear_viaje reparte lo listo en viajes; guardar_salida agenda veh\xEDculo, chofer y horario; avanzar_viaje lo lleva por listo \u2192 cargado \u2192 despachado \u2192 entregado.
+5. Seguimiento: detalle_pedido, calendario, resumen_operativo y listar_pedidos_en_riesgo.
+
+Reglas que conviene respetar
+- Capacidad, stock y fechas son advertencias, nunca bloqueos: si algo supera la capacidad o se planifica fuera de fecha, se puede guardar igual; inform\xE1 la advertencia a la persona. Solo se rechaza lo incoherente (m\xE1s unidades que las del pedido, datos inv\xE1lidos, resultado real con fecha futura).
+- Las fechas van como AAAA-MM-DD en hora de Uruguay; los momentos como ISO 8601 con zona (-03:00).
+- Las cantidades de producci\xF3n, secadero y HT son unidades (no "palets").
+- Etapas del pedido: Planificando (amarillo), Produciendo (azul), Enviando (verde); luego Entregado o Cancelado.
+- Antes de modificar o borrar, mostrale a la persona lo que vas a cambiar y ped\xED confirmaci\xF3n si hay dudas. Borrar y revertir no se puede deshacer.
+- Los identificadores (pedido, l\xEDnea, asignaci\xF3n, viaje, lote, producto, cliente) se obtienen con las herramientas de lectura; nunca los inventes.`;
+  }
+});
+
+// app/mcp/server.ts
+import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
+import { z as z6 } from "zod";
 function resolveRange(from, to) {
   const today = todayKey();
   const resolvedFrom = from && isoDate8.test(from) ? from : today;
@@ -6003,17 +7182,21 @@ function resolveRange(from, to) {
 function textResult(summary, data) {
   return {
     structuredContent: { data },
-    content: [{ type: "text", text: summary }]
+    content: [{ type: "text", text: `${summary}
+${JSON.stringify(shrink(data))}` }]
   };
 }
-function normalize2(value) {
-  return value.trim().toLocaleLowerCase("es").normalize("NFD").replace(new RegExp("\\p{Diacritic}", "gu"), "");
-}
-function createEcoaseMcpServer() {
+function createEcoaseMcpServer(options = {}) {
+  const context = { canWrite: Boolean(options.canWrite) };
   const server = new McpServer(
-    { name: "ecoase-control-operativo", version: "0.1.0" },
+    { name: "ecoase-control-operativo", version: "1.0.0" },
     {
-      instructions: "Us\xE1 estas herramientas para consultar la operaci\xF3n real de Ecoase. Inform\xE1 siempre el per\xEDodo consultado y la frescura de los datos. No presentes una alerta como certeza si depende de informaci\xF3n faltante o desactualizada. Esta versi\xF3n es de solo lectura."
+      instructions: [
+        "Control operativo de Ecoase: pedidos, producci\xF3n, secadero y HT, log\xEDstica, stock, capacidad, clientes, productos y proveedores.",
+        "Empez\xE1 con guia_operativa si no conoc\xE9s el flujo. Para saber qu\xE9 pasa us\xE1 resumen_operativo, listar_pedidos, detalle_pedido y calendario; inform\xE1 siempre el per\xEDodo consultado y no presentes una alerta como certeza si depende de datos faltantes.",
+        options.canWrite ? "Esta conexi\xF3n puede modificar datos: antes de crear, cambiar, cancelar, borrar o revertir, confirm\xE1 con la persona lo que vas a hacer (salvo que ya lo haya pedido de forma expl\xEDcita) y, despu\xE9s de escribir, volv\xE9 a leer para verificar el resultado." : "Esta conexi\xF3n es de solo lectura: no hay herramientas para modificar datos.",
+        "Capacidad, stock y fechas son advertencias, no bloqueos: si algo se pasa de la capacidad, guardalo igual e inform\xE1 la advertencia. Nunca inventes identificadores: obtenelos con las herramientas de lectura."
+      ].join("\n")
     }
   );
   server.registerTool(
@@ -6022,11 +7205,11 @@ function createEcoaseMcpServer() {
       title: "Resumen operativo de Ecoase",
       description: "Resume pedidos abiertos, entregas y alertas de Ecoase para un per\xEDodo. Usalo para preguntas como qu\xE9 pasa en los pr\xF3ximos d\xEDas o qu\xE9 cambi\xF3 en la operaci\xF3n.",
       inputSchema: {
-        desde: z.string().regex(isoDate8).optional().describe("Fecha inicial YYYY-MM-DD. Por defecto, hoy en Uruguay."),
-        hasta: z.string().regex(isoDate8).optional().describe("Fecha final YYYY-MM-DD. Por defecto, 50 d\xEDas desde la fecha inicial."),
-        clientes: z.array(z.string().min(1)).max(10).optional().describe("Nombres exactos de clientes. Si se omite, incluye todos.")
+        desde: z6.string().regex(isoDate8).optional().describe("Fecha inicial YYYY-MM-DD. Por defecto, hoy en Uruguay."),
+        hasta: z6.string().regex(isoDate8).optional().describe("Fecha final YYYY-MM-DD. Por defecto, 50 d\xEDas desde la fecha inicial."),
+        clientes: z6.array(z6.string().min(1)).max(10).optional().describe("Nombres exactos de clientes. Si se omite, incluye todos.")
       },
-      outputSchema: { data: z.unknown() },
+      outputSchema: { data: z6.unknown() },
       annotations: { readOnlyHint: true, destructiveHint: false, openWorldHint: false }
     },
     async ({ desde, hasta, clientes }) => {
@@ -6066,12 +7249,12 @@ function createEcoaseMcpServer() {
       title: "Listar pedidos en riesgo",
       description: "Lista alertas operativas por atraso, HT, producci\xF3n o transporte. Permite filtrar por cliente, fechas y severidad.",
       inputSchema: {
-        desde: z.string().regex(isoDate8).optional(),
-        hasta: z.string().regex(isoDate8).optional(),
-        clientes: z.array(z.string().min(1)).max(10).optional(),
-        severidad: z.enum(severities).optional()
+        desde: z6.string().regex(isoDate8).optional(),
+        hasta: z6.string().regex(isoDate8).optional(),
+        clientes: z6.array(z6.string().min(1)).max(10).optional(),
+        severidad: z6.enum(severities).optional()
       },
-      outputSchema: { data: z.unknown() },
+      outputSchema: { data: z6.unknown() },
       annotations: { readOnlyHint: true, destructiveHint: false, openWorldHint: false }
     },
     async ({ desde, hasta, clientes, severidad }) => {
@@ -6090,8 +7273,8 @@ function createEcoaseMcpServer() {
     {
       title: "Ver un pedido",
       description: "Busca un pedido de Ecoase por ID, referencia o nombre de cliente y devuelve su estado, productos, producci\xF3n, HT y viajes.",
-      inputSchema: { consulta: z.string().min(1).describe("ID, referencia o nombre del cliente.") },
-      outputSchema: { data: z.unknown() },
+      inputSchema: { consulta: z6.string().min(1).describe("ID, referencia o nombre del cliente.") },
+      outputSchema: { data: z6.unknown() },
       annotations: { readOnlyHint: true, destructiveHint: false, openWorldHint: false }
     },
     async ({ consulta }) => {
@@ -6107,8 +7290,8 @@ function createEcoaseMcpServer() {
     {
       title: "Listar clientes y productos",
       description: "Busca clientes de Ecoase y muestra los productos habilitados para cada uno. Usalo para saber qu\xE9 compra o utiliza un cliente.",
-      inputSchema: { consulta: z.string().optional().describe("Parte del nombre del cliente. Si se omite, lista todos.") },
-      outputSchema: { data: z.unknown() },
+      inputSchema: { consulta: z6.string().optional().describe("Parte del nombre del cliente. Si se omite, lista todos.") },
+      outputSchema: { data: z6.unknown() },
       annotations: { readOnlyHint: true, destructiveHint: false, openWorldHint: false }
     },
     async ({ consulta }) => {
@@ -6124,6 +7307,7 @@ function createEcoaseMcpServer() {
         updatedAt: detail.client.updatedAt,
         products: detail.products.filter((product) => product.active).map((product) => ({
           id: product.productId,
+          clientProductId: product.id,
           name: product.operationalName ?? product.product.stockName ?? `${product.product.kind} ${product.product.measure ?? ""}`.trim(),
           zetaCode: product.product.zetaCode ?? product.zetaCode,
           requiresTreatment: product.product.requiresTreatment,
@@ -6139,9 +7323,9 @@ function createEcoaseMcpServer() {
       title: "Consultar stock",
       description: "Consulta stock f\xEDsico, pendiente de HT, listo, reservado y disponible por producto.",
       inputSchema: {
-        consulta: z.string().optional().describe("Nombre, medida o c\xF3digo del producto.")
+        consulta: z6.string().optional().describe("Nombre, medida o c\xF3digo del producto.")
       },
-      outputSchema: { data: z.unknown() },
+      outputSchema: { data: z6.unknown() },
       annotations: { readOnlyHint: true, destructiveHint: false, openWorldHint: false }
     },
     async ({ consulta }) => {
@@ -6165,37 +7349,68 @@ function createEcoaseMcpServer() {
       return textResult(`Encontr\xE9 ${data.length} producto(s) en stock.`, data);
     }
   );
+  registerReadTools(server, context);
+  registerOperationTools(server, context);
+  registerLogisticsTools(server, context);
+  registerAdminTools(server, context);
   return server;
 }
-var isoDate8, severities;
+var severities;
 var init_server = __esm({
   "app/mcp/server.ts"() {
     "use strict";
     init_store();
     init_operational();
-    isoDate8 = /^\d{4}-\d{2}-\d{2}$/;
+    init_bridge();
+    init_kit();
+    init_tools_admin();
+    init_tools_logistics();
+    init_tools_operations();
+    init_tools_read();
     severities = ["critical", "high", "medium"];
   }
 });
 
 // app/mcp/route.ts
-var route_exports60 = {};
-__export(route_exports60, {
+var route_exports56 = {};
+__export(route_exports56, {
   DELETE: () => DELETE7,
-  GET: () => GET27,
+  GET: () => GET25,
   OPTIONS: () => OPTIONS,
   POST: () => POST28,
   dynamic: () => dynamic,
   runtime: () => runtime
 });
+import { timingSafeEqual } from "node:crypto";
 import { WebStandardStreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/webStandardStreamableHttp.js";
 function withCors(response) {
   const headers = new Headers(response.headers);
   for (const [key, value] of Object.entries(corsHeaders)) headers.set(key, value);
   return new Response(response.body, { status: response.status, statusText: response.statusText, headers });
 }
+function accessFor(request) {
+  const writeToken = process.env.ECOASE_MCP_TOKEN?.trim();
+  const readToken = process.env.ECOASE_MCP_READ_TOKEN?.trim();
+  if (!writeToken && !readToken) return "read";
+  const sent = /^Bearer\s+(.+)$/i.exec(request.headers.get("authorization") ?? "")?.[1]?.trim() ?? "";
+  const matches = (expected) => {
+    if (!sent || !expected) return false;
+    const a = Buffer.from(sent), b = Buffer.from(expected);
+    return a.length === b.length && timingSafeEqual(a, b);
+  };
+  if (matches(writeToken)) return "write";
+  if (matches(readToken)) return "read";
+  return "denied";
+}
 async function handle(request) {
-  const server = createEcoaseMcpServer();
+  const access = accessFor(request);
+  if (access === "denied") {
+    return withCors(new Response(JSON.stringify({ jsonrpc: "2.0", error: { code: -32001, message: "Falta el token de acceso o no es v\xE1lido." }, id: null }), {
+      status: 401,
+      headers: { "content-type": "application/json", "WWW-Authenticate": 'Bearer realm="ecoase-mcp"' }
+    }));
+  }
+  const server = createEcoaseMcpServer({ canWrite: access === "write" });
   const transport = new WebStandardStreamableHTTPServerTransport({
     sessionIdGenerator: void 0,
     enableJsonResponse: true
@@ -6206,7 +7421,7 @@ async function handle(request) {
 async function POST28(request) {
   return handle(request);
 }
-async function GET27(request) {
+async function GET25(request) {
   return handle(request);
 }
 async function DELETE7(request) {
@@ -6216,7 +7431,7 @@ async function OPTIONS() {
   return new Response(null, { status: 204, headers: corsHeaders });
 }
 var runtime, dynamic, corsHeaders;
-var init_route60 = __esm({
+var init_route56 = __esm({
   "app/mcp/route.ts"() {
     "use strict";
     init_server();
@@ -6232,70 +7447,76 @@ var init_route60 = __esm({
 });
 
 // server/route-map.ts
-var routes = [
-  { pattern: new RegExp("^/api/calendar$"), keys: [], load: () => Promise.resolve().then(() => (init_route(), route_exports)) },
-  { pattern: new RegExp("^/api/capacity/adjustments$"), keys: [], load: () => Promise.resolve().then(() => (init_route2(), route_exports2)) },
-  { pattern: new RegExp("^/api/capacity/external-production$"), keys: [], load: () => Promise.resolve().then(() => (init_route3(), route_exports3)) },
-  { pattern: new RegExp("^/api/capacity/internal-production$"), keys: [], load: () => Promise.resolve().then(() => (init_route4(), route_exports4)) },
-  { pattern: new RegExp("^/api/capacity/resources$"), keys: [], load: () => Promise.resolve().then(() => (init_route5(), route_exports5)) },
-  { pattern: new RegExp("^/api/capacity$"), keys: [], load: () => Promise.resolve().then(() => (init_route6(), route_exports6)) },
-  { pattern: new RegExp("^/api/capacity/rules$"), keys: [], load: () => Promise.resolve().then(() => (init_route7(), route_exports7)) },
-  { pattern: new RegExp("^/api/capacity/team$"), keys: [], load: () => Promise.resolve().then(() => (init_route8(), route_exports8)) },
-  { pattern: new RegExp("^/api/capacity/transport$"), keys: [], load: () => Promise.resolve().then(() => (init_route9(), route_exports9)) },
-  { pattern: new RegExp("^/api/capacity/trip-adjustments$"), keys: [], load: () => Promise.resolve().then(() => (init_route10(), route_exports10)) },
-  { pattern: new RegExp("^/api/clients$"), keys: [], load: () => Promise.resolve().then(() => (init_route11(), route_exports11)) },
-  { pattern: new RegExp("^/api/history$"), keys: [], load: () => Promise.resolve().then(() => (init_route12(), route_exports12)) },
-  { pattern: new RegExp("^/api/logistics/availability$"), keys: [], load: () => Promise.resolve().then(() => (init_route13(), route_exports13)) },
-  { pattern: new RegExp("^/api/logistics/config$"), keys: [], load: () => Promise.resolve().then(() => (init_route14(), route_exports14)) },
-  { pattern: new RegExp("^/api/logistics$"), keys: [], load: () => Promise.resolve().then(() => (init_route15(), route_exports15)) },
-  { pattern: new RegExp("^/api/logistics/runs$"), keys: [], load: () => Promise.resolve().then(() => (init_route16(), route_exports16)) },
-  { pattern: new RegExp("^/api/logistics/snapshot$"), keys: [], load: () => Promise.resolve().then(() => (init_route17(), route_exports17)) },
-  { pattern: new RegExp("^/api/orders$"), keys: [], load: () => Promise.resolve().then(() => (init_route18(), route_exports18)) },
-  { pattern: new RegExp("^/api/plan$"), keys: [], load: () => Promise.resolve().then(() => (init_route19(), route_exports19)) },
-  { pattern: new RegExp("^/api/product-levels$"), keys: [], load: () => Promise.resolve().then(() => (init_route20(), route_exports20)) },
-  { pattern: new RegExp("^/api/products$"), keys: [], load: () => Promise.resolve().then(() => (init_route21(), route_exports21)) },
-  { pattern: new RegExp("^/api/providers$"), keys: [], load: () => Promise.resolve().then(() => (init_route22(), route_exports22)) },
-  { pattern: new RegExp("^/api/stock/movements/adjustments$"), keys: [], load: () => Promise.resolve().then(() => (init_route23(), route_exports23)) },
-  { pattern: new RegExp("^/api/stock/movements/receipts$"), keys: [], load: () => Promise.resolve().then(() => (init_route24(), route_exports24)) },
-  { pattern: new RegExp("^/api/stock/summary$"), keys: [], load: () => Promise.resolve().then(() => (init_route25(), route_exports25)) },
-  { pattern: new RegExp("^/api/treatment/batches$"), keys: [], load: () => Promise.resolve().then(() => (init_route26(), route_exports26)) },
-  { pattern: new RegExp("^/api/treatment/options$"), keys: [], load: () => Promise.resolve().then(() => (init_route27(), route_exports27)) },
-  { pattern: new RegExp("^/api/treatment/results$"), keys: [], load: () => Promise.resolve().then(() => (init_route28(), route_exports28)) },
-  { pattern: new RegExp("^/api/treatment$"), keys: [], load: () => Promise.resolve().then(() => (init_route29(), route_exports29)) },
-  { pattern: new RegExp("^/api/client-product-assets/([^/]+)/content$"), keys: ["id"], load: () => Promise.resolve().then(() => (init_route30(), route_exports30)) },
-  { pattern: new RegExp("^/api/client-product-assets/([^/]+)$"), keys: ["id"], load: () => Promise.resolve().then(() => (init_route31(), route_exports31)) },
-  { pattern: new RegExp("^/api/client-product-assets/([^/]+)/signed-url$"), keys: ["id"], load: () => Promise.resolve().then(() => (init_route32(), route_exports32)) },
-  { pattern: new RegExp("^/api/client-products/([^/]+)/assets$"), keys: ["id"], load: () => Promise.resolve().then(() => (init_route33(), route_exports33)) },
-  { pattern: new RegExp("^/api/client-products/([^/]+)/controls$"), keys: ["id"], load: () => Promise.resolve().then(() => (init_route34(), route_exports34)) },
-  { pattern: new RegExp("^/api/client-products/([^/]+)$"), keys: ["id"], load: () => Promise.resolve().then(() => (init_route35(), route_exports35)) },
-  { pattern: new RegExp("^/api/clients/([^/]+)/products$"), keys: ["clientId"], load: () => Promise.resolve().then(() => (init_route36(), route_exports36)) },
-  { pattern: new RegExp("^/api/clients/([^/]+)$"), keys: ["clientId"], load: () => Promise.resolve().then(() => (init_route37(), route_exports37)) },
-  { pattern: new RegExp("^/api/logistics/routes/([^/]+)$"), keys: ["id"], load: () => Promise.resolve().then(() => (init_route38(), route_exports38)) },
-  { pattern: new RegExp("^/api/order-lines/([^/]+)/production-allocations$"), keys: ["id"], load: () => Promise.resolve().then(() => (init_route39(), route_exports39)) },
-  { pattern: new RegExp("^/api/orders/([^/]+)/drying$"), keys: ["id"], load: () => Promise.resolve().then(() => (init_route40(), route_exports40)) },
-  { pattern: new RegExp("^/api/orders/([^/]+)/history$"), keys: ["id"], load: () => Promise.resolve().then(() => (init_route41(), route_exports41)) },
-  { pattern: new RegExp("^/api/orders/([^/]+)/production-plan$"), keys: ["id"], load: () => Promise.resolve().then(() => (init_route42(), route_exports42)) },
-  { pattern: new RegExp("^/api/orders/([^/]+)$"), keys: ["id"], load: () => Promise.resolve().then(() => (init_route43(), route_exports43)) },
-  { pattern: new RegExp("^/api/orders/([^/]+)/shipments$"), keys: ["id"], load: () => Promise.resolve().then(() => (init_route44(), route_exports44)) },
-  { pattern: new RegExp("^/api/orders/([^/]+)/transport$"), keys: ["id"], load: () => Promise.resolve().then(() => (init_route45(), route_exports45)) },
-  { pattern: new RegExp("^/api/orders/([^/]+)/updates$"), keys: ["id"], load: () => Promise.resolve().then(() => (init_route46(), route_exports46)) },
-  { pattern: new RegExp("^/api/production-allocations/([^/]+)/complete$"), keys: ["id"], load: () => Promise.resolve().then(() => (init_route47(), route_exports47)) },
-  { pattern: new RegExp("^/api/production-allocations/([^/]+)/confirm$"), keys: ["id"], load: () => Promise.resolve().then(() => (init_route48(), route_exports48)) },
-  { pattern: new RegExp("^/api/production-allocations/([^/]+)/move$"), keys: ["id"], load: () => Promise.resolve().then(() => (init_route49(), route_exports49)) },
-  { pattern: new RegExp("^/api/production-allocations/([^/]+)/result$"), keys: ["id"], load: () => Promise.resolve().then(() => (init_route50(), route_exports50)) },
-  { pattern: new RegExp("^/api/products/([^/]+)$"), keys: ["id"], load: () => Promise.resolve().then(() => (init_route51(), route_exports51)) },
-  { pattern: new RegExp("^/api/providers/([^/]+)$"), keys: ["id"], load: () => Promise.resolve().then(() => (init_route52(), route_exports52)) },
-  { pattern: new RegExp("^/api/shipments/([^/]+)/reschedule$"), keys: ["id"], load: () => Promise.resolve().then(() => (init_route53(), route_exports53)) },
-  { pattern: new RegExp("^/api/shipments/([^/]+)$"), keys: ["id"], load: () => Promise.resolve().then(() => (init_route54(), route_exports54)) },
-  { pattern: new RegExp("^/api/shipments/([^/]+)/transition$"), keys: ["id"], load: () => Promise.resolve().then(() => (init_route55(), route_exports55)) },
-  { pattern: new RegExp("^/api/stock/([^/]+)$"), keys: ["productId"], load: () => Promise.resolve().then(() => (init_route56(), route_exports56)) },
-  { pattern: new RegExp("^/api/stock/movements/([^/]+)/reverse$"), keys: ["id"], load: () => Promise.resolve().then(() => (init_route57(), route_exports57)) },
-  { pattern: new RegExp("^/api/treatment/batches/([^/]+)/reverse$"), keys: ["id"], load: () => Promise.resolve().then(() => (init_route58(), route_exports58)) },
-  { pattern: new RegExp("^/api/treatment/batches/([^/]+)$"), keys: ["id"], load: () => Promise.resolve().then(() => (init_route59(), route_exports59)) },
-  { pattern: /^\/mcp$/, keys: [], load: () => Promise.resolve().then(() => (init_route60(), route_exports60)) }
-];
+var routes;
+var init_route_map = __esm({
+  "server/route-map.ts"() {
+    "use strict";
+    routes = [
+      { pattern: new RegExp("^/api/calendar$"), keys: [], load: () => Promise.resolve().then(() => (init_route(), route_exports)) },
+      { pattern: new RegExp("^/api/capacity/adjustments$"), keys: [], load: () => Promise.resolve().then(() => (init_route2(), route_exports2)) },
+      { pattern: new RegExp("^/api/capacity/internal-production$"), keys: [], load: () => Promise.resolve().then(() => (init_route3(), route_exports3)) },
+      { pattern: new RegExp("^/api/capacity/resources$"), keys: [], load: () => Promise.resolve().then(() => (init_route4(), route_exports4)) },
+      { pattern: new RegExp("^/api/capacity$"), keys: [], load: () => Promise.resolve().then(() => (init_route5(), route_exports5)) },
+      { pattern: new RegExp("^/api/capacity/rules$"), keys: [], load: () => Promise.resolve().then(() => (init_route6(), route_exports6)) },
+      { pattern: new RegExp("^/api/capacity/transport$"), keys: [], load: () => Promise.resolve().then(() => (init_route7(), route_exports7)) },
+      { pattern: new RegExp("^/api/capacity/trip-adjustments$"), keys: [], load: () => Promise.resolve().then(() => (init_route8(), route_exports8)) },
+      { pattern: new RegExp("^/api/clients$"), keys: [], load: () => Promise.resolve().then(() => (init_route9(), route_exports9)) },
+      { pattern: new RegExp("^/api/history$"), keys: [], load: () => Promise.resolve().then(() => (init_route10(), route_exports10)) },
+      { pattern: new RegExp("^/api/logistics/config$"), keys: [], load: () => Promise.resolve().then(() => (init_route11(), route_exports11)) },
+      { pattern: new RegExp("^/api/logistics$"), keys: [], load: () => Promise.resolve().then(() => (init_route12(), route_exports12)) },
+      { pattern: new RegExp("^/api/logistics/runs$"), keys: [], load: () => Promise.resolve().then(() => (init_route13(), route_exports13)) },
+      { pattern: new RegExp("^/api/logistics/snapshot$"), keys: [], load: () => Promise.resolve().then(() => (init_route14(), route_exports14)) },
+      { pattern: new RegExp("^/api/orders$"), keys: [], load: () => Promise.resolve().then(() => (init_route15(), route_exports15)) },
+      { pattern: new RegExp("^/api/product-levels$"), keys: [], load: () => Promise.resolve().then(() => (init_route16(), route_exports16)) },
+      { pattern: new RegExp("^/api/products$"), keys: [], load: () => Promise.resolve().then(() => (init_route17(), route_exports17)) },
+      { pattern: new RegExp("^/api/providers$"), keys: [], load: () => Promise.resolve().then(() => (init_route18(), route_exports18)) },
+      { pattern: new RegExp("^/api/stock/movements/adjustments$"), keys: [], load: () => Promise.resolve().then(() => (init_route19(), route_exports19)) },
+      { pattern: new RegExp("^/api/stock/movements/receipts$"), keys: [], load: () => Promise.resolve().then(() => (init_route20(), route_exports20)) },
+      { pattern: new RegExp("^/api/stock/summary$"), keys: [], load: () => Promise.resolve().then(() => (init_route21(), route_exports21)) },
+      { pattern: new RegExp("^/api/treatment/batches$"), keys: [], load: () => Promise.resolve().then(() => (init_route22(), route_exports22)) },
+      { pattern: new RegExp("^/api/treatment/options$"), keys: [], load: () => Promise.resolve().then(() => (init_route23(), route_exports23)) },
+      { pattern: new RegExp("^/api/treatment/results$"), keys: [], load: () => Promise.resolve().then(() => (init_route24(), route_exports24)) },
+      { pattern: new RegExp("^/api/treatment$"), keys: [], load: () => Promise.resolve().then(() => (init_route25(), route_exports25)) },
+      { pattern: new RegExp("^/api/client-product-assets/([^/]+)/content$"), keys: ["id"], load: () => Promise.resolve().then(() => (init_route26(), route_exports26)) },
+      { pattern: new RegExp("^/api/client-product-assets/([^/]+)$"), keys: ["id"], load: () => Promise.resolve().then(() => (init_route27(), route_exports27)) },
+      { pattern: new RegExp("^/api/client-product-assets/([^/]+)/signed-url$"), keys: ["id"], load: () => Promise.resolve().then(() => (init_route28(), route_exports28)) },
+      { pattern: new RegExp("^/api/client-products/([^/]+)/assets$"), keys: ["id"], load: () => Promise.resolve().then(() => (init_route29(), route_exports29)) },
+      { pattern: new RegExp("^/api/client-products/([^/]+)/controls$"), keys: ["id"], load: () => Promise.resolve().then(() => (init_route30(), route_exports30)) },
+      { pattern: new RegExp("^/api/client-products/([^/]+)$"), keys: ["id"], load: () => Promise.resolve().then(() => (init_route31(), route_exports31)) },
+      { pattern: new RegExp("^/api/clients/([^/]+)/products$"), keys: ["clientId"], load: () => Promise.resolve().then(() => (init_route32(), route_exports32)) },
+      { pattern: new RegExp("^/api/clients/([^/]+)$"), keys: ["clientId"], load: () => Promise.resolve().then(() => (init_route33(), route_exports33)) },
+      { pattern: new RegExp("^/api/logistics/routes/([^/]+)$"), keys: ["id"], load: () => Promise.resolve().then(() => (init_route34(), route_exports34)) },
+      { pattern: new RegExp("^/api/order-lines/([^/]+)/production-allocations$"), keys: ["id"], load: () => Promise.resolve().then(() => (init_route35(), route_exports35)) },
+      { pattern: new RegExp("^/api/orders/([^/]+)/drying$"), keys: ["id"], load: () => Promise.resolve().then(() => (init_route36(), route_exports36)) },
+      { pattern: new RegExp("^/api/orders/([^/]+)/history$"), keys: ["id"], load: () => Promise.resolve().then(() => (init_route37(), route_exports37)) },
+      { pattern: new RegExp("^/api/orders/([^/]+)/production-plan$"), keys: ["id"], load: () => Promise.resolve().then(() => (init_route38(), route_exports38)) },
+      { pattern: new RegExp("^/api/orders/([^/]+)$"), keys: ["id"], load: () => Promise.resolve().then(() => (init_route39(), route_exports39)) },
+      { pattern: new RegExp("^/api/orders/([^/]+)/shipments$"), keys: ["id"], load: () => Promise.resolve().then(() => (init_route40(), route_exports40)) },
+      { pattern: new RegExp("^/api/orders/([^/]+)/transport$"), keys: ["id"], load: () => Promise.resolve().then(() => (init_route41(), route_exports41)) },
+      { pattern: new RegExp("^/api/orders/([^/]+)/updates$"), keys: ["id"], load: () => Promise.resolve().then(() => (init_route42(), route_exports42)) },
+      { pattern: new RegExp("^/api/production-allocations/([^/]+)/complete$"), keys: ["id"], load: () => Promise.resolve().then(() => (init_route43(), route_exports43)) },
+      { pattern: new RegExp("^/api/production-allocations/([^/]+)/confirm$"), keys: ["id"], load: () => Promise.resolve().then(() => (init_route44(), route_exports44)) },
+      { pattern: new RegExp("^/api/production-allocations/([^/]+)/move$"), keys: ["id"], load: () => Promise.resolve().then(() => (init_route45(), route_exports45)) },
+      { pattern: new RegExp("^/api/production-allocations/([^/]+)/result$"), keys: ["id"], load: () => Promise.resolve().then(() => (init_route46(), route_exports46)) },
+      { pattern: new RegExp("^/api/products/([^/]+)$"), keys: ["id"], load: () => Promise.resolve().then(() => (init_route47(), route_exports47)) },
+      { pattern: new RegExp("^/api/providers/([^/]+)$"), keys: ["id"], load: () => Promise.resolve().then(() => (init_route48(), route_exports48)) },
+      { pattern: new RegExp("^/api/shipments/([^/]+)/reschedule$"), keys: ["id"], load: () => Promise.resolve().then(() => (init_route49(), route_exports49)) },
+      { pattern: new RegExp("^/api/shipments/([^/]+)$"), keys: ["id"], load: () => Promise.resolve().then(() => (init_route50(), route_exports50)) },
+      { pattern: new RegExp("^/api/shipments/([^/]+)/transition$"), keys: ["id"], load: () => Promise.resolve().then(() => (init_route51(), route_exports51)) },
+      { pattern: new RegExp("^/api/stock/([^/]+)$"), keys: ["productId"], load: () => Promise.resolve().then(() => (init_route52(), route_exports52)) },
+      { pattern: new RegExp("^/api/stock/movements/([^/]+)/reverse$"), keys: ["id"], load: () => Promise.resolve().then(() => (init_route53(), route_exports53)) },
+      { pattern: new RegExp("^/api/treatment/batches/([^/]+)/reverse$"), keys: ["id"], load: () => Promise.resolve().then(() => (init_route54(), route_exports54)) },
+      { pattern: new RegExp("^/api/treatment/batches/([^/]+)$"), keys: ["id"], load: () => Promise.resolve().then(() => (init_route55(), route_exports55)) },
+      { pattern: /^\/mcp$/, keys: [], load: () => Promise.resolve().then(() => (init_route56(), route_exports56)) }
+    ];
+  }
+});
 
 // server/router.ts
+var router_exports = {};
+__export(router_exports, {
+  dispatch: () => dispatch
+});
 async function dispatch(request, pathOverride) {
   const pathname = pathOverride ?? new URL(request.url).pathname;
   const route = routes.find((item) => item.pattern.test(pathname));
@@ -6315,6 +7536,12 @@ async function dispatch(request, pathOverride) {
     return Response.json({ error: "No se pudo completar la operaci\xF3n." }, { status: 500 });
   }
 }
+var init_router = __esm({
+  "server/router.ts"() {
+    init_route_map();
+  }
+});
+init_router();
 export {
   dispatch
 };

@@ -64,17 +64,38 @@ Los pedidos, sus líneas, los proveedores y el historial de cambios se guardan e
 
 ## MCP de Ecoase
 
-La aplicación expone un servidor MCP de solo lectura en `/mcp`. Está pensado para el piloto operativo con ChatGPT y Claude y ofrece estas herramientas:
+`/mcp` expone un servidor MCP completo del dashboard: todo lo que se puede ver o hacer en la aplicación se puede hacer desde Claude (67 herramientas). Cada herramienta llama a la misma ruta de `/api/*` que usa la pantalla, así que respeta las mismas validaciones y efectos.
 
-- `resumen_operativo`: pedidos, entregas y alertas para un período de hasta 50 días.
-- `listar_pedidos_en_riesgo`: atrasos y alertas de HT, producción o transporte.
-- `ver_pedido`: detalle operativo por ID, referencia o cliente.
-- `listar_clientes`: clientes y productos habilitados.
-- `consultar_stock`: saldos pendientes de HT, listos, reservados y disponibles por producto.
+**Qué cubre**
 
-Para probarlo localmente, iniciá la aplicación y conectá MCP Inspector a `http://localhost:3000/mcp` usando Streamable HTTP. También podés ejecutar `npm run test:mcp`.
+- Lectura: pedidos (listado, detalle e historial), calendario, capacidad, recursos, logística (salidas, vehículos, choferes, disponibilidad), stock y movimientos, catálogo y niveles, clientes y proveedores, secadero y HT, y una `guia_operativa` con el flujo y las reglas.
+- Pedidos: crear, editar, cancelar, eliminar y registrar novedades.
+- Producción: planificar, mover asignaciones y registrar lo realmente producido.
+- Secadero y HT: programar, registrar HT, registrar lo no realizado y revertir lotes.
+- Logística: asignar transporte, crear, editar, avanzar y reprogramar viajes, agendar salidas, calcular rutas y configurar flota, jornada y límites.
+- Stock: entradas, ajustes y reversiones.
+- Capacidad: recursos, reglas de rendimiento, secadero, cupos de viajes y ajustes por día.
+- Maestros: clientes, productos habilitados y controles, catálogo, niveles de clasificación y proveedores.
 
-Esta primera versión no modifica datos. Antes de habilitar herramientas de escritura se deben agregar autenticación individual, permisos y auditoría.
+Capacidad, stock y fechas son advertencias: las herramientas guardan igual e informan. Solo se rechaza lo incoherente (más unidades que las del pedido, datos inválidos, resultado real con fecha futura). Las herramientas que borran, cancelan o revierten están marcadas como destructivas para que Claude pida confirmación.
+
+**Permisos**
+
+| Variable de entorno | Efecto |
+| --- | --- |
+| `ECOASE_MCP_TOKEN` | Token con permiso de lectura y escritura. |
+| `ECOASE_MCP_READ_TOKEN` | Token de solo lectura (opcional). |
+| ninguna | El MCP queda abierto pero solo de lectura. Las herramientas de escritura no se registran. |
+
+Con algún token configurado, cada pedido debe enviar `Authorization: Bearer <token>`; sin él responde 401. Generá un token con `node -e "console.log(require('crypto').randomBytes(32).toString('hex'))"` y cargalo como variable de entorno del servidor (nunca en el código). El token es compartido: quién hizo cada cambio se registra con el campo `responsable` de las herramientas (por defecto «Claude (MCP)»), no con una identidad individual. Importante: el token protege solo `/mcp`; las rutas `/api/*` de la aplicación no tienen autenticación.
+
+**Conexión**
+
+- Claude Code: `claude mcp add --transport http ecoase https://TU-DOMINIO/mcp --header "Authorization: Bearer TU_TOKEN"`
+- Claude Desktop: los conectores personalizados de la interfaz no permiten enviar un encabezado propio; usá el puente `mcp-remote` en `claude_desktop_config.json`: `{ "mcpServers": { "ecoase": { "command": "npx", "args": ["-y", "mcp-remote", "https://TU-DOMINIO/mcp", "--header", "Authorization:${ECOASE_AUTH}"], "env": { "ECOASE_AUTH": "Bearer TU_TOKEN" } } } }`
+- Pruebas locales: iniciá la aplicación y conectá MCP Inspector a `http://localhost:3000/mcp` con Streamable HTTP. Los tests son `npm run test:mcp` (incluye un pedido completo de punta a punta).
+
+Las herramientas de archivos (subir planos o fotos) no están en el MCP; se hacen desde la pantalla de Clientes.
 
 El esquema está versionado en `supabase/migrations` y los datos iniciales en `supabase/seed.sql`. Las pruebas de endpoints usan un almacenamiento temporal aislado para no modificar la base real.
 

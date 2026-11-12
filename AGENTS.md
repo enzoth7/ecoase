@@ -20,6 +20,14 @@ Estas reglas se aplican a todas las pantallas del dashboard y deben verificarse 
 - Mantener foco visible, contraste de texto de al menos 4.5:1, estados vacíos útiles y diseños sin desplazamiento horizontal.
 - Conservar las reglas existentes sobre filtros de columna, ausencia de franjas laterales de color, nomenclatura y comportamiento operativo.
 
+## Advertencias, no bloqueos
+
+- Una persona opera el sistema y decide con criterio. Capacidad, stock, fechas y horarios se informan como advertencia visible (aviso amarillo o rojo con el motivo y el dato), pero nunca impiden guardar, confirmar ni seguir. El texto del aviso termina diciendo que se puede continuar.
+- Ejemplos que solo advierten: producir sobre la capacidad normal o máxima de un recurso, programar secado sobre la capacidad diaria, cargar un camión sobre su capacidad, enviar más palets de los que hay listos, planificar para una fecha pasada o posterior a la entrega, un día fuera de la jornada o una salida que se solapa, registrar HT con más unidades de las que figuran pendientes.
+- Los avisos no piden nota, justificación ni responsable obligatorios. La observación es siempre opcional.
+- Solo se bloquea lo que rompe la coherencia de los datos: asignar o enviar más unidades de las que tiene el pedido, cantidades no numéricas o negativas, campos sin los que no se puede identificar el registro (producto, cliente, fecha válida) y registrar un resultado real con fecha futura.
+- Las funciones SQL de `supabase/migrations` siguen la misma regla: no usar `raise exception` para límites de capacidad o stock.
+
 ## Reglas de color
 
 - Un solo amarillo de acción: `--brand-yellow` (`#FFCA08`), con texto `--brand-black`. Todo botón de acción principal o de alta («Agregar…», «Registrar…», «Programar…») usa la clase `.primary-button`; no definir amarillos nuevos ni copiar el valor a mano en una pantalla.

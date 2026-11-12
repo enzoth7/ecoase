@@ -169,9 +169,8 @@ test("administra capacidad por recurso y producto con confirmación trazable", a
   assert.equal(factoryBefore.assignments[0].status, "draft");
   assert.equal(before.days[1].transportTotals.committed, 40);
 
-  const noteRequired = await request(`/api/production-allocations/${allocation.id}/confirm`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ resourceId: "internal", capacityRuleId: rule.id }) });
-  assert.equal(noteRequired.status, 400);
-  const confirmed = await request(`/api/production-allocations/${allocation.id}/confirm`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ resourceId: "internal", capacityRuleId: rule.id, overloadNote: "Pico coordinado" }) });
+  // Confirmar por encima de lo normal es una advertencia: no exige nota.
+  const confirmed = await request(`/api/production-allocations/${allocation.id}/confirm`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ resourceId: "internal", capacityRuleId: rule.id,  }) });
   assert.equal(confirmed.status, 200);
 
   const completionNoteRequired = await request(`/api/production-allocations/${allocation.id}/complete`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ actualQuantity: 35 }) });
@@ -234,7 +233,12 @@ test("registra, consulta y revierte tratamiento sin alterar el stock físico", a
   assert.equal(batch.movements.reduce((sum, movement) => sum + movement.quantity, 0), 0);
 
   const insufficient = await request("/api/treatment/batches", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ productId: product.product.id, quantity: 30, performedAt: "2026-09-07T15:00:00.000Z", responsible: "Operador QA", note: "No debe alcanzar", controls: [] }) });
-  assert.equal(insufficient.status, 400);
+  // Si el stock pendiente no alcanza, el HT se registra igual y el saldo queda negativo como advertencia.
+  assert.equal(insufficient.status, 201);
+  const shortage = (await insufficient.json()).result;
+  assert.equal(shortage.newPending, -5);
+  const shortageReverse = await request(`/api/treatment/batches/${shortage.batchId}/reverse`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ performedAt: "2026-09-07T15:30:00.000Z", responsible: "Encargado QA", note: "Reversión del faltante" }) });
+  assert.equal(shortageReverse.status, 201);
 
   const reverseResponse = await request(`/api/treatment/batches/${posted.batchId}/reverse`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ performedAt: "2026-09-07T16:00:00.000Z", responsible: "Encargado QA", note: "Reversión controlada" }) });
   assert.equal(reverseResponse.status, 201);
@@ -248,8 +252,8 @@ test("registra, consulta y revierte tratamiento sin alterar el stock físico", a
 
   const dashboard = (await (await request("/api/treatment?date=2026-09-07")).json()).treatment;
   assert.deepEqual(Object.keys(dashboard).sort(), ["batches", "date", "summary"]);
-  assert.equal(dashboard.summary.processed, 10);
-  assert.equal(dashboard.summary.reversed, 10);
+  assert.equal(dashboard.summary.processed, 40);
+  assert.equal(dashboard.summary.reversed, 40);
   assert.equal(dashboard.summary.pending + dashboard.summary.ready, 35);
 });
 
@@ -321,13 +325,12 @@ test("muestra proveedores por tipo y abastecimiento", async () => {
 });
 
 test("expone pedidos activos e historial en endpoints separados", async () => {
-  const [ordersResponse, historyResponse, clientsResponse, calendarResponse, logisticsResponse, planResponse] = await Promise.all([
+  const [ordersResponse, historyResponse, clientsResponse, calendarResponse, logisticsResponse] = await Promise.all([
     request("/api/orders"),
     request("/api/history"),
     request("/api/clients"),
     request("/api/calendar"),
     request("/api/logistics"),
-    request("/api/plan"),
   ]);
 
   assert.equal(ordersResponse.status, 200);
@@ -335,13 +338,11 @@ test("expone pedidos activos e historial en endpoints separados", async () => {
   assert.equal(clientsResponse.status, 200);
   assert.equal(calendarResponse.status, 200);
   assert.equal(logisticsResponse.status, 200);
-  assert.equal(planResponse.status, 200);
   assert.equal((await ordersResponse.json()).orders.length, 2);
   assert.ok((await historyResponse.json()).history.length >= 10);
   assert.ok((await clientsResponse.json()).clients.length > 0);
   assert.equal((await calendarResponse.json()).calendar.length, 2);
   assert.equal((await logisticsResponse.json()).logistics.length, 2);
-  assert.equal((await planResponse.json()).plan.length, 2);
 });
 
 test("permite editar el plan y registra los cambios del pedido", async () => {

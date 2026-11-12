@@ -136,11 +136,11 @@ function PlanModal({ order, snapshot, onClose, onSaved, onError, initialShipment
   const confirmedCapacity = Number.isInteger(Number(manualCapacity)) && Number(manualCapacity) > 0 ? Number(manualCapacity) : undefined;
   const capacityLimit = mode !== "internal" ? confirmedCapacity : undefined;
   const capacityRemaining = capacityLimit === undefined ? undefined : capacityLimit - selectedQuantity;
+  const validCapacity = Number.isInteger(Number(manualCapacity)) && Number(manualCapacity) > 0;
   const capacityError = mode === "external" && transportProfile && counts.large === 0 && transportProfile.smallCapacity !== undefined && counts.small > transportProfile.smallCapacity
     || mode === "external" && transportProfile && counts.small === 0 && transportProfile.largeCapacity !== undefined && counts.large > transportProfile.largeCapacity
-    ? "La carga supera la capacidad configurada del transportista." : mode !== "internal" && selectedQuantity > Number(manualCapacity || 0) ? "La carga supera la capacidad indicada." : "";
-  const validCapacity = Number.isInteger(Number(manualCapacity)) && Number(manualCapacity) > 0;
-  const transportSelected = mode === "internal" ? Boolean(vehicle) : mode === "external" ? snapshot.providers.some((provider) => provider.id === providerId && provider.type === "Transporte" && !provider.internalTransport) && validCapacity : validCapacity;
+    ? "La carga supera la capacidad configurada del transportista." : mode !== "internal" && validCapacity && selectedQuantity > Number(manualCapacity) ? "La carga supera la capacidad indicada." : "";
+  const transportSelected = mode === "internal" ? Boolean(vehicle) : mode === "external" ? snapshot.providers.some((provider) => provider.id === providerId && provider.type === "Transporte" && !provider.internalTransport) : true;
   const submit = async (event: FormEvent) => {
     event.preventDefault(); setSaving(true); setError("");
     let shipmentSaved = false;
@@ -149,8 +149,7 @@ function PlanModal({ order, snapshot, onClose, onSaved, onError, initialShipment
         .filter((line) => line.plannedQuantity > 0);
       if (!transportSelected) throw new Error("Elegí un transporte antes de guardar.");
       if (!lines.length) throw new Error("Indicá al menos una cantidad para el viaje.");
-      if (lines.some((line) => !Number.isInteger(line.plannedQuantity) || line.plannedQuantity > availableFor(line.orderLineId))) throw new Error("La carga supera las unidades listas para planificar.");
-      if (capacityError) throw new Error(capacityError);
+      if (lines.some((line) => !Number.isInteger(line.plannedQuantity) || line.plannedQuantity > maxFor(line.orderLineId))) throw new Error("La carga supera lo que falta enviar del pedido.");
       const source = mode === "external" ? "external" : "internal";
       const saved = await api<{ shipment: Shipment }>(shipment ? `/api/shipments/${shipment.id}` : `/api/orders/${order.id}/shipments`,
         shipment ? "PATCH" : "POST", { plannedDate: date, transportSource: source,
@@ -176,9 +175,8 @@ function PlanModal({ order, snapshot, onClose, onSaved, onError, initialShipment
     setError("");
     if (step === 0 && !transportSelected) { setError("Elegí el transporte para continuar."); return; }
     if (step === 1) {
-      if (!selectedQuantity) { setError("Indicá cuántos palets listos vas a enviar."); return; }
-      if (order.lines.some((line) => !Number.isInteger(quantities[line.id] || 0) || (quantities[line.id] || 0) > availableFor(line.id))) { setError("La carga supera las unidades listas para planificar."); return; }
-      if (capacityError) { setError(capacityError); return; }
+      if (!selectedQuantity) { setError("Indicá cuántos palets vas a enviar."); return; }
+      if (order.lines.some((line) => !Number.isInteger(quantities[line.id] || 0) || (quantities[line.id] || 0) > maxFor(line.id))) { setError("La carga supera lo que falta enviar del pedido."); return; }
     }
     setStep((step + 1) as 1 | 2);
   };
@@ -198,15 +196,15 @@ function PlanModal({ order, snapshot, onClose, onSaved, onError, initialShipment
         {mode !== "customer_pickup" && <><label>Salida<input type="time" value={start} onChange={(event) => setStart(event.target.value)} /></label></>}
         {mode !== "internal" && <label>Capacidad de esta salida<input type="number" min="1" step="1" value={manualCapacity} onChange={(event) => setManualCapacity(event.target.value)} required /></label>}
       </div></>}
-      {step === 1 && <><div className="logistics-step-heading"><h3>¿Cuántos palets listos enviás?</h3></div>
-      <div className="logistics-lines"><div className="logistics-lines-head"><span>Nombre del producto</span><span>Tamaño</span><span>Cantidad</span></div>{order.lines.filter((line) => availableFor(line.id) > 0 || (quantities[line.id] || 0) > 0).map((line) => {
+      {step === 1 && <><div className="logistics-step-heading"><h3>¿Cuántos palets enviás?</h3></div>
+      <div className="logistics-lines"><div className="logistics-lines-head"><span>Nombre del producto</span><span>Tamaño</span><span>Cantidad</span></div>{order.lines.filter((line) => maxFor(line.id) > 0 || (quantities[line.id] || 0) > 0).map((line) => {
         const product = snapshot.products.find((item) => item.id === line.productId);
         const kind = product ? classifyPallet(product, snapshot.classes[product.id]) : "unclassified";
-        const available = availableFor(line.id);
+        const available = availableFor(line.id), pendingToSend = maxFor(line.id);
         return <div key={line.id} className="logistics-line">
           <strong className="logistics-line-product">{displayProduct(line.product)}</strong>
           <span className="logistics-line-size">{kind === "small" ? "Chico" : kind === "large" ? "Grande" : "Sin clasificar"}</span>
-          <div className="logistics-line-quantity"><input aria-label={`Cantidad a enviar de ${displayProduct(line.product)}, ${number.format(available)} listos`} type="number" min="0" max={available} step="1" value={quantities[line.id] || ""} onChange={(event) => setQuantities((value) => ({ ...value, [line.id]: Number(event.target.value) }))} /><small>de {number.format(available)}</small></div>
+          <div className="logistics-line-quantity"><input aria-label={`Cantidad a enviar de ${displayProduct(line.product)}, ${number.format(available)} listos de ${number.format(pendingToSend)} pendientes`} type="number" min="0" max={pendingToSend} step="1" value={quantities[line.id] || ""} onChange={(event) => setQuantities((value) => ({ ...value, [line.id]: Number(event.target.value) }))} /><small title={`${number.format(pendingToSend)} pendientes de enviar`}>{number.format(available)} listos</small></div>
         </div>;
       })}</div>
       </>}
@@ -224,7 +222,7 @@ function PlanModal({ order, snapshot, onClose, onSaved, onError, initialShipment
         {selectedQuantity > 0 && <div className="logistics-load-volume"><div><span>Volumen de la carga</span><strong>{selectedVolumeM3 === undefined ? "Sin estimación" : `${volumeNumber.format(selectedVolumeM3)} m³ aprox.`}</strong></div><div><span>Referencia del transporte</span><strong>{volumeReference ? `Hasta ${volumeNumber.format(volumeReference.upper)} m³ aprox.` : "Sin estimación"}</strong></div><small>Estimación según las medidas y alturas de los pallets.</small></div>}
         {mode === "internal" && selectedVolumeM3 !== undefined && volumeReference && volumeReference.upper > 0 && selectedQuantity > 0 && <div className="logistics-load-bar" role="progressbar" aria-label="Volumen orientativo ocupado" aria-valuemin={0} aria-valuemax={volumeReference.upper} aria-valuenow={Math.min(selectedVolumeM3, volumeReference.upper)} aria-valuetext={`${volumeNumber.format(selectedVolumeM3)} de ${volumeNumber.format(volumeReference.upper)} metros cúbicos aproximados`}><span style={{ width: `${Math.min(selectedVolumeM3 / volumeReference.upper * 100, 100)}%` }} /></div>}
         {capacityLimit !== undefined && mode !== "internal" && <div className="logistics-load-limit"><span>Capacidad indicada</span><strong>{number.format(capacityLimit)}</strong></div>}
-        {(exceedsReady || selectedQuantity > 0 && capacityError || mode === "internal" && !vehicle || mode !== "internal" && capacityLimit === undefined || mode !== "internal" && selectedQuantity > 0 && capacityRemaining !== undefined) && <p className={`logistics-load-status${exceedsReady || selectedQuantity > 0 && capacityError ? " is-over" : ""}`} role="status">{exceedsReady ? "La carga supera los palets listos para enviar." : selectedQuantity > 0 && capacityError ? capacityError : mode === "internal" && !vehicle ? "Elegí un vehículo para ver el volumen orientativo." : capacityRemaining === undefined ? "Indicá la capacidad de esta salida." : capacityRemaining === 0 ? "Capacidad completa." : `Quedan ${number.format(capacityRemaining)} lugares disponibles.`}</p>}
+        {(exceedsReady || selectedQuantity > 0 && capacityError || mode === "internal" && !vehicle || mode !== "internal" && capacityLimit === undefined || mode !== "internal" && selectedQuantity > 0 && capacityRemaining !== undefined) && <p className={`logistics-load-status${exceedsReady || selectedQuantity > 0 && capacityError ? " is-over" : ""}`} role="status">{exceedsReady ? "La carga supera los palets listos para enviar. Se puede planificar igual." : selectedQuantity > 0 && capacityError ? `${capacityError} Se puede guardar igual.` : mode === "internal" && !vehicle ? "Elegí un vehículo para ver el volumen orientativo." : capacityRemaining === undefined ? "Indicá la capacidad de esta salida." : capacityRemaining === 0 ? "Capacidad completa." : `Quedan ${number.format(capacityRemaining)} lugares disponibles.`}</p>}
       </aside></div>
       {error && <p className="logistics-form-message" role="status">{error}</p>}
       <div className="modal-actions"><button type="button" className="secondary-button" onClick={step === 0 ? onClose : () => setStep((step - 1) as 0 | 1)}>{step === 0 ? "Cancelar" : "Volver"}</button>{step < 2 ? <button type="button" className="primary-button" onClick={continueStep}>Continuar</button> : <AsyncButton type="submit" className="primary-button" loading={saving}>Guardar planificación</AsyncButton>}</div>
@@ -400,16 +398,16 @@ function CalendarView({ snapshot, reload, onOpenOrder, onChanged }: { snapshot: 
     const order = snapshot.orders.find((item) => item.id === run.orderId);
     const canMove = run.status === "planned" && (!shipment || ["planned", "ready"].includes(shipment.status));
     const openCard = () => { if (moving || dragging) return; if (order && shipment) setQueueSelection({ order, shipmentId: String(shipment.id) }); else setReschedule({ run, shipment, date: run.plannedDate }); };
-    return <article key={id} role="button" tabIndex={0} aria-label={`Abrir salida de ${titleForRun(run, snapshot)}`} onClick={openCard} onKeyDown={(event) => { if (event.key === "Enter" || event.key === " ") { event.preventDefault(); openCard(); } }} draggable={canMove && !moving} onDragStart={(event) => { event.dataTransfer.effectAllowed = "move"; event.dataTransfer.setData("text/plain", dragKey); setDragging(dragKey); setDraggingLane(laneId); }} onDragEnd={() => { if (!moving) { setDragging(""); setDraggingLane(""); setDropDay(""); } }} className={`logistics-calendar-card ${run.status === "completed" || shipment?.status === "delivered" ? "is-delivered" : ""} ${dragging === dragKey ? "is-dragging" : ""}`}>
+    return <div key={id} role="button" tabIndex={0} aria-label={`Abrir salida de ${titleForRun(run, snapshot)}`} onClick={openCard} onKeyDown={(event) => { if (event.key === "Enter" || event.key === " ") { event.preventDefault(); openCard(); } }} draggable={canMove && !moving} onDragStart={(event) => { event.dataTransfer.effectAllowed = "move"; event.dataTransfer.setData("text/plain", dragKey); setDragging(dragKey); setDraggingLane(laneId); }} onDragEnd={() => { if (!moving) { setDragging(""); setDraggingLane(""); setDropDay(""); } }} className={`logistics-calendar-card ${run.status === "completed" || shipment?.status === "delivered" ? "is-delivered" : ""} ${dragging === dragKey ? "is-dragging" : ""}`}>
       <strong>{titleForRun(run, snapshot)}</strong>
       <small>{timeValue(run.plannedStartAt) || "Sin hora"}{run.plannedEndAt ? ` a ${timeValue(run.plannedEndAt)}` : ""}</small>
       {run.driverId && <small className="logistics-card-driver">Chofer: {snapshot.drivers.find((item) => String(item.id) === String(run.driverId))?.name ?? "Sin asignar"}</small>}
       {shipment && order && <ShipmentLoad shipment={shipment} order={order} snapshot={snapshot} />}
       {warnings.map((warning) => <small key={warning} className="logistics-warning-text">{warning}</small>)}
       {run.mode === "supplier_pickup" && run.status === "planned" && <div className="logistics-card-footer"><button type="button" className="text-button" onClick={async (event) => { event.stopPropagation(); await api("/api/logistics/runs", "PATCH", { ...run, status: "completed" }); await reload(); }}>Marcar retiro realizado</button></div>}
-    </article>;
+    </div>;
   };
-  const renderLegacy = ({ shipment, order }: { shipment: Shipment; order: OperationOrder }, laneId: string) => { const dragKey = `shipment:${shipment.id}`; const openCard = () => { if (!moving && !dragging) setQueueSelection({ order, shipmentId: String(shipment.id) }); }; return <article key={shipment.id} role="button" tabIndex={0} aria-label={`Abrir salida de ${order.client}`} onClick={openCard} onKeyDown={(event) => { if (event.key === "Enter" || event.key === " ") { event.preventDefault(); openCard(); } }} draggable={["planned", "ready"].includes(shipment.status) && !moving} onDragStart={(event) => { event.dataTransfer.effectAllowed = "move"; event.dataTransfer.setData("text/plain", dragKey); setDragging(dragKey); setDraggingLane(laneId); }} onDragEnd={() => { if (!moving) { setDragging(""); setDraggingLane(""); setDropDay(""); } }} className={`logistics-calendar-card logistics-legacy-card ${dragging === dragKey ? "is-dragging" : ""}`}><strong>{order.client}</strong><ShipmentLoad shipment={shipment} order={order} snapshot={snapshot} /><small>{statusLabel[shipment.status]}, viaje histórico</small><span className="logistics-route-status no_data">Transporte tercero</span></article>; };
+  const renderLegacy = ({ shipment, order }: { shipment: Shipment; order: OperationOrder }, laneId: string) => { const dragKey = `shipment:${shipment.id}`; const openCard = () => { if (!moving && !dragging) setQueueSelection({ order, shipmentId: String(shipment.id) }); }; return <div key={shipment.id} role="button" tabIndex={0} aria-label={`Abrir salida de ${order.client}`} onClick={openCard} onKeyDown={(event) => { if (event.key === "Enter" || event.key === " ") { event.preventDefault(); openCard(); } }} draggable={["planned", "ready"].includes(shipment.status) && !moving} onDragStart={(event) => { event.dataTransfer.effectAllowed = "move"; event.dataTransfer.setData("text/plain", dragKey); setDragging(dragKey); setDraggingLane(laneId); }} onDragEnd={() => { if (!moving) { setDragging(""); setDraggingLane(""); setDropDay(""); } }} className={`logistics-calendar-card logistics-legacy-card ${dragging === dragKey ? "is-dragging" : ""}`}><strong>{order.client}</strong><ShipmentLoad shipment={shipment} order={order} snapshot={snapshot} /><small>{statusLabel[shipment.status]}, viaje histórico</small><span className="logistics-route-status no_data">Transporte tercero</span></div>; };
   return <><section className="module-surface phase-queue logistics-transport-queue" aria-labelledby="transport-queue-title"><header className="phase-header"><h2 id="transport-queue-title">Transporte a planificar</h2>{pendingTransport.length > 0 && <span className="count-pill warning">{pendingTransport.length} {pendingTransport.length === 1 ? "pedido" : "pedidos"}</span>}</header>
     {pendingTransport.length > 0 ? <div className="queue-list logistics-queue-table" role="table" aria-label="Pedidos con transporte a planificar">
       <div className="logistics-queue-head" role="row"><div role="columnheader">Cliente</div><div role="columnheader">Listo para enviar</div><div role="columnheader">Total</div><div role="columnheader">Entrega</div><div role="columnheader" aria-label="Acciones" /></div>

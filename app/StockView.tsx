@@ -168,8 +168,9 @@ export default function StockView({ scope, focusProductId }: { scope: StockInven
 function StockInventory({ title, rows, providers, loading, error, onChanged, focusProductId }: { title: string; rows: StockSummaryRow[]; providers: Provider[]; loading: boolean; error: string; onChanged: () => Promise<void>; focusProductId?: string }) {
   const [query, setQuery] = useState("");
   const [summaryFilter, setSummaryFilter] = useState<StockSummaryFilter>("");
-  const [selectedId, setSelectedId] = useState<string | null>(null);
-  useEffect(() => { if (focusProductId) setSelectedId(focusProductId); }, [focusProductId]);
+  const [selectedId, setSelectedId] = useState<string | null>(focusProductId ?? null);
+  const [seenFocus, setSeenFocus] = useState(focusProductId);
+  if (seenFocus !== focusProductId) { setSeenFocus(focusProductId); if (focusProductId) setSelectedId(focusProductId); }
   const [destination, setDestination] = useState<{ productId: string; field: StockQuantityField; label: string } | null>(null);
   const [entry, setEntry] = useState(false);
   const selected = rows.find((row) => row.product.id === selectedId);

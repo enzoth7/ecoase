@@ -172,6 +172,11 @@ export function tripWarnings(run: LogisticsRun, runs: LogisticsRun[], settings: 
   if (!run.plannedStartAt || !run.plannedEndAt)
     warnings.push("Faltan horarios para evaluar la vuelta.");
   if (!run.destinationAddress) warnings.push("Falta dirección de destino.");
+  // Horario de la jornada (hora de Montevideo): fuera de ese rango solo se advierte.
+  const atShift = (time?: string) => run.plannedDate && time ? Date.parse(`${run.plannedDate}T${time.slice(0, 5)}:00-03:00`) : Number.NaN;
+  const shiftStart = atShift(settings.shiftStart), shiftEnd = atShift(settings.shiftEnd);
+  if (run.plannedStartAt && Number.isFinite(shiftStart) && Date.parse(run.plannedStartAt) < shiftStart) warnings.push(`La salida es antes del inicio de la jornada (${settings.shiftStart!.slice(0, 5)}).`);
+  if (run.plannedEndAt && Number.isFinite(shiftEnd) && Date.parse(run.plannedEndAt) > shiftEnd) warnings.push(`La vuelta termina después del fin de la jornada (${settings.shiftEnd!.slice(0, 5)}).`);
   if (run.plannedStartAt && run.plannedEndAt) {
     for (const other of runs) {
       if (String(other.id) === String(run.id) || other.status === "cancelled" || !other.plannedStartAt || !other.plannedEndAt) continue;

@@ -7,19 +7,14 @@ import {
   summarizeOrder,
   type AlertSeverity,
 } from "./operational";
+import { shrink } from "./bridge";
+import { addDays, isoDate, normalize, todayKey, type ToolContext } from "./kit";
+import { registerAdminTools } from "./tools-admin";
+import { registerLogisticsTools } from "./tools-logistics";
+import { registerOperationTools } from "./tools-operations";
+import { registerReadTools } from "./tools-read";
 
-const isoDate = /^\d{4}-\d{2}-\d{2}$/;
 const severities: AlertSeverity[] = ["critical", "high", "medium"];
-
-function todayKey() {
-  return new Intl.DateTimeFormat("en-CA", { timeZone: "America/Montevideo", year: "numeric", month: "2-digit", day: "2-digit" }).format(new Date());
-}
-
-function addDays(date: string, days: number) {
-  const value = new Date(`${date}T12:00:00Z`);
-  value.setUTCDate(value.getUTCDate() + days);
-  return value.toISOString().slice(0, 10);
-}
 
 function resolveRange(from?: string, to?: string) {
   const today = todayKey();
@@ -32,19 +27,25 @@ function resolveRange(from?: string, to?: string) {
 function textResult(summary: string, data: unknown) {
   return {
     structuredContent: { data },
-    content: [{ type: "text" as const, text: summary }],
+    content: [{ type: "text" as const, text: `${summary}\n${JSON.stringify(shrink(data))}` }],
   };
 }
 
-function normalize(value: string) {
-  return value.trim().toLocaleLowerCase("es").normalize("NFD").replace(/\p{Diacritic}/gu, "");
-}
+export type EcoaseMcpOptions = { canWrite?: boolean };
 
-export function createEcoaseMcpServer() {
+export function createEcoaseMcpServer(options: EcoaseMcpOptions = {}) {
+  const context: ToolContext = { canWrite: Boolean(options.canWrite) };
   const server = new McpServer(
-    { name: "ecoase-control-operativo", version: "0.1.0" },
+    { name: "ecoase-control-operativo", version: "1.0.0" },
     {
-      instructions: "Usá estas herramientas para consultar la operación real de Ecoase. Informá siempre el período consultado y la frescura de los datos. No presentes una alerta como certeza si depende de información faltante o desactualizada. Esta versión es de solo lectura.",
+      instructions: [
+        "Control operativo de Ecoase: pedidos, producción, secadero y HT, logística, stock, capacidad, clientes, productos y proveedores.",
+        "Empezá con guia_operativa si no conocés el flujo. Para saber qué pasa usá resumen_operativo, listar_pedidos, detalle_pedido y calendario; informá siempre el período consultado y no presentes una alerta como certeza si depende de datos faltantes.",
+        options.canWrite
+          ? "Esta conexión puede modificar datos: antes de crear, cambiar, cancelar, borrar o revertir, confirmá con la persona lo que vas a hacer (salvo que ya lo haya pedido de forma explícita) y, después de escribir, volvé a leer para verificar el resultado."
+          : "Esta conexión es de solo lectura: no hay herramientas para modificar datos.",
+        "Capacidad, stock y fechas son advertencias, no bloqueos: si algo se pasa de la capacidad, guardalo igual e informá la advertencia. Nunca inventes identificadores: obtenelos con las herramientas de lectura.",
+      ].join("\n"),
     },
   );
 
@@ -161,6 +162,7 @@ export function createEcoaseMcpServer() {
         updatedAt: detail.client.updatedAt,
         products: detail.products.filter((product) => product.active).map((product) => ({
           id: product.productId,
+          clientProductId: product.id,
           name: product.operationalName ?? product.product.stockName ?? `${product.product.kind} ${product.product.measure ?? ""}`.trim(),
           zetaCode: product.product.zetaCode ?? product.zetaCode,
           requiresTreatment: product.product.requiresTreatment,
@@ -203,6 +205,11 @@ export function createEcoaseMcpServer() {
       return textResult(`Encontré ${data.length} producto(s) en stock.`, data);
     },
   );
+
+  registerReadTools(server, context);
+  registerOperationTools(server, context);
+  registerLogisticsTools(server, context);
+  registerAdminTools(server, context);
 
   return server;
 }

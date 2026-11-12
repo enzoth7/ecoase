@@ -12,6 +12,7 @@ const eslintConfig = defineConfig([
     "dist/**",
     "out/**",
     "build/**",
+    "server/bundle.mjs",
   ]),
   eslint.configs.recommended,
   ...tseslint.configs.recommended,

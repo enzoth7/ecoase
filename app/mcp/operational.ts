@@ -151,6 +151,7 @@ export function summarizeOrder(order: OperationOrder) {
       treatedQuantity: line.treatedQuantity,
       treatmentPendingQuantity: line.treatmentPendingQuantity,
       production: (line.productionAllocations ?? []).map((allocation) => ({
+        id: allocation.id,
         date: allocation.plannedDate,
         quantity: allocation.plannedQuantity,
         actualQuantity: allocation.actualQuantity,

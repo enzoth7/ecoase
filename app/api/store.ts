@@ -34,7 +34,6 @@ import {
   type CapacityRule,
   type ExternalProductionDefault,
   type InternalProductionDefault,
-  type InternalTeamCapacity,
   type TransportCapacityDefault,
 } from "../capacity";
 import type {
@@ -1445,7 +1444,6 @@ export async function transitionShipment(shipmentId: number | string, input: { n
   const expected: Partial<Record<ShipmentStatus, ShipmentStatus>> = { planned: "ready", ready: "loaded", loaded: "dispatched", dispatched: "delivered" };
   if (input.nextStatus !== expected[shipment.status] && !(input.nextStatus === "cancelled" && !["dispatched", "delivered", "cancelled"].includes(shipment.status))) throw new Error("La transición del viaje no es válida.");
   const remittance = input.remittance?.trim() || shipment.remittance;
-  const actor = input.responsible?.trim() || "Operación";
   if (input.nextStatus === "ready") {
     shipment.deliveryAddressSnapshot = order.deliveryAddress;
     for (const shipmentLine of shipment.lines) {
@@ -1500,7 +1498,6 @@ export async function transitionShipment(shipmentId: number | string, input: { n
     if (!orderLine?.productId) throw new Error("Una línea del viaje no tiene producto canónico.");
     const actual = shipmentLine.loadedQuantity ?? shipmentLine.plannedQuantity;
     if (actual === 0) continue;
-    const before = calculateStockBalances(memoryStockMovements).get(orderLine.productId)?.ready ?? 0;
     const now = new Date().toISOString();
     memoryStockMovements.push({ id: `movement-${memoryTreatmentId++}`, productId: orderLine.productId, stockState: "ready", quantity: -actual, movementType: "dispatch", orderLineId: orderLine.id, shipmentLineId: shipmentLine.id, remittance, transformationId: crypto.randomUUID(), performedAt: now, responsible: input.responsible?.trim() || "Operación", note: `Despacho de viaje ${shipment.id}`, createdAt: now });
     if (reservation) { reservation.status = "consumed"; orderLine.readyReservedQuantity = Math.max((orderLine.readyReservedQuantity ?? 0) - reservation.quantity, 0); }
@@ -1816,18 +1813,6 @@ export async function saveInternalProduction(value: InternalProductionDefault) {
   return value;
 }
 
-export async function saveInternalTeamCapacity(availablePeople: number): Promise<InternalTeamCapacity> {
-  if (!useMemoryStore) await supabaseRequest("/rest/v1/rpc/upsert_internal_team_capacity", { method: "POST", body: JSON.stringify({ p_available_people: availablePeople }) });
-  else memoryAvailablePeople = availablePeople;
-  return { availablePeople };
-}
-
-export async function saveExternalProduction(value: ExternalProductionDefault) {
-  if (!useMemoryStore) await supabaseRequest("/rest/v1/rpc/upsert_external_production_default", { method: "POST", body: JSON.stringify({ p_provider_id: value.providerId, p_operation: value.operation, p_pallet_capacity: value.palletCapacity, p_status: value.status }) });
-  else upsertMemory(memoryExternalDefaults, (item) => item.providerId === value.providerId && item.operation === value.operation, { ...value, id: value.id ?? `external-${Date.now()}` });
-  return value;
-}
-
 export async function saveTransportCapacity(value: TransportCapacityDefault) {
   if (!useMemoryStore) await supabaseRequest("/rest/v1/rpc/upsert_transport_capacity_default", { method: "POST", body: JSON.stringify({ p_source: value.source, p_provider_id: value.providerId ?? null, p_pallet_capacity: value.palletCapacity, p_status: value.status }) });
   else upsertMemory(memoryTransportDefaults, (item) => item.source === value.source && (item.providerId ?? "") === (value.providerId ?? ""), { ...value, id: value.id ?? `transport-${Date.now()}` });
@@ -2028,22 +2013,18 @@ export async function confirmProductionAllocation(id: number | string, resourceI
   const found = findMemoryAllocation(id);
   if (!found || found.allocation.status !== "draft") throw new Error("Solo se confirman asignaciones en borrador.");
   const rule = memoryProductionRules.find((item) => String(item.id) === String(capacityRuleId));
-  if (!rule || String(rule.resourceId) !== String(resourceId) || rule.productId !== found.line.productId || String(rule.clientProductId) !== String(found.line.clientProductId) || rule.validFrom > found.allocation.plannedDate || rule.validTo && rule.validTo < found.allocation.plannedDate) throw new Error("Seleccione una regla vigente para el recurso y producto del cliente.");
+  if (!rule || String(rule.resourceId) !== String(resourceId) || rule.productId !== found.line.productId || String(rule.clientProductId) !== String(found.line.clientProductId)) throw new Error("Seleccione una regla vigente para el recurso y producto del cliente.");
   const previousResource = found.allocation.productionResourceId;
   const previousRule = found.allocation.capacityRuleId;
   found.allocation.productionResourceId = resourceId;
   found.allocation.capacityRuleId = capacityRuleId;
   const snapshot = await getCapacity(found.allocation.plannedDate, found.allocation.plannedDate);
   const resource = snapshot.production.days[0].resources.find((item) => String(item.resource.id) === String(resourceId));
-  if (!resource || resource.status === "missing_rule" || resource.status === "overloaded") {
+  // La capacidad es una advertencia de la pantalla: sobre lo normal o sobre el máximo igual se confirma.
+  if (!resource || resource.status === "missing_rule") {
     found.allocation.productionResourceId = previousResource;
     found.allocation.capacityRuleId = previousRule;
-    throw new Error(resource?.status === "overloaded" ? "La asignación supera la capacidad máxima del recurso." : "No se pudo calcular la capacidad de la asignación.");
-  }
-  if (resource.status === "stretched" && !overloadNote?.trim()) {
-    found.allocation.productionResourceId = previousResource;
-    found.allocation.capacityRuleId = previousRule;
-    throw new Error("Indique una nota para confirmar por encima de la capacidad normal.");
+    throw new Error("No se pudo calcular la capacidad de la asignación.");
   }
   const selectedResource = memoryProductionResources.find((item) => String(item.id) === String(resourceId));
   found.allocation.resourceId = selectedResource?.providerId ?? (selectedResource?.resourceType === "internal_factory" ? "internal" : String(resourceId));
@@ -2359,7 +2340,6 @@ export async function recordTreatmentBatch(input: CreateTreatmentBatchInput): Pr
   const balances = calculateStockBalances(memoryStockMovements);
   const previous = balances.get(product.id) ?? { pending: 0, ready: 0 };
   const status: TreatmentBatchStatus = failed.length ? "rejected" : "posted";
-  if (status === "posted" && previous.pending < input.quantity) throw new Error("El stock pendiente no alcanza para confirmar el HT.");
   const id = `batch-${memoryTreatmentId++}`;
   const transformationId = crypto.randomUUID();
   const checks: TreatmentControlCheck[] = input.controls.map((check) => {

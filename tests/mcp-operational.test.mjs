@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-test("MCP endpoint is present and registers the pilot read-only tools", async () => {
+test("MCP endpoint is present and registers the read-only tools", async () => {
   const route = await import("../app/mcp/route.ts");
   assert.equal(typeof route.POST, "function");
   assert.equal(typeof route.OPTIONS, "function");
@@ -22,6 +22,7 @@ test("MCP endpoint is present and registers the pilot read-only tools", async ()
   }));
   assert.equal(listed.status, 200);
   const tools = (await listed.json()).result.tools.map((tool) => tool.name);
-  assert.deepEqual(tools, ["resumen_operativo", "listar_pedidos_en_riesgo", "ver_pedido", "listar_clientes", "consultar_stock"]);
+  for (const name of ["resumen_operativo", "listar_pedidos_en_riesgo", "ver_pedido", "listar_clientes", "consultar_stock"]) assert.ok(tools.includes(name), `Falta ${name}`);
+  assert.ok(!tools.includes("crear_pedido"), "Sin token de escritura no hay herramientas que modifiquen datos");
 });
 
