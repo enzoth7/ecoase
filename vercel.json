@@ -6,6 +6,10 @@
   "rewrites": [
     { "source": "/api/:path*", "destination": "/api/index?__ecoase_route=:path*" },
     { "source": "/mcp", "destination": "/api/index?__ecoase_route=mcp" },
+    { "source": "/oauth/:path*", "destination": "/api/index?__ecoase_route=oauth/:path*" },
+    { "source": "/.well-known/oauth-authorization-server", "destination": "/api/index?__ecoase_route=well-known/oauth-authorization-server" },
+    { "source": "/.well-known/oauth-protected-resource/:path*", "destination": "/api/index?__ecoase_route=well-known/oauth-protected-resource" },
+    { "source": "/.well-known/oauth-protected-resource", "destination": "/api/index?__ecoase_route=well-known/oauth-protected-resource" },
     { "source": "/(.*)", "destination": "/index.html" }
   ]
 }

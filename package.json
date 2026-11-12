@@ -15,7 +15,7 @@
     "test": "npm run test:data && npm run test:mcp && npm run build && node --test tests/app-server.test.mjs",
     "test:e2e": "npm run build && playwright test",
     "test:data": "tsx --test tests/data-invariants.test.mjs tests/product-catalog-sync.test.mjs tests/ui-foundations.test.mjs tests/stage03-invariants.test.mjs tests/stage04-invariants.test.mjs tests/stage05-invariants.test.mjs tests/stage06-invariants.test.mjs tests/logistics.test.mjs",
-    "test:mcp": "tsx --test tests/mcp-operational.test.mjs tests/mcp-full.test.mjs",
+    "test:mcp": "tsx --test tests/mcp-operational.test.mjs tests/mcp-full.test.mjs tests/mcp-oauth.test.mjs",
     "lint": "eslint . --ignore-pattern dist --ignore-pattern .next",
     "db:generate": "drizzle-kit generate"
   },

@@ -853,11 +853,11 @@ var init_classification = __esm({
 });
 
 // app/lib/supabase.ts
-function configuration(secret = false) {
+function configuration(secret2 = false) {
   const url = process.env.SUPABASE_URL;
-  const key = secret ? process.env.SUPABASE_SECRET_KEY : process.env.SUPABASE_PUBLISHABLE_KEY;
+  const key = secret2 ? process.env.SUPABASE_SECRET_KEY : process.env.SUPABASE_PUBLISHABLE_KEY;
   if (!url || !key) {
-    throw new Error(secret ? "Faltan SUPABASE_URL y SUPABASE_SECRET_KEY en el entorno de servidor." : "Faltan SUPABASE_URL y SUPABASE_PUBLISHABLE_KEY en el entorno.");
+    throw new Error(secret2 ? "Faltan SUPABASE_URL y SUPABASE_SECRET_KEY en el entorno de servidor." : "Faltan SUPABASE_URL y SUPABASE_PUBLISHABLE_KEY en el entorno.");
   }
   return { url: url.replace(/\/$/, ""), key };
 }
@@ -1542,8 +1542,8 @@ async function createClientProduct(clientId, input) {
     if (memoryClientProducts.some((item3) => item3.clientId === clientId && item3.productId === input.productId)) throw Object.assign(new Error("Ese producto ya est\xE1 habilitado para el cliente."), { status: 409 });
     const zetaCode = product.zetaCode ?? "";
     const id2 = memoryMasterId++;
-    const now = (/* @__PURE__ */ new Date()).toISOString();
-    const item2 = { id: id2, clientId, productId: product.id, zetaCode, operationalName: input.operationalName?.trim() || void 0, active: true, displayOrder: input.displayOrder ?? memoryClientProducts.filter((entry) => entry.clientId === clientId).length, createdAt: now, updatedAt: now, product, controls: initialControl ? [{ id: memoryMasterId++, clientProductId: id2, title: initialControl, displayOrder: 0, active: true }] : [], assets: [] };
+    const now2 = (/* @__PURE__ */ new Date()).toISOString();
+    const item2 = { id: id2, clientId, productId: product.id, zetaCode, operationalName: input.operationalName?.trim() || void 0, active: true, displayOrder: input.displayOrder ?? memoryClientProducts.filter((entry) => entry.clientId === clientId).length, createdAt: now2, updatedAt: now2, product, controls: initialControl ? [{ id: memoryMasterId++, clientProductId: id2, title: initialControl, displayOrder: 0, active: true }] : [], assets: [] };
     memoryClientProducts.push(item2);
     seedMemoryPalletProductionRules(item2);
     return item2;
@@ -1761,7 +1761,7 @@ async function assignClientToProduct(productId, clientId) {
     if (!product) throw new Error("Producto no encontrado.");
     if (memoryClientProducts.some((item) => item.clientId === clientId && item.productId === productId)) return;
     const id = memoryMasterId++;
-    const now = (/* @__PURE__ */ new Date()).toISOString();
+    const now2 = (/* @__PURE__ */ new Date()).toISOString();
     memoryClientProducts.push({
       id,
       clientId,
@@ -1769,8 +1769,8 @@ async function assignClientToProduct(productId, clientId) {
       zetaCode: product.zetaCode ?? "",
       active: true,
       displayOrder: memoryClientProducts.filter((item) => item.clientId === clientId).length,
-      createdAt: now,
-      updatedAt: now,
+      createdAt: now2,
+      updatedAt: now2,
       product,
       controls: [],
       assets: []
@@ -2069,16 +2069,16 @@ async function replaceProductionAllocations(orderLineId, allocations) {
   if (allocations.some((item) => item.status !== "draft" || !/^\d{4}-\d{2}-\d{2}$/.test(item.plannedDate) || !Number.isInteger(item.plannedQuantity) || item.plannedQuantity <= 0)) throw new Error("Las asignaciones nuevas se guardan en borrador con fecha y cantidad v\xE1lidas.");
   const fixedQuantity = Math.min(line.quantity, fixed.reduce((sum, item) => sum + (item.status === "completed" ? item.actualQuantity ?? 0 : item.plannedQuantity), 0));
   if (fixedQuantity + allocations.reduce((sum, item) => sum + item.plannedQuantity, 0) > line.quantity) throw new Error("La producci\xF3n asignada supera la cantidad de la l\xEDnea.");
-  const now = (/* @__PURE__ */ new Date()).toISOString();
+  const now2 = (/* @__PURE__ */ new Date()).toISOString();
   line.productionAllocations = [...fixed, ...allocations.map((item) => {
     const resourceId = item.resourceId?.trim() || void 0;
     const resource = memoryProductionResources.find((entry) => String(entry.id) === resourceId || entry.providerId === resourceId || resourceId === "internal" && entry.resourceType === "internal_factory");
-    return { ...item, id: `pa-${crypto.randomUUID()}`, orderLineId, resourceId, productionResourceId: resource?.id, status: "draft", note: item.note?.trim() || void 0, createdAt: now, updatedAt: now };
+    return { ...item, id: `pa-${crypto.randomUUID()}`, orderLineId, resourceId, productionResourceId: resource?.id, status: "draft", note: item.note?.trim() || void 0, createdAt: now2, updatedAt: now2 };
   })];
   const describe = (entries) => entries.length ? entries.map((entry) => `${formatPlannedDate(entry.plannedDate)} \xB7 ${entry.plannedQuantity} palets \xB7 ${entry.resourceId ?? "Sin recurso"}`).join(" | ") : "Sin distribuir";
   const from = describe(previousDrafts);
   const to = describe(allocations);
-  if (order && from !== to) memoryHistory.set(order.id, [{ id: `produccion-${crypto.randomUUID()}`, changedAt: new Intl.DateTimeFormat("es-UY", { dateStyle: "short", timeStyle: "short" }).format(new Date(now)), kind: "cambio", note: `${line.product}: distribuci\xF3n de producci\xF3n actualizada`, changes: [{ field: "Distribuci\xF3n de producci\xF3n", from, to }] }, ...memoryHistory.get(order.id) ?? []]);
+  if (order && from !== to) memoryHistory.set(order.id, [{ id: `produccion-${crypto.randomUUID()}`, changedAt: new Intl.DateTimeFormat("es-UY", { dateStyle: "short", timeStyle: "short" }).format(new Date(now2)), kind: "cambio", note: `${line.product}: distribuci\xF3n de producci\xF3n actualizada`, changes: [{ field: "Distribuci\xF3n de producci\xF3n", from, to }] }, ...memoryHistory.get(order.id) ?? []]);
   return line;
 }
 function validateMemoryShipmentLines(order, shipmentId, lines) {
@@ -2100,12 +2100,12 @@ async function createShipment(orderId, input) {
   validateMemoryShipmentLines(order, void 0, input.lines);
   const provider = memoryProviders.find((item) => item.id === input.transportProviderId);
   if (input.transportSource === "external" && input.transportProviderId && provider?.type !== "Transporte") throw new Error("Seleccione un transportista registrado.");
-  const now = (/* @__PURE__ */ new Date()).toISOString();
+  const now2 = (/* @__PURE__ */ new Date()).toISOString();
   const id = `shipment-${crypto.randomUUID()}`;
-  const shipment = { id, orderId, plannedDate: input.plannedDate, status: "planned", transportSource: input.transportSource, transportProviderId: input.transportProviderId, transportLabel: input.transportSource === "internal" ? "Transporte interno" : provider?.name ?? "Transportista", createdAt: now, updatedAt: now, lines: input.lines.map((item) => {
+  const shipment = { id, orderId, plannedDate: input.plannedDate, status: "planned", transportSource: input.transportSource, transportProviderId: input.transportProviderId, transportLabel: input.transportSource === "internal" ? "Transporte interno" : provider?.name ?? "Transportista", createdAt: now2, updatedAt: now2, lines: input.lines.map((item) => {
     const line = order.lines.find((entry) => entry.id === item.orderLineId);
     return { id: `sl-${crypto.randomUUID()}`, shipmentId: id, orderLineId: line.id, product: line.product, treatment: line.treatment, plannedQuantity: item.plannedQuantity, deliveredQuantity: 0 };
-  }), events: [{ id: `se-${crypto.randomUUID()}`, shipmentId: id, eventType: "created", nextStatus: "planned", nextDate: input.plannedDate, responsible: input.responsible?.trim() || "Operaci\xF3n", createdAt: now }] };
+  }), events: [{ id: `se-${crypto.randomUUID()}`, shipmentId: id, eventType: "created", nextStatus: "planned", nextDate: input.plannedDate, responsible: input.responsible?.trim() || "Operaci\xF3n", createdAt: now2 }] };
   order.shipments ??= [];
   order.shipments.push(shipment);
   refreshMemoryOrder(order);
@@ -2210,8 +2210,8 @@ async function transitionShipment(shipmentId, input) {
     if (!orderLine?.productId) throw new Error("Una l\xEDnea del viaje no tiene producto can\xF3nico.");
     const actual = shipmentLine.loadedQuantity ?? shipmentLine.plannedQuantity;
     if (actual === 0) continue;
-    const now2 = (/* @__PURE__ */ new Date()).toISOString();
-    memoryStockMovements.push({ id: `movement-${memoryTreatmentId++}`, productId: orderLine.productId, stockState: "ready", quantity: -actual, movementType: "dispatch", orderLineId: orderLine.id, shipmentLineId: shipmentLine.id, remittance, transformationId: crypto.randomUUID(), performedAt: now2, responsible: input.responsible?.trim() || "Operaci\xF3n", note: `Despacho de viaje ${shipment.id}`, createdAt: now2 });
+    const now3 = (/* @__PURE__ */ new Date()).toISOString();
+    memoryStockMovements.push({ id: `movement-${memoryTreatmentId++}`, productId: orderLine.productId, stockState: "ready", quantity: -actual, movementType: "dispatch", orderLineId: orderLine.id, shipmentLineId: shipmentLine.id, remittance, transformationId: crypto.randomUUID(), performedAt: now3, responsible: input.responsible?.trim() || "Operaci\xF3n", note: `Despacho de viaje ${shipment.id}`, createdAt: now3 });
     if (reservation) {
       reservation.status = "consumed";
       orderLine.readyReservedQuantity = Math.max((orderLine.readyReservedQuantity ?? 0) - reservation.quantity, 0);
@@ -2224,15 +2224,15 @@ async function transitionShipment(shipmentId, input) {
   }
   const previousStatus = shipment.status;
   const previousRemittance = shipment.remittance;
-  const now = (/* @__PURE__ */ new Date()).toISOString();
+  const now2 = (/* @__PURE__ */ new Date()).toISOString();
   shipment.status = input.nextStatus;
   shipment.remittance = remittance;
   shipment.sharedRemittanceReason = input.sharedRemittanceReason?.trim() || shipment.sharedRemittanceReason;
-  shipment.updatedAt = now;
-  if (input.nextStatus === "loaded") shipment.loadedAt = now;
-  if (input.nextStatus === "dispatched") shipment.dispatchedAt = now;
-  if (input.nextStatus === "delivered") shipment.deliveredAt = now;
-  shipment.events.push({ id: `se-${crypto.randomUUID()}`, shipmentId, eventType: "transition", previousStatus, nextStatus: input.nextStatus, previousRemittance, nextRemittance: remittance, responsible: input.responsible?.trim() || "Operaci\xF3n", createdAt: now });
+  shipment.updatedAt = now2;
+  if (input.nextStatus === "loaded") shipment.loadedAt = now2;
+  if (input.nextStatus === "dispatched") shipment.dispatchedAt = now2;
+  if (input.nextStatus === "delivered") shipment.deliveredAt = now2;
+  shipment.events.push({ id: `se-${crypto.randomUUID()}`, shipmentId, eventType: "transition", previousStatus, nextStatus: input.nextStatus, previousRemittance, nextRemittance: remittance, responsible: input.responsible?.trim() || "Operaci\xF3n", createdAt: now2 });
   refreshMemoryOrder(order);
   return shipment;
 }
@@ -2247,10 +2247,10 @@ async function rescheduleShipment(shipmentId, input) {
   if (!order || !shipment) return null;
   if (!["planned", "ready"].includes(shipment.status) || shipment.plannedDate === input.newDate) throw new Error("Solo se reprograman viajes planificados o prontos a una fecha distinta.");
   const previousDate = shipment.plannedDate;
-  const now = (/* @__PURE__ */ new Date()).toISOString();
+  const now2 = (/* @__PURE__ */ new Date()).toISOString();
   shipment.plannedDate = input.newDate;
-  shipment.updatedAt = now;
-  shipment.events.push({ id: `se-${crypto.randomUUID()}`, shipmentId, eventType: "rescheduled", previousDate, nextDate: input.newDate, reason: input.reason, note: input.note?.trim() || void 0, responsible: input.responsible?.trim() || "Operaci\xF3n", createdAt: now });
+  shipment.updatedAt = now2;
+  shipment.events.push({ id: `se-${crypto.randomUUID()}`, shipmentId, eventType: "rescheduled", previousDate, nextDate: input.newDate, reason: input.reason, note: input.note?.trim() || void 0, responsible: input.responsible?.trim() || "Operaci\xF3n", createdAt: now2 });
   refreshMemoryOrder(order);
   return shipment;
 }
@@ -2727,7 +2727,7 @@ async function completeProductionAllocation(id, actualQuantity, completionNote) 
   const product = memoryProducts.find((item) => item.id === found.line.productId);
   if (!product) throw new Error("La l\xEDnea no est\xE1 vinculada a un producto del maestro.");
   if (actualQuantity > 0) {
-    const now = (/* @__PURE__ */ new Date()).toISOString();
+    const now2 = (/* @__PURE__ */ new Date()).toISOString();
     memoryStockMovements.push({
       id: `movement-${memoryTreatmentId++}`,
       productId: product.id,
@@ -2736,10 +2736,10 @@ async function completeProductionAllocation(id, actualQuantity, completionNote) 
       movementType: "production_receipt",
       productionAllocationId: id,
       transformationId: crypto.randomUUID(),
-      performedAt: now,
+      performedAt: now2,
       responsible: "Producci\xF3n",
       note: completionNote?.trim() || "Producci\xF3n completada",
-      createdAt: now
+      createdAt: now2
     });
   }
   found.allocation.actualQuantity = actualQuantity;
@@ -2765,7 +2765,7 @@ async function recordProductionResult(id, actualQuantity, actualDate, destinatio
   if (!found.allocation.productionResourceId) throw new Error("Indique qui\xE9n realiz\xF3 la producci\xF3n.");
   const product = memoryProducts.find((item) => item.id === found.line.productId);
   if (!product) throw new Error("La l\xEDnea no est\xE1 vinculada a un producto del maestro.");
-  const now = (/* @__PURE__ */ new Date()).toISOString();
+  const now2 = (/* @__PURE__ */ new Date()).toISOString();
   if (actualQuantity > 0) memoryStockMovements.push({
     id: `movement-${memoryTreatmentId++}`,
     productId: product.id,
@@ -2779,15 +2779,15 @@ async function recordProductionResult(id, actualQuantity, actualDate, destinatio
     performedAt: (/* @__PURE__ */ new Date(`${actualDate}T12:00:00-03:00`)).toISOString(),
     responsible: "Producci\xF3n",
     note: note?.trim() || "Producci\xF3n registrada",
-    createdAt: now
+    createdAt: now2
   });
   found.allocation.actualQuantity = actualQuantity;
   found.allocation.actualDate = actualDate;
   found.allocation.resultDestination = actualQuantity ? destination : void 0;
-  found.allocation.completedAt = now;
+  found.allocation.completedAt = now2;
   found.allocation.completionNote = note?.trim() || void 0;
   found.allocation.status = "completed";
-  found.allocation.updatedAt = now;
+  found.allocation.updatedAt = now2;
   return true;
 }
 function mapStockMovement(row) {
@@ -2846,7 +2846,7 @@ async function loadDatabaseTreatmentBatches(filters) {
     reversalOfBatchId: row.reversal_of_batch_id ?? void 0,
     reversedByBatchId: reversedBy.get(String(row.id)),
     createdAt: row.created_at,
-    checks: (row.treatment_control_checks ?? []).map((check) => ({ id: check.id, batchId: check.batch_id, controlId: check.control_id, title: check.control_title_snapshot, result: check.result, note: check.note ?? void 0 })),
+    checks: (row.treatment_control_checks ?? []).map((check2) => ({ id: check2.id, batchId: check2.batch_id, controlId: check2.control_id, title: check2.control_title_snapshot, result: check2.result, note: check2.note ?? void 0 })),
     movements: (row.stock_movements ?? []).map(mapStockMovement)
   }));
 }
@@ -2855,9 +2855,9 @@ async function getStockMovements() {
   const rows = [];
   const pageSize = 1e3;
   for (let offset = 0; ; offset += pageSize) {
-    const page = await supabaseRequest(`/rest/v1/stock_movements?select=*&order=performed_at.asc,id.asc&limit=${pageSize}&offset=${offset}`);
-    rows.push(...page);
-    if (page.length < pageSize) break;
+    const page2 = await supabaseRequest(`/rest/v1/stock_movements?select=*&order=performed_at.asc,id.asc&limit=${pageSize}&offset=${offset}`);
+    rows.push(...page2);
+    if (page2.length < pageSize) break;
   }
   return rows.map(mapStockMovement);
 }
@@ -2992,7 +2992,7 @@ async function recordTreatmentBatch(input) {
   if (relation) {
     if (relation.productId !== product.id) throw new Error("El cliente/producto no coincide con el producto.");
     const activeControls = relation.controls.filter((control) => control.active);
-    if (input.controls.some((check) => !activeControls.some((control) => String(control.id) === String(check.controlId)))) throw new Error("Uno de los controles no pertenece a la ficha seleccionada.");
+    if (input.controls.some((check2) => !activeControls.some((control) => String(control.id) === String(check2.controlId)))) throw new Error("Uno de los controles no pertenece a la ficha seleccionada.");
   } else if (input.controls.length) throw new Error("Stock general no admite controles espec\xEDficos de cliente.");
   const failed = input.controls.filter((control) => control.result === "fail");
   if (failed.some((control) => !control.note?.trim())) throw new Error("Explique cada control no conforme.");
@@ -3002,9 +3002,9 @@ async function recordTreatmentBatch(input) {
   const status = failed.length ? "rejected" : "posted";
   const id = `batch-${memoryTreatmentId++}`;
   const transformationId = crypto.randomUUID();
-  const checks = input.controls.map((check) => {
-    const control = relation?.controls.find((item) => String(item.id) === String(check.controlId));
-    return { id: `check-${memoryTreatmentId++}`, batchId: id, controlId: check.controlId, title: control?.title ?? "Control", result: check.result, note: check.note?.trim() || void 0 };
+  const checks = input.controls.map((check2) => {
+    const control = relation?.controls.find((item) => String(item.id) === String(check2.controlId));
+    return { id: `check-${memoryTreatmentId++}`, batchId: id, controlId: check2.controlId, title: control?.title ?? "Control", result: check2.result, note: check2.note?.trim() || void 0 };
   });
   const batch = {
     id,
@@ -4032,9 +4032,9 @@ function treatmentSummary(lines) {
 async function GET(request) {
   const url = new URL(request.url);
   const hasRange = url.searchParams.has("from") || url.searchParams.has("to");
-  const now = /* @__PURE__ */ new Date();
-  const monday = new Date(now);
-  monday.setDate(now.getDate() - (now.getDay() + 6) % 7);
+  const now2 = /* @__PURE__ */ new Date();
+  const monday = new Date(now2);
+  monday.setDate(now2.getDate() - (now2.getDay() + 6) % 7);
   const sunday = new Date(monday);
   sunday.setDate(monday.getDate() + 6);
   const from = /^\d{4}-\d{2}-\d{2}$/.test(url.searchParams.get("from") ?? "") ? url.searchParams.get("from") : iso(monday);
@@ -4973,10 +4973,10 @@ __export(route_exports29, {
 async function POST13(request, { params }) {
   const { id } = await params;
   try {
-    const form = await request.formData();
-    const file = form.get("file");
+    const form2 = await request.formData();
+    const file = form2.get("file");
     if (!(file instanceof File)) return Response.json({ error: "Seleccione un archivo." }, { status: 400 });
-    const asset = await addClientProductAsset(id, file, { altText: String(form.get("altText") ?? ""), assetType: form.get("assetType") === "plan" ? "plan" : "photo", isPrimary: form.get("isPrimary") !== "false" });
+    const asset = await addClientProductAsset(id, file, { altText: String(form2.get("altText") ?? ""), assetType: form2.get("assetType") === "plan" ? "plan" : "photo", isPrimary: form2.get("isPrimary") !== "false" });
     return Response.json({ asset }, { status: 201 });
   } catch (error) {
     const status = typeof error === "object" && error && "status" in error && typeof error.status === "number" ? error.status : 400;
@@ -5743,6 +5743,113 @@ var init_route55 = __esm({
   "app/api/treatment/batches/[id]/route.ts"() {
     "use strict";
     init_store();
+  }
+});
+
+// app/oauth/core.ts
+import { createHash, createHmac, timingSafeEqual } from "node:crypto";
+function secret() {
+  const base = process.env.ECOASE_MCP_TOKEN?.trim() || process.env.ECOASE_MCP_READ_TOKEN?.trim();
+  return base ? createHmac("sha256", "ecoase-oauth-v1").update(base).digest() : null;
+}
+function oauthEnabled() {
+  return secret() !== null;
+}
+function sign(payload, lifetimeSeconds) {
+  const key = secret();
+  if (!key) throw new Error("OAuth no est\xE1 habilitado.");
+  const body = b64(JSON.stringify(lifetimeSeconds ? { ...payload, exp: now() + lifetimeSeconds } : payload));
+  return `${body}.${b64(createHmac("sha256", key).update(body).digest())}`;
+}
+function verify(token, type) {
+  const key = secret();
+  const [body, signature] = token.split(".");
+  if (!key || !body || !signature) return null;
+  const expected = createHmac("sha256", key).update(body).digest();
+  const received = Buffer.from(signature, "base64url");
+  if (received.length !== expected.length || !timingSafeEqual(received, expected)) return null;
+  try {
+    const payload = JSON.parse(Buffer.from(body, "base64url").toString("utf8"));
+    if (payload.t !== type) return null;
+    if (typeof payload.exp === "number" && payload.exp < now()) return null;
+    return payload;
+  } catch {
+    return null;
+  }
+}
+function issueTokens(scope, clientId) {
+  return {
+    access_token: sign({ t: "access", scope }, ACCESS_SECONDS),
+    token_type: "Bearer",
+    expires_in: ACCESS_SECONDS,
+    refresh_token: sign({ t: "refresh", scope, cid: clientId }, REFRESH_SECONDS),
+    scope: "mcp"
+  };
+}
+function same(a, b) {
+  if (!a || !b) return false;
+  const left = Buffer.from(a), right = Buffer.from(b);
+  return left.length === right.length && timingSafeEqual(left, right);
+}
+function accessForCode(code) {
+  const typed = code.trim();
+  if (same(typed, process.env.ECOASE_MCP_PASSWORD?.trim()) || same(typed, process.env.ECOASE_MCP_TOKEN?.trim())) return "write";
+  if (same(typed, process.env.ECOASE_MCP_READ_TOKEN?.trim())) return "read";
+  return null;
+}
+function accessForBearer(sent) {
+  if (!sent) return null;
+  if (same(sent, process.env.ECOASE_MCP_TOKEN?.trim())) return "write";
+  if (same(sent, process.env.ECOASE_MCP_READ_TOKEN?.trim())) return "read";
+  const access = verify(sent, "access");
+  return access?.scope === "write" ? "write" : access?.scope === "read" ? "read" : null;
+}
+function pkceMatches(verifier, challenge) {
+  return same(createHash("sha256").update(verifier).digest("base64url"), challenge);
+}
+function allowedRedirect(uri) {
+  try {
+    const url = new URL(uri);
+    if (url.hash) return false;
+    if (url.protocol === "https:") return true;
+    return url.protocol === "http:" && ["localhost", "127.0.0.1", "[::1]"].includes(url.hostname);
+  } catch {
+    return false;
+  }
+}
+function publicOrigin(request) {
+  const configured = process.env.ECOASE_PUBLIC_URL?.trim().replace(/\/$/, "");
+  if (configured) return configured;
+  const host = request.headers.get("x-forwarded-host") ?? request.headers.get("host") ?? new URL(request.url).host;
+  const local = /^(localhost|127\.0\.0\.1|\[::1\])(:|$)/.test(host);
+  const protocol = request.headers.get("x-forwarded-proto")?.split(",")[0]?.trim() ?? (local ? "http" : "https");
+  return `${protocol}://${host}`;
+}
+function json(body, status = 200, extra = {}) {
+  return Response.json(body, { status, headers: { ...oauthCors, "Cache-Control": "no-store", ...extra } });
+}
+function oauthError(error, description, status = 400) {
+  return json({ error, error_description: description }, status);
+}
+async function readParams(request) {
+  const type = request.headers.get("content-type") ?? "";
+  const raw = type.includes("application/json") ? await request.json().catch(() => ({})) : Object.fromEntries(new URLSearchParams(await request.text()));
+  return Object.fromEntries(Object.entries(raw).filter(([, value]) => typeof value === "string"));
+}
+var ACCESS_SECONDS, REFRESH_SECONDS, CODE_SECONDS, b64, now, oauthCors;
+var init_core = __esm({
+  "app/oauth/core.ts"() {
+    "use strict";
+    ACCESS_SECONDS = 12 * 3600;
+    REFRESH_SECONDS = 90 * 24 * 3600;
+    CODE_SECONDS = 300;
+    b64 = (value) => Buffer.from(value).toString("base64url");
+    now = () => Math.floor(Date.now() / 1e3);
+    oauthCors = {
+      "Access-Control-Allow-Origin": "*",
+      "Access-Control-Allow-Methods": "GET, POST, OPTIONS",
+      "Access-Control-Allow-Headers": "Content-Type, Authorization, Mcp-Protocol-Version"
+    };
   }
 });
 
@@ -7381,7 +7488,6 @@ __export(route_exports56, {
   dynamic: () => dynamic,
   runtime: () => runtime
 });
-import { timingSafeEqual } from "node:crypto";
 import { WebStandardStreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/webStandardStreamableHttp.js";
 function withCors(response) {
   const headers = new Headers(response.headers);
@@ -7389,25 +7495,16 @@ function withCors(response) {
   return new Response(response.body, { status: response.status, statusText: response.statusText, headers });
 }
 function accessFor(request) {
-  const writeToken = process.env.ECOASE_MCP_TOKEN?.trim();
-  const readToken = process.env.ECOASE_MCP_READ_TOKEN?.trim();
-  if (!writeToken && !readToken) return "read";
+  if (!process.env.ECOASE_MCP_TOKEN?.trim() && !process.env.ECOASE_MCP_READ_TOKEN?.trim()) return "read";
   const sent = /^Bearer\s+(.+)$/i.exec(request.headers.get("authorization") ?? "")?.[1]?.trim() ?? "";
-  const matches = (expected) => {
-    if (!sent || !expected) return false;
-    const a = Buffer.from(sent), b = Buffer.from(expected);
-    return a.length === b.length && timingSafeEqual(a, b);
-  };
-  if (matches(writeToken)) return "write";
-  if (matches(readToken)) return "read";
-  return "denied";
+  return accessForBearer(sent) ?? "denied";
 }
 async function handle(request) {
   const access = accessFor(request);
   if (access === "denied") {
     return withCors(new Response(JSON.stringify({ jsonrpc: "2.0", error: { code: -32001, message: "Falta el token de acceso o no es v\xE1lido." }, id: null }), {
       status: 401,
-      headers: { "content-type": "application/json", "WWW-Authenticate": 'Bearer realm="ecoase-mcp"' }
+      headers: { "content-type": "application/json", "WWW-Authenticate": `Bearer realm="ecoase-mcp", resource_metadata="${publicOrigin(request)}/.well-known/oauth-protected-resource"` }
     }));
   }
   const server = createEcoaseMcpServer({ canWrite: access === "write" });
@@ -7434,6 +7531,7 @@ var runtime, dynamic, corsHeaders;
 var init_route56 = __esm({
   "app/mcp/route.ts"() {
     "use strict";
+    init_core();
     init_server();
     runtime = "nodejs";
     dynamic = "force-dynamic";
@@ -7441,8 +7539,205 @@ var init_route56 = __esm({
       "Access-Control-Allow-Origin": "*",
       "Access-Control-Allow-Methods": "POST, GET, DELETE, OPTIONS",
       "Access-Control-Allow-Headers": "Content-Type, Authorization, Mcp-Session-Id, Mcp-Protocol-Version, Last-Event-ID",
-      "Access-Control-Expose-Headers": "Mcp-Session-Id, Mcp-Protocol-Version"
+      "Access-Control-Expose-Headers": "Mcp-Session-Id, Mcp-Protocol-Version, WWW-Authenticate"
     };
+  }
+});
+
+// app/oauth/authorize/route.ts
+var route_exports57 = {};
+__export(route_exports57, {
+  GET: () => GET26,
+  OPTIONS: () => OPTIONS2,
+  POST: () => POST29
+});
+function check(params) {
+  const client = verify(params.client_id ?? "", "client");
+  if (!client) return { error: "Esta conexi\xF3n no est\xE1 registrada. Volv\xE9 a agregarla desde Claude." };
+  const redirect = params.redirect_uri ?? "";
+  if (!allowedRedirect(redirect) || !client.uris.includes(redirect)) return { error: "La direcci\xF3n de retorno no coincide con la registrada." };
+  if (params.response_type !== "code" || params.code_challenge_method !== "S256" || !params.code_challenge) return { error: "Falta la verificaci\xF3n de seguridad (PKCE). Volv\xE9 a agregar la conexi\xF3n desde Claude." };
+  return { client, redirect };
+}
+function form(params, clientName, error = "") {
+  return page(`<h1>Conectar Claude a Ecoase</h1>
+<p><b>${escape(clientName)}</b> quiere leer y modificar el control operativo (pedidos, producci\xF3n, log\xEDstica y stock).</p>
+<form method="post" action="/oauth/authorize" autocomplete="off">
+${hidden.filter((name) => params[name] !== void 0).map((name) => `<input type="hidden" name="${name}" value="${escape(params[name])}">`).join("")}
+<label for="code">C\xF3digo de acceso</label>
+<input id="code" name="code" type="password" required autofocus autocapitalize="none" autocorrect="off" spellcheck="false" inputmode="text">
+${error ? `<div class="error" role="alert">${escape(error)}</div>` : ""}
+<button type="submit">Autorizar</button>
+</form><small>Si no iniciaste esta conexi\xF3n, cerr\xE1 esta p\xE1gina.</small>`, error ? 401 : 200);
+}
+async function GET26(request) {
+  if (!oauthEnabled()) return page("<h1>No disponible</h1><p>El acceso con OAuth no est\xE1 habilitado en este servidor.</p>", 404);
+  const params = Object.fromEntries(new URL(request.url).searchParams);
+  const result = check(params);
+  if ("error" in result) return page(`<h1>No se pudo conectar</h1><p>${escape(result.error ?? "")}</p>`, 400);
+  return form(params, String(result.client.name ?? "Claude"));
+}
+async function POST29(request) {
+  if (!oauthEnabled()) return page("<h1>No disponible</h1><p>El acceso con OAuth no est\xE1 habilitado en este servidor.</p>", 404);
+  const params = await readParams(request);
+  const result = check(params);
+  if ("error" in result) return page(`<h1>No se pudo conectar</h1><p>${escape(result.error ?? "")}</p>`, 400);
+  const scope = accessForCode(params.code ?? "");
+  if (!scope) {
+    await new Promise((resolve) => setTimeout(resolve, 1500));
+    return form(params, String(result.client.name ?? "Claude"), "C\xF3digo incorrecto. Prob\xE1 de nuevo.");
+  }
+  const code = sign({ t: "code", cid: params.client_id, ru: result.redirect, cc: params.code_challenge, scope }, CODE_SECONDS);
+  const target = new URL(result.redirect);
+  target.searchParams.set("code", code);
+  if (params.state) target.searchParams.set("state", params.state);
+  return new Response(null, { status: 302, headers: { location: target.toString(), "cache-control": "no-store" } });
+}
+async function OPTIONS2() {
+  return new Response(null, { status: 204, headers: oauthCors });
+}
+var page, escape, hidden;
+var init_route57 = __esm({
+  "app/oauth/authorize/route.ts"() {
+    "use strict";
+    init_core();
+    page = (body, status = 200) => new Response(`<!doctype html>
+<html lang="es"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="robots" content="noindex">
+<title>Conectar Claude a Ecoase</title>
+<style>
+:root{color-scheme:light dark;--ink:#26343e;--bg:#f4f6f8;--card:#fff;--line:#d5dce2;--yellow:#ffca08;--muted:#5b6a76}
+@media (prefers-color-scheme:dark){:root{--ink:#eef2f5;--bg:#161e24;--card:#1f2a32;--line:#34434e;--muted:#9fb0bc}}
+*{box-sizing:border-box}body{margin:0;min-height:100vh;display:grid;place-items:center;padding:16px;background:var(--bg);color:var(--ink);font:16px/1.5 system-ui,-apple-system,Segoe UI,sans-serif}
+main{width:100%;max-width:420px;background:var(--card);border:1px solid var(--line);border-radius:12px;padding:24px}
+h1{margin:0 0 4px;font-size:20px}p{margin:8px 0;color:var(--muted)}label{display:block;margin:20px 0 6px;font-weight:600}
+input{width:100%;min-height:48px;padding:0 12px;border:1px solid var(--line);border-radius:8px;background:transparent;color:var(--ink);font:inherit;letter-spacing:.04em}
+button{width:100%;min-height:48px;margin-top:16px;border:0;border-radius:8px;background:var(--yellow);color:#26343e;font:inherit;font-weight:700;cursor:pointer}
+.error{margin-top:12px;color:#c0392b;font-weight:600}small{display:block;margin-top:16px;color:var(--muted)}
+</style></head><body><main>${body}</main></body></html>`, {
+      status,
+      headers: { "content-type": "text/html; charset=utf-8", "cache-control": "no-store", "x-frame-options": "DENY", "content-security-policy": "frame-ancestors 'none'; form-action 'self' https: http://localhost:* http://127.0.0.1:*", ...oauthCors }
+    });
+    escape = (value) => value.replace(/[&<>"']/g, (char) => `&#${char.charCodeAt(0)};`);
+    hidden = ["response_type", "client_id", "redirect_uri", "code_challenge", "code_challenge_method", "state", "scope", "resource"];
+  }
+});
+
+// app/oauth/token/route.ts
+var route_exports58 = {};
+__export(route_exports58, {
+  OPTIONS: () => OPTIONS3,
+  POST: () => POST30
+});
+async function POST30(request) {
+  if (!oauthEnabled()) return oauthError("temporarily_unavailable", "El acceso con OAuth no est\xE1 habilitado en este servidor.", 404);
+  const params = await readParams(request);
+  const client = verify(params.client_id ?? "", "client");
+  if (!client) return oauthError("invalid_client", "Cliente no registrado.", 401);
+  if (params.grant_type === "authorization_code") {
+    const code = verify(params.code ?? "", "code");
+    if (!code || code.cid !== params.client_id) return oauthError("invalid_grant", "El c\xF3digo venci\xF3 o no es v\xE1lido. Volv\xE9 a conectar.");
+    if (code.ru !== params.redirect_uri) return oauthError("invalid_grant", "La direcci\xF3n de retorno no coincide.");
+    if (!params.code_verifier || !pkceMatches(params.code_verifier, String(code.cc))) return oauthError("invalid_grant", "La verificaci\xF3n PKCE fall\xF3.");
+    return json(issueTokens(code.scope, params.client_id));
+  }
+  if (params.grant_type === "refresh_token") {
+    const refresh = verify(params.refresh_token ?? "", "refresh");
+    if (!refresh || refresh.cid !== params.client_id) return oauthError("invalid_grant", "La sesi\xF3n venci\xF3. Volv\xE9 a conectar.");
+    return json(issueTokens(refresh.scope, params.client_id));
+  }
+  return oauthError("unsupported_grant_type", "Solo se admite authorization_code y refresh_token.");
+}
+async function OPTIONS3() {
+  return new Response(null, { status: 204, headers: oauthCors });
+}
+var init_route58 = __esm({
+  "app/oauth/token/route.ts"() {
+    "use strict";
+    init_core();
+  }
+});
+
+// app/oauth/register/route.ts
+var route_exports59 = {};
+__export(route_exports59, {
+  OPTIONS: () => OPTIONS4,
+  POST: () => POST31
+});
+async function POST31(request) {
+  if (!oauthEnabled()) return oauthError("temporarily_unavailable", "El acceso con OAuth no est\xE1 habilitado en este servidor.", 404);
+  const body = await request.json().catch(() => null);
+  const uris = Array.isArray(body?.redirect_uris) ? body.redirect_uris.filter((item) => typeof item === "string") : [];
+  if (!uris.length || uris.length > 10 || !uris.every(allowedRedirect)) return oauthError("invalid_redirect_uri", "Las direcciones de retorno deben ser https (o http local).");
+  const name = typeof body?.client_name === "string" ? body.client_name.slice(0, 80) : "Cliente MCP";
+  return json({
+    client_id: sign({ t: "client", uris, name }),
+    client_name: name,
+    redirect_uris: uris,
+    grant_types: ["authorization_code", "refresh_token"],
+    response_types: ["code"],
+    token_endpoint_auth_method: "none",
+    client_id_issued_at: Math.floor(Date.now() / 1e3)
+  }, 201);
+}
+async function OPTIONS4() {
+  return new Response(null, { status: 204, headers: oauthCors });
+}
+var init_route59 = __esm({
+  "app/oauth/register/route.ts"() {
+    "use strict";
+    init_core();
+  }
+});
+
+// app/oauth/well-known-authorization-server/route.ts
+var route_exports60 = {};
+__export(route_exports60, {
+  GET: () => GET27,
+  OPTIONS: () => OPTIONS5
+});
+async function GET27(request) {
+  if (!oauthEnabled()) return json({ error: "not_found" }, 404);
+  const origin = publicOrigin(request);
+  return json({
+    issuer: origin,
+    authorization_endpoint: `${origin}/oauth/authorize`,
+    token_endpoint: `${origin}/oauth/token`,
+    registration_endpoint: `${origin}/oauth/register`,
+    response_types_supported: ["code"],
+    grant_types_supported: ["authorization_code", "refresh_token"],
+    code_challenge_methods_supported: ["S256"],
+    token_endpoint_auth_methods_supported: ["none"],
+    scopes_supported: ["mcp"]
+  });
+}
+async function OPTIONS5() {
+  return new Response(null, { status: 204, headers: oauthCors });
+}
+var init_route60 = __esm({
+  "app/oauth/well-known-authorization-server/route.ts"() {
+    "use strict";
+    init_core();
+  }
+});
+
+// app/oauth/well-known-protected-resource/route.ts
+var route_exports61 = {};
+__export(route_exports61, {
+  GET: () => GET28,
+  OPTIONS: () => OPTIONS6
+});
+async function GET28(request) {
+  if (!oauthEnabled()) return json({ error: "not_found" }, 404);
+  const origin = publicOrigin(request);
+  return json({ resource: `${origin}/mcp`, authorization_servers: [origin], bearer_methods_supported: ["header"], scopes_supported: ["mcp"] });
+}
+async function OPTIONS6() {
+  return new Response(null, { status: 204, headers: oauthCors });
+}
+var init_route61 = __esm({
+  "app/oauth/well-known-protected-resource/route.ts"() {
+    "use strict";
+    init_core();
   }
 });
 
@@ -7507,7 +7802,12 @@ var init_route_map = __esm({
       { pattern: new RegExp("^/api/stock/movements/([^/]+)/reverse$"), keys: ["id"], load: () => Promise.resolve().then(() => (init_route53(), route_exports53)) },
       { pattern: new RegExp("^/api/treatment/batches/([^/]+)/reverse$"), keys: ["id"], load: () => Promise.resolve().then(() => (init_route54(), route_exports54)) },
       { pattern: new RegExp("^/api/treatment/batches/([^/]+)$"), keys: ["id"], load: () => Promise.resolve().then(() => (init_route55(), route_exports55)) },
-      { pattern: /^\/mcp$/, keys: [], load: () => Promise.resolve().then(() => (init_route56(), route_exports56)) }
+      { pattern: /^\/mcp$/, keys: [], load: () => Promise.resolve().then(() => (init_route56(), route_exports56)) },
+      { pattern: /^\/oauth\/authorize$/, keys: [], load: () => Promise.resolve().then(() => (init_route57(), route_exports57)) },
+      { pattern: /^\/oauth\/token$/, keys: [], load: () => Promise.resolve().then(() => (init_route58(), route_exports58)) },
+      { pattern: /^\/oauth\/register$/, keys: [], load: () => Promise.resolve().then(() => (init_route59(), route_exports59)) },
+      { pattern: /^\/\.well-known\/oauth-authorization-server$/, keys: [], load: () => Promise.resolve().then(() => (init_route60(), route_exports60)) },
+      { pattern: /^\/\.well-known\/oauth-protected-resource(\/.*)?$/, keys: [], load: () => Promise.resolve().then(() => (init_route61(), route_exports61)) }
     ];
   }
 });

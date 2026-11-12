@@ -89,6 +89,16 @@ Capacidad, stock y fechas son advertencias: las herramientas guardan igual e inf
 
 Con algún token configurado, cada pedido debe enviar `Authorization: Bearer <token>`; sin él responde 401. Generá un token con `node -e "console.log(require('crypto').randomBytes(32).toString('hex'))"` y cargalo como variable de entorno del servidor (nunca en el código). El token es compartido: quién hizo cada cambio se registra con el campo `responsable` de las herramientas (por defecto «Claude (MCP)»), no con una identidad individual. Importante: el token protege solo `/mcp`; las rutas `/api/*` de la aplicación no tienen autenticación.
 
+**Desde el celular (y la web de Claude)**
+
+La app de Claude se conecta por OAuth, no por encabezados. El servidor ya lo incluye, sin base de datos (los códigos y tokens son datos firmados; rotar `ECOASE_MCP_TOKEN` cierra todas las sesiones):
+
+1. En claude.ai (web, con la cuenta que usan): Configuración → Conectores → Agregar conector personalizado. Nombre `Ecoase` y URL `https://dashboardoperativo.vercel.app/mcp`. No hace falta completar la configuración avanzada.
+2. Claude abre la página «Conectar Claude a Ecoase»: se escribe el código de acceso (`ECOASE_MCP_PASSWORD`; también sirve `ECOASE_MCP_TOKEN` para escritura o `ECOASE_MCP_READ_TOKEN` para solo lectura).
+3. El conector queda disponible en la app del celular con la misma cuenta, a cualquier hora. La sesión dura 90 días y se renueva sola al usarla.
+
+Variables: `ECOASE_MCP_PASSWORD` (código para escribir al conectar, más fácil de tipear que el token) y `ECOASE_PUBLIC_URL` (dirección pública, para que los enlaces de OAuth no dependan del dominio con el que se entre).
+
 **Conexión**
 
 - Claude Code (la dirección de producción es la primera; `ecoase.vercel.app` solo redirige): `claude mcp add --transport http ecoase https://dashboardoperativo.vercel.app/mcp --header "Authorization: Bearer TU_TOKEN"`

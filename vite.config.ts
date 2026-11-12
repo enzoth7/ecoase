@@ -19,7 +19,7 @@ export default defineConfig(({ mode }) => ({
       }
       server.middlewares.use((incoming, outgoing, next) => {
         const path = new URL(incoming.url || "/", "http://localhost").pathname;
-        if (!path.startsWith("/api/") && path !== "/mcp") return next();
+        if (!path.startsWith("/api/") && path !== "/mcp" && !path.startsWith("/oauth/") && !path.startsWith("/.well-known/oauth-")) return next();
         void server.ssrLoadModule("/server/router.ts")
           .then((module) => serveApi(incoming, outgoing, module.dispatch))
           .catch((error: unknown) => {
